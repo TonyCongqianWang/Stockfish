@@ -29,6 +29,7 @@
 
 #include "../position.h"
 #include "../types.h"
+#include "layers/affine_transform_argmax.h"
 #include "nnue_accumulator.h"
 #include "nnue_architecture.h"
 #include "nnue_common.h"
@@ -84,6 +85,7 @@ class FeatureTransformer {
       (TransformedFeatureDimensions == TransformedFeatureDimensionsBig);
     // Number of output dimensions for one side
     static constexpr IndexType HalfDimensions = TransformedFeatureDimensions;
+    Layers::AffineTransformArgmax<TotalRouterFeatures, PSQTBuckets> routerTransform;
 
    public:
     // Output type
@@ -237,7 +239,7 @@ class FeatureTransformer {
                            AccumulatorStack&                         accumulatorStack,
                            AccumulatorCaches::Cache<HalfDimensions>& cache,
                            OutputType*                               output,
-                           int                                       bucket) const {
+                           int&                                      bucket) const {
 
         using namespace SIMD;
         accumulatorStack.evaluate(pos, *this, cache);
@@ -245,20 +247,6 @@ class FeatureTransformer {
         const auto& threatAccumulatorState = accumulatorStack.latest<ThreatFeatureSet>();
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
-        const auto& psqtAccumulation = (accumulatorState.acc<HalfDimensions>()).psqtAccumulation;
-        auto        psqt =
-          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket]);
-
-        if constexpr (UseThreats)
-        {
-            const auto& threatPsqtAccumulation =
-              (threatAccumulatorState.acc<HalfDimensions>()).psqtAccumulation;
-            psqt = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
-                    - threatPsqtAccumulation[perspectives[1]][bucket])
-                 / 2;
-        }
-        else
-            psqt /= 2;
 
         const auto& accumulation = (accumulatorState.acc<HalfDimensions>()).accumulation;
         const auto& threatAccumulation =
@@ -409,8 +397,56 @@ class FeatureTransformer {
 #endif
         }
 
+        // ==========================================
+        // Dynamic Bucket Routing
+        // ==========================================
+        if (bucket < 0)
+        {
+            static_assert(HalfDimensions / 2 >= RouterFeaturesPerPerspective,
+                        "HalfDimensions is too small to extract the requested routing features.");
+
+            alignas(CacheLineSize) std::uint8_t bucket_input[TotalRouterFeatures];
+
+            std::memcpy(&bucket_input[0],
+                        &output[(HalfDimensions / 2) - RouterFeaturesPerPerspective],
+                        RouterFeaturesPerPerspective * sizeof(OutputType));
+
+            std::memcpy(&bucket_input[RouterFeaturesPerPerspective],
+                        &output[HalfDimensions - RouterFeaturesPerPerspective],
+                        RouterFeaturesPerPerspective * sizeof(OutputType));
+
+            bucket = routerTransform.propagate(bucket_input);
+        }
+        // ==========================================
+        // PSQT Evaluation
+        // ==========================================
+
+        const auto& psqtAccumulation = (accumulatorState.acc<HalfDimensions>()).psqtAccumulation;
+        auto psqt =
+          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket]);
+
+        if constexpr (UseThreats)
+        {
+            const auto& threatPsqtAccumulation =
+              (threatAccumulatorState.acc<HalfDimensions>()).psqtAccumulation;
+            psqt = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
+                    - threatPsqtAccumulation[perspectives[1]][bucket])
+                 / 2;
+        }
+        else
+            psqt /= 2;
+
         return psqt;
     }  // end of function transform()
+
+    std::int32_t transform(const Position&                           pos,
+                           AccumulatorStack&                         accumulatorStack,
+                           AccumulatorCaches::Cache<HalfDimensions>& cache,
+                           OutputType*                               output,
+                           const int&                                bucket) const {
+        int tmp_bucket = bucket;
+        return transform(pos, accumulatorStack, cache, output, tmp_bucket);
+    }
 
     alignas(CacheLineSize) std::array<BiasType, HalfDimensions> biases;
     alignas(CacheLineSize) std::array<WeightType, HalfDimensions * InputDimensions> weights;
@@ -424,7 +460,6 @@ class FeatureTransformer {
 };
 
 }  // namespace Stockfish::Eval::NNUE
-
 
 template<Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensions>
 struct std::hash<Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions>> {
