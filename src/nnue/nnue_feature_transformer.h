@@ -163,9 +163,10 @@ class FeatureTransformer {
         {
             read_little_endian<ThreatWeightType>(stream, threatWeights.data(),
                                                  ThreatInputDimensions * HalfDimensions);
-            read_leb_128(stream, weights);
+            read_leb_128(stream, threatPsqtWeights);
 
-            read_leb_128(stream, threatPsqtWeights, psqtWeights);
+            read_leb_128(stream, weights);
+            read_leb_128(stream, psqtWeights);
         }
         else
         {
