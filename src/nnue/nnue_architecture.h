@@ -135,7 +135,7 @@ struct NetworkArchitecture {
         // max value for fwdOut is (L1 + L3) * HiddenMaxVal * WeightMaxVal
         // for int8 activations and weights this is (L1 + L3) * 16129 making
         // fwdOut save from overflow until (L1 + L3) > 133,144
-        // last layer uses WeightScaleBits
+        // last layer uses WeightScaleBits + 1
         std::int32_t fwdOut = buffer.fc_2_out[0] + 2 * buffer.fc_0_out[FC_0_OUTPUTS];
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale
