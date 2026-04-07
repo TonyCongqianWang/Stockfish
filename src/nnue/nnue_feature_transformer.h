@@ -164,15 +164,10 @@ class FeatureTransformer {
             read_little_endian<ThreatWeightType>(stream, threatWeights.data(),
                                                  ThreatInputDimensions * HalfDimensions);
             read_leb_128(stream, threatPsqtWeights);
+        }
 
-            read_leb_128(stream, weights);
-            read_leb_128(stream, psqtWeights);
-        }
-        else
-        {
-            read_leb_128(stream, weights);
-            read_leb_128(stream, psqtWeights);
-        }
+        read_leb_128(stream, weights);
+        read_leb_128(stream, psqtWeights);
 
         permute_weights();
 
@@ -191,26 +186,11 @@ class FeatureTransformer {
         {
             write_little_endian<ThreatWeightType>(stream, copy->threatWeights.data(),
                                                   ThreatInputDimensions * HalfDimensions);
-            write_leb_128<WeightType>(stream, copy->weights);
-
-            auto combinedPsqtWeights =
-              std::make_unique<std::array<PSQTWeightType, TotalInputDimensions * PSQTBuckets>>();
-
-            std::copy(std::begin(copy->threatPsqtWeights),
-                      std::begin(copy->threatPsqtWeights) + ThreatInputDimensions * PSQTBuckets,
-                      combinedPsqtWeights->begin());
-
-            std::copy(std::begin(copy->psqtWeights),
-                      std::begin(copy->psqtWeights) + InputDimensions * PSQTBuckets,
-                      combinedPsqtWeights->begin() + ThreatInputDimensions * PSQTBuckets);
-
-            write_leb_128<PSQTWeightType>(stream, *combinedPsqtWeights);
+            write_leb_128<PSQTWeightType>(stream, copy->threatPsqtWeights);
         }
-        else
-        {
-            write_leb_128<WeightType>(stream, copy->weights);
-            write_leb_128<PSQTWeightType>(stream, copy->psqtWeights);
-        }
+
+        write_leb_128<WeightType>(stream, copy->weights);
+        write_leb_128<PSQTWeightType>(stream, copy->psqtWeights);
 
         return !stream.fail();
     }
