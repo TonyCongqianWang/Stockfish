@@ -115,12 +115,12 @@ struct NetworkArchitecture {
         Buffer buffer;
 
         fc_0.propagate(transformedFeatures, buffer.fc_0_out);
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.ac_sqr_0_out);
-        ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
+        ac_sqr_0.propagate(buffer.fc_0_out, buffer.ac_sqr_0_out, WeightScaleBits);
+        ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out, WeightScaleBits);
         std::memcpy(buffer.ac_sqr_0_out + FC_0_OUTPUTS, buffer.ac_0_out,
                     FC_0_OUTPUTS * sizeof(typename decltype(ac_0)::OutputType));
         fc_1.propagate(buffer.ac_sqr_0_out, buffer.fc_1_out);
-        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
+        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out, WeightScaleBits);
         fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
         // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in
