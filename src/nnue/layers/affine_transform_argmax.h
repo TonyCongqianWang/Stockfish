@@ -125,8 +125,11 @@ class AffineTransformArgmax {
 
     using OutputBuffer = OutputType[PaddedOutputDimensions];
 
-    static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash) {
-        std::uint32_t hashValue = 0xCC03DAE4u;
+    static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash = 0x538DC7E4u) {
+        std::uint32_t hashValue = 0x538DC7E4u;
+        hashValue += InputDimensions;
+        hashValue ^= prevHash >> 1;
+        hashValue ^= prevHash << 31;
         hashValue += OutputDimensions;
         hashValue ^= prevHash >> 1;
         hashValue ^= prevHash << 31;
@@ -167,7 +170,7 @@ class AffineTransformArgmax {
         std::size_t h = 0;
         hash_combine(h, get_raw_data_hash(biases));
         hash_combine(h, get_raw_data_hash(weights));
-        hash_combine(h, get_hash_value(0));
+        hash_combine(h, get_hash_value());
         return h;
     }
 

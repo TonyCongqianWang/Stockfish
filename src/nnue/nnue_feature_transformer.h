@@ -81,8 +81,10 @@ void permute(std::array<T, N>& data, const std::array<std::size_t, OrderSize>& o
 // Input feature converter
 template<IndexType TransformedFeatureDimensions>
 class FeatureTransformer {
-    static constexpr bool UseThreats =
+    static constexpr bool IsBigNet =
       (TransformedFeatureDimensions == TransformedFeatureDimensionsBig);
+    static constexpr bool UseRouter = IsBigNet;
+    static constexpr bool UseThreats = IsBigNet;
     // Number of output dimensions for one side
     static constexpr IndexType HalfDimensions = TransformedFeatureDimensions;
     Layers::AffineTransformArgmax<TotalRouterFeatures, PSQTBuckets> routerTransform;
@@ -173,6 +175,14 @@ class FeatureTransformer {
 
         permute_weights();
 
+        if constexpr (UseRouter)
+        {
+            std::uint32_t routerHash = read_little_endian<std::uint32_t>(stream);
+            if(routerHash != routerTransform.get_hash_value())
+                return false;
+            routerTransform.read_parameters(stream);
+        }
+
         return !stream.fail();
     }
 
@@ -194,6 +204,12 @@ class FeatureTransformer {
         write_leb_128<WeightType>(stream, copy->weights);
         write_leb_128<PSQTWeightType>(stream, copy->psqtWeights);
 
+        if constexpr (UseRouter)
+        {
+            write_little_endian<std::int32_t>(stream, routerTransform.get_hash_value());
+            routerTransform.write_parameters(stream);
+        }
+
         return !stream.fail();
     }
 
@@ -212,6 +228,8 @@ class FeatureTransformer {
 
         hash_combine(h, get_hash_value());
 
+        if constexpr (UseRouter)
+            hash_combine(h, routerTransform.get_content_hash());
         return h;
     }
 
@@ -381,7 +399,7 @@ class FeatureTransformer {
         // ==========================================
         // Dynamic Bucket Routing
         // ==========================================
-        if (bucket < 0)
+        if (UseRouter && bucket < 0)
         {
             static_assert(HalfDimensions / 2 >= RouterFeaturesPerPerspective,
                         "HalfDimensions is too small to extract the requested routing features.");
