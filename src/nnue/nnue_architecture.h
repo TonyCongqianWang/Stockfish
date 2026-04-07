@@ -120,20 +120,38 @@ struct NetworkArchitecture {
         Buffer buffer;
 
         fc_0.propagate(transformedFeatures, buffer.fc_0_out);
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.ac_sqr_0_out);
-        ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
+        ac_sqr_0.propagate(buffer.fc_0_out, buffer.ac_sqr_0_out, WeightScaleBits + 1);
+        ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out, WeightScaleBits + 1);
         std::memcpy(buffer.ac_sqr_0_out + FC_0_OUTPUTS, buffer.ac_0_out,
                     FC_0_OUTPUTS * sizeof(typename decltype(ac_0)::OutputType));
         fc_1.propagate(buffer.ac_sqr_0_out, buffer.fc_1_out);
-        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
+        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out, WeightScaleBits);
         fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-        // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in
-        // quantized form, but we want 1.0 to be equal to 600*OutputScale
-        std::int32_t fwdOut =
-          (buffer.fc_0_out[FC_0_OUTPUTS]) * (600 * OutputScale) / (127 * (1 << WeightScaleBits));
-        std::int32_t outputValue = buffer.fc_2_out[0] + fwdOut;
+        if (L1 == TransformedFeatureDimensionsSmall && L2 == L2Small && L3 == L3Small)
+        {
+            // TODO: Remove
+            std::int32_t fwdOut =
+                (buffer.fc_0_out[FC_0_OUTPUTS]) * (600 * OutputScale) / (127 * (1 << WeightScaleBits));
+            std::int32_t outputValue = buffer.fc_2_out[0] + fwdOut;
+            return outputValue;
+        }
 
+        // max value for fwdOut is (L1 + L3) * HiddenMaxVal * WeightMaxVal
+        // for int8 activations and weights this is (L1 + L3) * 16129 making
+        // fwdOut save from overflow until (L1 + L3) > 133,144
+        // first layer and last layer use WeightScaleBits + 1
+        std::int32_t fwdOut = buffer.fc_2_out[0] + buffer.fc_0_out[FC_0_OUTPUTS];
+        // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
+        // quantized form, but we want 1.0 to be equal to 600*OutputScale
+        // to make overflow impossible we cast to int_64_t
+        constexpr std::int64_t multiplier = 600 * OutputScale;
+        constexpr std::int64_t denominator =
+            static_cast<std::int64_t>(HiddenOneVal) * static_cast<std::int64_t>(1U << WeightScaleBits) * 2;
+
+        std::int32_t outputValue = static_cast<std::int32_t>(
+            (static_cast<std::int64_t>(fwdOut) * multiplier) / denominator
+        );
         return outputValue;
     }
 
