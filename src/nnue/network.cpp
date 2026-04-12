@@ -350,8 +350,7 @@ bool Network<Arch, Transformer>::read_header(std::istream&  stream,
     version    = read_little_endian<std::uint32_t>(stream);
     *hashValue = read_little_endian<std::uint32_t>(stream);
     size       = read_little_endian<std::uint32_t>(stream);
-    // TODO remove tmpVersion after smallnet was trained.
-    if (!stream || (version != Version && version != tmpVersion))
+    if (!stream || (version != Version))
         return false;
     desc->resize(size);
     stream.read(&(*desc)[0], size);
