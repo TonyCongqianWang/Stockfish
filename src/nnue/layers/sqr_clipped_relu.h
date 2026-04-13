@@ -30,7 +30,7 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
 // Clipped ReLU
-template<IndexType InDims>
+template<IndexType InDims, int WeightScaleBitsLocal = WeightScaleBits>
 class SqrClippedReLU {
    public:
     // Input/output type
@@ -65,7 +65,7 @@ class SqrClippedReLU {
     }
 
     // Forward propagation
-    void propagate(const InputType* input, OutputType* output, int WeightScaleBitsLocal) const {
+    void propagate(const InputType* input, OutputType* output) const {
 
 #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
