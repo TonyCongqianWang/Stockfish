@@ -36,6 +36,9 @@
 
 namespace Stockfish {
 
+constexpr int PSQT1=139, POS1=144, PMAT=584, NMAT=77704, OMAT=6746,
+DONC=490, DNNC=16743, DV=85343, DR50=201;
+
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
 Value Eval::evaluate(const Eval::NNUE::Network&     network,
@@ -48,18 +51,18 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
+    Value nnue = (PSQT1 * psqt + POS1 * positional) / 128;
 
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 476;
-    nnue -= nnue * nnueComplexity / 18236;
+    optimism += optimism * nnueComplexity / DONC;
+    nnue -= nnue * nnueComplexity / DNNC;
 
-    int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
+    int material = PMAT * pos.count<PAWN>() + pos.non_pawn_material();
+    int v        = (nnue * (NMAT + material) + optimism * (OMAT + material)) / DV;
 
     // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 199;
+    v -= v * pos.rule50_count() / DR50;
 
     // Guarantee evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
