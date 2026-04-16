@@ -246,7 +246,8 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
     NnueEvalTrace t{};
     int correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
     (void)featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, correctBucket, UseRouterTag<true>{});
-    t.correctBucket = correctBucket;
+    t.correctBucket_psqt = correctBucket;
+    t.correctBucket_positional = correctBucket;
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
         const auto materialist =
