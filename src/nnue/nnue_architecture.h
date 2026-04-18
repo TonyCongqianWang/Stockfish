@@ -51,11 +51,16 @@ constexpr int       L3Small                           = 32;
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;
 
+constexpr IndexType RouterFeaturesPerPerspective = 16;
+constexpr IndexType TotalRouterFeatures = RouterFeaturesPerPerspective * 2;
+
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's
 // vector registers.
 static_assert(PSQTBuckets % 8 == 0,
               "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
+static_assert(PSQTBuckets == LayerStacks,
+              "Current routing implementation expects PSQTBuckets == LayerStack.");
 
 template<IndexType L1, int L2, int L3>
 struct NetworkArchitecture {

@@ -161,10 +161,10 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
 
     ss << " NNUE network contributions "
        << (pos.side_to_move() == WHITE ? "(White to move)" : "(Black to move)") << std::endl
-       << "+------------+------------+------------+------------+\n"
-       << "|   Bucket   |  Material  | Positional |   Total    |\n"
-       << "|            |   (PSQT)   |  (Layers)  |            |\n"
-       << "+------------+------------+------------+------------+\n";
+       << "+------------+------------+------------+\n"
+       << "|   Bucket   |  Material  | Positional |\n"
+       << "|            |   (PSQT)   |  (Layers)  |\n"
+       << "+------------+------------+------------+\n";
 
     for (std::size_t bucket = 0; bucket < LayerStacks; ++bucket)
     {
@@ -176,15 +176,12 @@ trace(Position& pos, const Eval::NNUE::Networks& networks, Eval::NNUE::Accumulat
         format_cp_aligned_dot(t.positional[bucket], ss, pos);
         ss << "  "  //
            << " |  ";
-        format_cp_aligned_dot(t.psqt[bucket] + t.positional[bucket], ss, pos);
-        ss << "  "  //
-           << " |";
-        if (bucket == t.correctBucket)
-            ss << " <-- this bucket is used";
+        if (bucket == t.correctBucket_positional)
+            ss << " <-- this bucket is used with psqt from bucket " << t.correctBucket_psqt;
         ss << '\n';
     }
 
-    ss << "+------------+------------+------------+------------+\n";
+    ss << "+------------+------------+------------+\n";
 
     return ss.str();
 }

@@ -44,10 +44,8 @@ namespace Stockfish::Eval::NNUE::Layers {
     #define ENABLE_SEQ_OPT
 #endif
 
-// Fallback implementation for older/other architectures.
-// Requires the input to be padded to at least 16 values.
-#ifndef ENABLE_SEQ_OPT
-
+// The fallback implementation is always compiled so it can be used as a structural
+// bypass when the OutputDimensions do not neatly fit the architecture's maximum SIMD width.
 template<IndexType InputDimensions, IndexType PaddedInputDimensions, IndexType OutputDimensions>
 static void affine_transform_non_ssse3(std::int32_t*       output,
                                        const std::int8_t*  weights,
@@ -121,8 +119,6 @@ static void affine_transform_non_ssse3(std::int32_t*       output,
         }
     #endif
 }
-
-#endif  // !ENABLE_SEQ_OPT
 
 template<IndexType InDims, IndexType OutDims>
 class AffineTransform {

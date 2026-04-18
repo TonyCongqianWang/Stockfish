@@ -29,12 +29,16 @@
 
 #include "../position.h"
 #include "../types.h"
+#include "layers/affine_transform_argmax.h"
 #include "nnue_accumulator.h"
 #include "nnue_architecture.h"
 #include "nnue_common.h"
 #include "simd.h"
 
 namespace Stockfish::Eval::NNUE {
+
+// Necessary to control enable or disable router with static parameter
+template<bool B = true> struct UseRouterTag {};
 
 // Returns the inverse of a permutation
 template<std::size_t Len>
@@ -80,10 +84,13 @@ void permute(std::array<T, N>& data, const std::array<std::size_t, OrderSize>& o
 // Input feature converter
 template<IndexType TransformedFeatureDimensions>
 class FeatureTransformer {
-    static constexpr bool UseThreats =
+    static constexpr bool IsBigNet =
       (TransformedFeatureDimensions == TransformedFeatureDimensionsBig);
+    static constexpr bool EnableRouter = IsBigNet;
+    static constexpr bool UseThreats = IsBigNet;
     // Number of output dimensions for one side
     static constexpr IndexType HalfDimensions = TransformedFeatureDimensions;
+    Layers::AffineTransformArgmax<TotalRouterFeatures, PSQTBuckets> routerTransform;
 
    public:
     // Output type
@@ -171,6 +178,14 @@ class FeatureTransformer {
 
         permute_weights();
 
+        if constexpr (EnableRouter)
+        {
+            std::uint32_t routerHash = read_little_endian<std::uint32_t>(stream);
+            if(routerHash != routerTransform.get_hash_value())
+                return false;
+            routerTransform.read_parameters(stream);
+        }
+
         return !stream.fail();
     }
 
@@ -187,6 +202,12 @@ class FeatureTransformer {
             write_little_endian<ThreatWeightType>(stream, copy->threatWeights.data(),
                                                   ThreatInputDimensions * HalfDimensions);
             write_leb_128<PSQTWeightType>(stream, copy->threatPsqtWeights);
+        }
+
+        if constexpr (EnableRouter)
+        {
+            write_little_endian<std::int32_t>(stream, routerTransform.get_hash_value());
+            routerTransform.write_parameters(stream);
         }
 
         write_leb_128<WeightType>(stream, copy->weights);
@@ -210,15 +231,19 @@ class FeatureTransformer {
 
         hash_combine(h, get_hash_value());
 
+        if constexpr (EnableRouter)
+            hash_combine(h, routerTransform.get_content_hash());
         return h;
     }
 
     // Convert input features
+    template<bool UseRouter>
     std::int32_t transform(const Position&                           pos,
                            AccumulatorStack&                         accumulatorStack,
                            AccumulatorCaches::Cache<HalfDimensions>& cache,
                            OutputType*                               output,
-                           int                                       bucket) const {
+                           int&                                      bucket,
+                           UseRouterTag<UseRouter>) const {
 
         using namespace SIMD;
         accumulatorStack.evaluate(pos, *this, cache);
@@ -226,20 +251,6 @@ class FeatureTransformer {
         const auto& threatAccumulatorState = accumulatorStack.latest<ThreatFeatureSet>();
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
-        const auto& psqtAccumulation = (accumulatorState.acc<HalfDimensions>()).psqtAccumulation;
-        auto        psqt =
-          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket]);
-
-        if constexpr (UseThreats)
-        {
-            const auto& threatPsqtAccumulation =
-              (threatAccumulatorState.acc<HalfDimensions>()).psqtAccumulation;
-            psqt = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
-                    - threatPsqtAccumulation[perspectives[1]][bucket])
-                 / 2;
-        }
-        else
-            psqt /= 2;
 
         const auto& accumulation = (accumulatorState.acc<HalfDimensions>()).accumulation;
         const auto& threatAccumulation =
@@ -390,8 +401,58 @@ class FeatureTransformer {
 #endif
         }
 
+        // ==========================================
+        // Dynamic Bucket Routing
+        // ==========================================
+        if constexpr (EnableRouter && UseRouter)
+        {
+            static_assert(HalfDimensions / 2 >= RouterFeaturesPerPerspective,
+                        "HalfDimensions is too small to extract the requested routing features.");
+
+            alignas(CacheLineSize) std::uint8_t bucket_input[TotalRouterFeatures];
+
+            std::memcpy(&bucket_input[0],
+                        &output[(HalfDimensions / 2) - RouterFeaturesPerPerspective],
+                        RouterFeaturesPerPerspective * sizeof(OutputType));
+
+            std::memcpy(&bucket_input[RouterFeaturesPerPerspective],
+                        &output[HalfDimensions - RouterFeaturesPerPerspective],
+                        RouterFeaturesPerPerspective * sizeof(OutputType));
+
+            bucket = routerTransform.propagate(bucket_input);
+        }
+        // ==========================================
+        // PSQT Evaluation
+        // ==========================================
+
+        const auto& psqtAccumulation = (accumulatorState.acc<HalfDimensions>()).psqtAccumulation;
+        auto psqt =
+          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket]);
+
+        if constexpr (UseThreats)
+        {
+            const auto& threatPsqtAccumulation =
+              (threatAccumulatorState.acc<HalfDimensions>()).psqtAccumulation;
+            psqt = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
+                    - threatPsqtAccumulation[perspectives[1]][bucket])
+                 / 2;
+        }
+        else
+            psqt /= 2;
+
         return psqt;
     }  // end of function transform()
+
+    template<bool UseRouter>
+    std::int32_t transform(const Position&                           pos,
+                           AccumulatorStack&                         accumulatorStack,
+                           AccumulatorCaches::Cache<HalfDimensions>& cache,
+                           OutputType*                               output,
+                           const int&                                bucket,
+                           UseRouterTag<UseRouter>) const {
+        int tmp_bucket = bucket;
+        return transform(pos, accumulatorStack, cache, output, tmp_bucket, UseRouterTag<UseRouter>{});
+    }
 
     alignas(CacheLineSize) std::array<BiasType, HalfDimensions> biases;
     alignas(CacheLineSize) std::array<WeightType, HalfDimensions * InputDimensions> weights;
@@ -405,7 +466,6 @@ class FeatureTransformer {
 };
 
 }  // namespace Stockfish::Eval::NNUE
-
 
 template<Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensions>
 struct std::hash<Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions>> {
