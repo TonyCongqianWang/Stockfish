@@ -78,7 +78,7 @@ class ClippedReLU {
             const __m256i       Offsets   = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
             const auto          in        = reinterpret_cast<const __m256i*>(input);
             const auto          out       = reinterpret_cast<__m256i*>(output);
-            if (NumChunks > 0)
+            if constexpr (NumChunks > 0)
             {
               for (IndexType i = 0; i < NumChunks; ++i)
               {
@@ -100,7 +100,7 @@ class ClippedReLU {
             constexpr IndexType NumChunks = InputDimensions / (SimdWidth / 2);
             const auto          in        = reinterpret_cast<const __m128i*>(input);
             const auto          out       = reinterpret_cast<__m128i*>(output);
-            if (NumChunks > 0)
+            if constexpr (NumChunks > 0)
             {
               for (IndexType i = 0; i < NumChunks; ++i)
               {
@@ -127,7 +127,7 @@ class ClippedReLU {
 
         const auto in  = reinterpret_cast<const __m128i*>(input);
         const auto out = reinterpret_cast<__m128i*>(output);
-        if (NumChunks > 0)
+        if constexpr (NumChunks > 0)
         {
           for (IndexType i = 0; i < NumChunks; ++i)
           {
@@ -158,7 +158,7 @@ class ClippedReLU {
         const SIMD::vec_i8x8_t Zero      = {0};
         const auto             in        = reinterpret_cast<const SIMD::vec_i32x4_t*>(input);
         const auto             out       = reinterpret_cast<SIMD::vec_i8x8_t*>(output);
-        if (NumChunks > 0)
+        if constexpr (NumChunks > 0)
         {
           for (IndexType i = 0; i < NumChunks; ++i)
           {
@@ -174,7 +174,7 @@ class ClippedReLU {
         constexpr IndexType Start = 0;
 #endif
 
-        if (InputDimensions > Start)
+        if constexpr (InputDimensions > Start)
         {
           for (IndexType i = Start; i < InputDimensions; ++i)
           {
