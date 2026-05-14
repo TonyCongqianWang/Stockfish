@@ -87,7 +87,7 @@ class FeatureTransformer {
     using OutputType = TransformedFeatureType;
 
     // Number of input/output dimensions
-    static constexpr IndexType ThreatInputDimensions = PSQFeatureSet::Dimensions;
+    static constexpr IndexType ThreatInputDimensions = ThreatFeatureSet::Dimensions;
     static constexpr IndexType InputDimensions =
       PSQFeatureSet::Dimensions + ThreatInputDimensions;
     static constexpr IndexType OutputDimensions = HalfDimensions;
