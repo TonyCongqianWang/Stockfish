@@ -87,8 +87,9 @@ class FeatureTransformer {
     using OutputType = TransformedFeatureType;
 
     // Number of input/output dimensions
+    static constexpr IndexType ThreatInputDimensions = PSQFeatureSet::Dimensions;
     static constexpr IndexType InputDimensions =
-      PSQFeatureSet::Dimensions + ThreatFeatureSet::Dimensions;
+      PSQFeatureSet::Dimensions + ThreatInputDimensions;
     static constexpr IndexType OutputDimensions = HalfDimensions;
 
     // Size of forward propagation buffer
