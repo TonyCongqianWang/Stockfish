@@ -71,7 +71,7 @@ class SqrClippedReLU {
         static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
                       "SqrClippedReLU SIMD paths only supports WeightScaleBitsLocal 6 or 7");
 
-#elif defined(USE_SSE2)
+#if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
 
         const auto in  = reinterpret_cast<const __m128i*>(input);
@@ -102,7 +102,7 @@ class SqrClippedReLU {
         }
         constexpr IndexType Start = NumChunks * 16;
 
-#elif defined(USE_NEON)
+#elif 0 //defined(USE_NEON)
         constexpr IndexType NumChunks = InputDimensions / 16;
         const auto in  = reinterpret_cast<const int32x4_t*>(input);
         const auto out = reinterpret_cast<int8x16_t*>(output);
