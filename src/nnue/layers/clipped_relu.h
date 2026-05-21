@@ -71,55 +71,9 @@ class ClippedReLU {
     static_assert(WeightScaleBitsLocal <= 9,
         "The AVX2/SSE2 fast paths require WeightScaleBitsLocal <= 9 to prevent premature upper-bound saturation during the initial pack instruction.");
 
-#if defined(USE_AVX2)
-        if constexpr (InputDimensions % SimdWidth == 0)
-        {
-            constexpr IndexType NumChunks = InputDimensions / SimdWidth;
-            const __m256i       Offsets   = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
-            const auto          in        = reinterpret_cast<const __m256i*>(input);
-            const auto          out       = reinterpret_cast<__m256i*>(output);
-            if (NumChunks > 0)
-            {
-              for (IndexType i = 0; i < NumChunks; ++i)
-              {
-                  const __m256i words0 =
-                    _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 0]),
-                                                          _mm256_load_si256(&in[i * 4 + 1])),
-                                      WeightScaleBitsLocal);
-                  const __m256i words1 =
-                    _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 2]),
-                                                          _mm256_load_si256(&in[i * 4 + 3])),
-                                      WeightScaleBitsLocal);
-                  _mm256_store_si256(&out[i], _mm256_permutevar8x32_epi32(
-                                                _mm256_packs_epi16(words0, words1), Offsets));
-              }
-            }
-        }
-        else
-        {
-            constexpr IndexType NumChunks = InputDimensions / (SimdWidth / 2);
-            const auto          in        = reinterpret_cast<const __m128i*>(input);
-            const auto          out       = reinterpret_cast<__m128i*>(output);
-            if (NumChunks > 0)
-            {
-              for (IndexType i = 0; i < NumChunks; ++i)
-              {
-                  const __m128i words0 = _mm_srli_epi16(
-                    _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
-                    WeightScaleBitsLocal);
-                  const __m128i words1 = _mm_srli_epi16(
-                    _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3])),
-                    WeightScaleBitsLocal);
-                  _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
-              }
-            }
-        }
-        constexpr IndexType Start = InputDimensions % SimdWidth == 0
-                                    ? InputDimensions / SimdWidth * SimdWidth
-                                    : InputDimensions / (SimdWidth / 2) * (SimdWidth / 2);
 
-#elif defined(USE_SSE2)
-        constexpr IndexType NumChunks = InputDimensions / SimdWidth;
+#if defined(USE_SSE2)
+        constexpr IndexType NumChunks = InputDimensions / 16;
 
     #ifndef USE_SSE41
         const __m128i k0x80s = _mm_set1_epi8(-128);
@@ -151,7 +105,7 @@ class ClippedReLU {
 #endif
           }
         }
-        constexpr IndexType Start = NumChunks * SimdWidth;
+        constexpr IndexType Start = NumChunks * 16;
 
 #elif defined(USE_NEON)
         constexpr IndexType    NumChunks = InputDimensions / (SimdWidth / 2);
@@ -170,6 +124,37 @@ class ClippedReLU {
           }
         }
         constexpr IndexType Start = NumChunks * (SimdWidth / 2);
+
+#elif defined(USE_LASX)
+        constexpr IndexType NumChunks = InputDimensions / 32;
+        const auto          in        = reinterpret_cast<const __m256i*>(input);
+        const auto          out       = reinterpret_cast<__m256i*>(output);
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            const __m256i packed0 = SIMD::lasx_packus_32(in[i * 4 + 0], in[i * 4 + 1]);
+            const __m256i packed1 = SIMD::lasx_packus_32(in[i * 4 + 2], in[i * 4 + 3]);
+            const __m256i words0  = __lasx_xvsrli_h(packed0, WeightScaleBits);
+            const __m256i words1  = __lasx_xvsrli_h(packed1, WeightScaleBits);
+            const __m256i packed  = __lasx_xvssrani_b_h(words1, words0, 0);
+            const __m256i swaped  = __lasx_xvpermi_d(packed, 0xD8);
+            __lasx_xvst(__lasx_xvshuf4i_w(swaped, 0xD8), out + i, 0);
+        }
+        constexpr IndexType Start = NumChunks * 32;
+
+#elif defined(USE_LSX)
+        constexpr IndexType NumChunks = InputDimensions / 16;
+        const auto          in        = reinterpret_cast<const __m128i*>(input);
+        const auto          out       = reinterpret_cast<__m128i*>(output);
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            const __m128i packed0 = SIMD::lsx_packus_32(in[i * 4 + 0], in[i * 4 + 1]);
+            const __m128i packed1 = SIMD::lsx_packus_32(in[i * 4 + 2], in[i * 4 + 3]);
+            const __m128i words0  = __lsx_vsrli_h(packed0, WeightScaleBits);
+            const __m128i words1  = __lsx_vsrli_h(packed1, WeightScaleBits);
+            out[i]                = __lsx_vssrani_b_h(words1, words0, 0);
+        }
+        constexpr IndexType Start = NumChunks * 16;
+
 #else
         constexpr IndexType Start = 0;
 #endif
