@@ -81,7 +81,7 @@ class ClippedReLU {
         {
             for (IndexType i = 0; i < NumChunks; ++i)
             {
-        #if defined(USE_SSE41)
+    #if defined(USE_SSE41)
                 const __m128i words0 = _mm_srli_epi16(
                   _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
                   WeightScaleBitsLocal);
@@ -89,7 +89,7 @@ class ClippedReLU {
                   _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3])),
                   WeightScaleBitsLocal);
                 _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
-        #else
+    #else
                 const __m128i words0 = _mm_srai_epi16(
                   _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
                   WeightScaleBitsLocal);
@@ -98,7 +98,7 @@ class ClippedReLU {
                   WeightScaleBitsLocal);
                 const __m128i packedbytes = _mm_packs_epi16(words0, words1);
                 _mm_store_si128(&out[i], _mm_subs_epi8(_mm_adds_epi8(packedbytes, k0x80s), k0x80s));
-        #endif
+    #endif
             }
         }
         constexpr IndexType Start = NumChunks * 16;
@@ -165,7 +165,8 @@ class ClippedReLU {
         {
             for (IndexType i = Start; i < InputDimensions; ++i)
             {
-                output[i] = static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, 127));
+                output[i] =
+                  static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, 127));
             }
         }
     }

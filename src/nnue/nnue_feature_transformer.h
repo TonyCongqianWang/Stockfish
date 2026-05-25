@@ -88,8 +88,7 @@ class FeatureTransformer {
 
     // Number of input/output dimensions
     static constexpr IndexType ThreatInputDimensions = ThreatFeatureSet::Dimensions;
-    static constexpr IndexType InputDimensions =
-      PSQFeatureSet::Dimensions + ThreatInputDimensions;
+    static constexpr IndexType InputDimensions  = PSQFeatureSet::Dimensions + ThreatInputDimensions;
     static constexpr IndexType OutputDimensions = HalfDimensions;
 
     // Size of forward propagation buffer
@@ -152,7 +151,7 @@ class FeatureTransformer {
         read_leb_128(stream, biases);
 
         read_little_endian<ThreatWeightType>(stream, threatWeights.data(),
-                                                 ThreatInputDimensions * HalfDimensions);
+                                             ThreatInputDimensions * HalfDimensions);
         read_leb_128(stream, threatPsqtWeights);
 
         read_leb_128(stream, weights);

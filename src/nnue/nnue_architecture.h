@@ -60,10 +60,10 @@ struct NetworkArchitecture {
     static constexpr int       FC_1_OUTPUTS                 = L3;
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS + 1> fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS + 1, WeightScaleBits + 1>                                           ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS + 1, WeightScaleBits + 1>                                              ac_0;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS + 1, WeightScaleBits + 1>                      ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS + 1, WeightScaleBits + 1>                         ac_0;
     Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS>                            fc_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                                                  ac_1;
+    Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                                 ac_1;
     Layers::AffineTransform<FC_1_OUTPUTS, 1>                                           fc_2;
 
     // Hash value embedded in the evaluation file
@@ -130,13 +130,12 @@ struct NetworkArchitecture {
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale
         // to make overflow impossible we cast to int64_t
-        constexpr std::int64_t multiplier = 600 * OutputScale;
-        constexpr std::int64_t denominator =
-            static_cast<std::int64_t>(HiddenOneVal) * static_cast<std::int64_t>(1U << WeightScaleBits) * 2;
+        constexpr std::int64_t multiplier  = 600 * OutputScale;
+        constexpr std::int64_t denominator = static_cast<std::int64_t>(HiddenOneVal)
+                                           * static_cast<std::int64_t>(1U << WeightScaleBits) * 2;
 
-        std::int32_t outputValue = static_cast<std::int32_t>(
-            (static_cast<std::int64_t>(fwdOut) * multiplier) / denominator
-        );
+        std::int32_t outputValue =
+          static_cast<std::int32_t>((static_cast<std::int64_t>(fwdOut) * multiplier) / denominator);
         return outputValue;
     }
 
