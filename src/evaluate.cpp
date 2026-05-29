@@ -34,7 +34,14 @@
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
 
+#include "tune.h"
+
 namespace Stockfish {
+
+int PSQT_W=278648, OPTIMISM_W=39852;
+int NNUE_MAX=3*QueenValue, NNUE_COMPLEXITY_MAX=QueenValue, OPTIMISM_MAX=272;
+int NNUE_LEAKY=256, NNUE_COMPLEXITY_LEAKY=256, OPTIMISM_LEAKY=1024;
+int OPTIMISM_0=54, OPTIMISM_1=463, OPTIMISM_2=7418;
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
@@ -45,18 +52,22 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
                      int                            optimism) {
 
     assert(!pos.checkers());
+    const int material = PawnValue * pos.count<PAWN>() + pos.non_pawn_material();
 
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
+    Value nnue = psqt + positional;
 
-    // Blend optimism and eval with nnue complexity
-    int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 476;
-    nnue -= nnue * nnueComplexity / 18236;
-
-    int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
+    // Blend optimism with nnue, nnueComplexity, and material.
+    int nnueComplexity = std::abs(positional);
+    nnueComplexity = std::clamp(nnueComplexity, -NNUE_COMPLEXITY_MAX, NNUE_COMPLEXITY_MAX) + nnueComplexity / NNUE_COMPLEXITY_LEAKY;
+    nnue                     = std::clamp(nnue, -NNUE_MAX, NNUE_MAX) + nnue / NNUE_LEAKY;
+    optimism = (static_cast<std::int64_t>(optimism) * (OPTIMISM_0 + std::abs(nnue)) * (OPTIMISM_1 + nnueComplexity)
+                * (OPTIMISM_2 + material))
+             / 536870912ll;
+    optimism = std::clamp(optimism, -OPTIMISM_MAX, OPTIMISM_MAX) + optimism / OPTIMISM_LEAKY;
+    int v = (PSQT_W * static_cast<std::int64_t>(nnue) + OPTIMISM_W * static_cast<std::int64_t>(optimism))
+          / 262144;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
