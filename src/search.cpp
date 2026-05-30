@@ -192,8 +192,6 @@ Value shuffle_dampening(Position& pos, Value v) {
     // More aggressive dampening in endgames
     if (pos.pieces() <= 6)
         r = r * SD_F0 / 128;
-    else if (pos.pieces() <= 4)
-        r = r * SD_F1 / 128;
     v -= v * r / 16384;
     return v;
 }
