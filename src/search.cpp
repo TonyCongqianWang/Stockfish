@@ -54,11 +54,10 @@
 
 namespace Stockfish {
 
-int SD_P1 = 10, SD_P2 = 20, SD_P3 = 82, SD_P4 = 158;
-int SD_R1 = 309, SD_R2 = 960, SD_R3 = 5755, SD_R4 = 9215;
-int SD_F0 = 160, SD_F1 = 152;
+int SD_P1 = 10, SD_P2 = 30, SD_P3 = 70, SD_P4 = 120;
+int SD_R1 = 825, SD_R2 = 1650, SD_R3 = 2500, SD_R4 = 10000;
 
-TUNE(SD_P1, SD_P2, SD_P3, SD_P4, SD_R1, SD_R2, SD_R3, SD_R4, SD_F0, SD_F1)
+TUNE(SD_P1, SD_P2, SD_P3, SD_P4, SD_R1, SD_R2, SD_R3, SD_R4)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
@@ -189,10 +188,7 @@ Value shuffle_dampening(Position& pos, Value v) {
     else {
         r = r3 + ((rule_50_count - p3) * (r4 - r3)) / (p4 - p3);
     }
-    // More aggressive dampening in endgames
-    if (pos.pieces() <= 6)
-        r = r * SD_F0 / 128;
-    v -= v * r / 16384;
+    v -= static_cast<int64_t>(v) * r / 16384;
     return v;
 }
 
