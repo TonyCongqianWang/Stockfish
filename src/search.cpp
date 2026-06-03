@@ -54,10 +54,13 @@
 
 namespace Stockfish {
 
-int SD_P1 = 10, SD_P2 = 30, SD_P3 = 70, SD_P4 = 120;
-int SD_R1 = 825, SD_R2 = 1650, SD_R3 = 2500, SD_R4 = 10000;
+// F(Y) = 16384 - Y follows exponential decay
+// Configured for an exact 8% decay in F(Y) at X=16 relative to X=0
+int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 64,   SD_P5 = 120;
+int SD_R1 = 300, SD_R2 = 1311, SD_R3 = 3626, SD_R4 = 4647, SD_R5 = 8000;
+int SD_6M_FACTOR = 150;
 
-TUNE(SD_P1, SD_P2, SD_P3, SD_P4, SD_R1, SD_R2, SD_R3, SD_R4)
+TUNE(SD_R1, SD_R2, SD_R3, SD_R4, SD_R5, SD_6M_FACTOR)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
@@ -171,6 +174,8 @@ Value shuffle_dampening(Position& pos, Value v) {
     int r3 = SD_R3;
     int p4 = SD_P4;
     int r4 = SD_R4;
+    int p5 = SD_P5;
+    int r5 = SD_R5;
 
     int rule_50_count = pos.rule50_count();
     rule_50_count = std::min(rule_50_count, p4);
@@ -185,9 +190,14 @@ Value shuffle_dampening(Position& pos, Value v) {
     else if (rule_50_count <= p3) {
         r = r2 + ((rule_50_count - p2) * (r3 - r2)) / (p3 - p2);
     }
-    else {
+    else if (rule_50_count <= p4) {
         r = r3 + ((rule_50_count - p3) * (r4 - r3)) / (p4 - p3);
     }
+    else {
+        r = r4 + ((rule_50_count - p4) * (r5 - r4)) / (p5 - p4);
+    }
+    if (pos.pieces() <= 6)
+        r = r * SD_6M_FACTOR / 128;
     v -= static_cast<int64_t>(v) * r / 16384;
     return v;
 }
