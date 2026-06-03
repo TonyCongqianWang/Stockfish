@@ -56,8 +56,8 @@ namespace Stockfish {
 
 // F(Y) = 16384 - Y follows exponential decay
 // Configured for an exact 8% decay in F(Y) at X=16 relative to X=0
-int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 64,   SD_P5 = 120;
-int SD_R1 = 300, SD_R2 = 1311, SD_R3 = 3626, SD_R4 = 4647, SD_R5 = 8000;
+int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 88,   SD_P5 = 128;
+int SD_R1 = 300, SD_R2 = 1311, SD_R3 = 3626, SD_R4 = 6027, SD_R5 = 12000;
 int SD_6M_FACTOR = 150;
 
 TUNE(SD_R1, SD_R2, SD_R3, SD_R4, SD_R5, SD_6M_FACTOR)
