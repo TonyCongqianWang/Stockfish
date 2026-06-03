@@ -51,9 +51,6 @@ class AffineTransformSparseInput {
     static constexpr IndexType InputDimensions  = InDims;
     static constexpr IndexType OutputDimensions = OutDims;
 
-    static_assert(OutputDimensions % 16 == 0,
-                  "Only implemented for OutputDimensions divisible by 16.");
-
     static constexpr IndexType PaddedInputDimensions =
       ceil_to_multiple<IndexType>(InputDimensions, MaxSimdWidth);
     static constexpr IndexType PaddedOutputDimensions =
