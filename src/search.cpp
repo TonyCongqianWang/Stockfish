@@ -56,11 +56,9 @@ namespace Stockfish {
 
 // F(Y) = 16384 - Y follows exponential decay
 // Configured for an exact 8% decay in F(Y) at X=16 relative to X=0
-int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 88,   SD_P5 = 128;
-int SD_R1 = 294, SD_R2 = 1241, SD_R3 = 3813, SD_R4 = 6228, SD_R5 = 12523;
-int SD_6M_FACTOR = 153;
-
-TUNE(SD_R1, SD_R2, SD_R3, SD_R4, SD_R5, SD_6M_FACTOR)
+constexpr int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 88,   SD_P5 = 128;
+constexpr int SD_R1 = 294, SD_R2 = 1241, SD_R3 = 3813, SD_R4 = 6228, SD_R5 = 12523;
+constexpr int SD_6M_FACTOR = 153;
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
