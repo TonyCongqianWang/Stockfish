@@ -50,7 +50,17 @@
 #include "uci.h"
 #include "ucioption.h"
 
+#include "tune.h"
+
 namespace Stockfish {
+
+// F(Y) = 16384 - Y follows exponential decay
+// Configured for an exact 8% decay in F(Y) at X=16 relative to X=0
+int SD_P1 = 4,   SD_P2 = 16,   SD_P3 = 48,   SD_P4 = 88,   SD_P5 = 128;
+int SD_R1 = 294, SD_R2 = 1241, SD_R3 = 3813, SD_R4 = 6228, SD_R5 = 12523;
+int SD_6M_FACTOR = 153;
+
+TUNE(SD_R1, SD_R2, SD_R3, SD_R4, SD_R5, SD_6M_FACTOR)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
@@ -153,6 +163,43 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
         return false;
     return move.from_sq() == (ss - 2)->currentMove.to_sq()
         && (ss - 2)->currentMove.from_sq() == (ss - 4)->currentMove.to_sq();
+}
+
+Value shuffle_dampening(Position& pos, Value v) {
+    int p1 = SD_P1;
+    int r1 = SD_R1;
+    int p2 = SD_P2;
+    int r2 = SD_R2;
+    int p3 = SD_P3;
+    int r3 = SD_R3;
+    int p4 = SD_P4;
+    int r4 = SD_R4;
+    int p5 = SD_P5;
+    int r5 = SD_R5;
+
+    int rule_50_count = pos.rule50_count();
+    rule_50_count = std::min(rule_50_count, p4);
+    int r = 0;
+
+    if (rule_50_count <= p1) {
+        r = (rule_50_count * r1) / p1;
+    }
+    else if (rule_50_count <= p2) {
+        r = r1 + ((rule_50_count - p1) * (r2 - r1)) / (p2 - p1);
+    }
+    else if (rule_50_count <= p3) {
+        r = r2 + ((rule_50_count - p2) * (r3 - r2)) / (p3 - p2);
+    }
+    else if (rule_50_count <= p4) {
+        r = r3 + ((rule_50_count - p3) * (r4 - r3)) / (p4 - p3);
+    }
+    else {
+        r = r4 + ((rule_50_count - p4) * (r5 - r4)) / (p5 - p4);
+    }
+    if (pos.pieces() <= 6)
+        r = r * SD_6M_FACTOR / 128;
+    v -= static_cast<int64_t>(v) * r / 16384;
+    return v;
 }
 
 }  // namespace
@@ -778,7 +825,8 @@ Value Search::Worker::search(
         if (!is_valid(unadjustedStaticEval))
             unadjustedStaticEval = evaluate(pos);
 
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+        Value dampened_eval = shuffle_dampening(pos, unadjustedStaticEval);
+        ss->staticEval = eval = to_corrected_static_eval(dampened_eval, correctionValue);
 
         // ttValue can be used as a better position evaluation
         if (is_valid(ttData.value)
@@ -788,7 +836,8 @@ Value Search::Worker::search(
     else
     {
         unadjustedStaticEval = evaluate(pos);
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+        Value dampened_eval = shuffle_dampening(pos, unadjustedStaticEval);
+        ss->staticEval = eval = to_corrected_static_eval(dampened_eval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
@@ -1633,8 +1682,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!is_valid(unadjustedStaticEval))
                 unadjustedStaticEval = evaluate(pos);
 
+            Value dampened_eval = shuffle_dampening(pos, unadjustedStaticEval);
+
             ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(dampened_eval, correctionValue);
 
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
@@ -1644,8 +1695,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         else
         {
             unadjustedStaticEval = evaluate(pos);
+            Value dampened_eval = shuffle_dampening(pos, unadjustedStaticEval);
             ss->staticEval       = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(dampened_eval, correctionValue);
         }
 
         // Stand pat. Return immediately if static value is at least beta
