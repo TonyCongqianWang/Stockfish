@@ -56,7 +56,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     // Blend optimism and eval with nnue complexity
     int nnueMagnitude = std::abs(nnue);
     int material = VAL0 * pos.count<PAWN>() + pos.non_pawn_material();
-    optimism = optimism * (VAL1 + nnueMagnitude) / VAL1 * (VAL3 + material);
+    optimism = optimism * (VAL1 + nnueMagnitude) / VAL2 * (VAL3 + material);
     nnue = nnue * (VAL4 - nnueMagnitude) / VAL5 * (VAL6 + material);
     int v        = (nnue + optimism) / VAL7;
 
