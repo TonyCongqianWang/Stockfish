@@ -50,8 +50,6 @@
 #include "uci.h"
 #include "ucioption.h"
 
-#include "tune.h"
-
 namespace Stockfish {
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
