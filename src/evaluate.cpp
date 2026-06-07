@@ -48,7 +48,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
+    Value nnue = psqt + positional;
 
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
@@ -56,7 +56,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     nnue -= nnue * nnueComplexity / 18236;
 
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
+    int v        = (nnue * (79696 + material) + optimism * (7191 + material)) / 77871;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
