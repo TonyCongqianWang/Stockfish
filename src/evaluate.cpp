@@ -34,7 +34,11 @@
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
 
+#include "tune.h"
+
 namespace Stockfish {
+int VAL0 = 534, VAL1 = 512, VAL2 = 512, VAL3 = 7191, VAL4 = 27354, VAL5 = 27354, VAL6 = 79696, VAL7 = 77871;
+TUNE(VAL0, VAL1, VAL2, VAL3, VAL4, VAL5, VAL6, VAL7)
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
@@ -49,16 +53,12 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
     Value nnue = psqt + positional;
-
     // Blend optimism and eval with nnue complexity
     int nnueMagnitude = std::abs(nnue);
-    int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    optimism += optimism * nnueMagnitude / 512;
-    nnue -= nnue * nnueMagnitude / 27354;
-    optimism *= 7191 + material;
-    nnue *= 79696 + material;
-
-    int v        = (nnue + optimism) / 77871;
+    int material = VAL0 * pos.count<PAWN>() + pos.non_pawn_material();
+    optimism = optimism * (VAL1 + nnueMagnitude) / VAL1 * (VAL3 + material);
+    nnue = nnue * (VAL4 - nnueMagnitude) / VAL5 * (VAL6 + material);
+    int v        = (nnue + optimism) / VAL7;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
