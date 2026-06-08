@@ -37,7 +37,7 @@
 #include "tune.h"
 
 namespace Stockfish {
-int VAL0 = 534, VAL1 = 512, VAL2 = 512, VAL3 = 7191, VAL4 = 27354, VAL5 = 27354, VAL6 = 79696, VAL7 = 77871;
+int VAL0 = 550, VAL1 = 492, VAL2 = 521, VAL3 = 7313, VAL4 = 27181, VAL5 = 26759, VAL6 = 76029, VAL7 = 84215;
 TUNE(VAL0, VAL1, VAL2, VAL3, VAL4, VAL5, VAL6, VAL7)
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
