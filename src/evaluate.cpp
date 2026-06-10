@@ -34,11 +34,9 @@
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
 
-#include "tune.h"
 
 namespace Stockfish {
-int VAL0 = 550, VAL1 = 492, VAL2 = 521, VAL3 = 7313, VAL4 = 27181, VAL5 = 26759, VAL6 = 76029, VAL7 = 84215;
-TUNE(VAL0, VAL1, VAL2, VAL3, VAL4, VAL5, VAL6, VAL7)
+constexpr int VAL0 = 556, VAL1 = 470, VAL2 = 518, VAL3 = 7366, VAL4 = 24885, VAL5 = 25307, VAL6 = 76563, VAL7 = 83849;
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
