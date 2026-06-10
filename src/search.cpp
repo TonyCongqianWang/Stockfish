@@ -1662,7 +1662,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 scaledStaticEval = Eval::scale_nnue_eval(unadjustedStaticEval, pos, optimism[pos.side_to_move()]);
 
             ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(scaledStaticEval, correctionValue);
 
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
@@ -1673,7 +1673,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         {
             std::tie(unadjustedStaticEval, scaledStaticEval) = evaluate(pos);
             ss->staticEval       = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(scaledStaticEval, correctionValue);
         }
 
         // Stand pat. Return immediately if static value is at least beta
