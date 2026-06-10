@@ -31,6 +31,7 @@
 #include <vector>
 #include <cstring>
 
+#include "evaluate.h"
 #include "history.h"
 #include "misc.h"
 #include "nnue/network.h"
@@ -371,7 +372,7 @@ class Worker {
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
-    Value evaluate(const Position&);
+    Eval::EvaluateOutput evaluate(const Position&);
 
     LimitsType limits;
 

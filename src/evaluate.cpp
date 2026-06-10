@@ -36,35 +36,40 @@
 
 
 namespace Stockfish {
-constexpr int VAL0 = 556, VAL1 = 470, VAL2 = 518, VAL3 = 7366, VAL4 = 24885, VAL5 = 25307, VAL6 = 76563, VAL7 = 83849;
+constexpr int VAL0 = 556, VAL1 = 470, VAL2 = 518, VAL3 = 7366, VAL4 = 24885, VAL5 = 25307,
+              VAL6 = 76563, VAL7 = 83849;
 
-// Evaluate is the evaluator for the outer world. It returns a static evaluation
-// of the position from the point of view of the side to move.
-Value Eval::evaluate(const Eval::NNUE::Network&     network,
-                     const Position&                pos,
-                     Eval::NNUE::AccumulatorStack&  accumulators,
-                     Eval::NNUE::AccumulatorCaches& caches,
-                     int                            optimism) {
-
-    assert(!pos.checkers());
-
-    auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
-
-    Value nnue = psqt + positional;
+Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
     // Blend optimism and eval with nnue complexity
     int nnueMagnitude = std::abs(nnue);
-    int material = VAL0 * pos.count<PAWN>() + pos.non_pawn_material();
-    optimism = optimism * (VAL1 + nnueMagnitude) / VAL2 * (VAL3 + material);
-    nnue = nnue * (VAL4 - nnueMagnitude) / VAL5 * (VAL6 + material);
-    int v        = (nnue + optimism) / VAL7;
+    int material      = VAL0 * pos.count<PAWN>() + pos.non_pawn_material();
+    optimism          = optimism * (VAL1 + nnueMagnitude) / VAL2 * (VAL3 + material);
+    nnue              = nnue * (VAL4 - nnueMagnitude) / VAL5 * (VAL6 + material);
+    int v             = (nnue + optimism) / VAL7;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
 
     // Guarantee evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-
     return v;
+}
+
+// Evaluate is the evaluator for the outer world. It returns a static evaluation
+// of the position from the point of view of the side to move.
+Eval::EvaluateOutput Eval::evaluate(const Eval::NNUE::Network&     network,
+                              const Position&                pos,
+                              Eval::NNUE::AccumulatorStack&  accumulators,
+                              Eval::NNUE::AccumulatorCaches& caches,
+                              int                            optimism) {
+
+    assert(!pos.checkers());
+
+    auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
+
+    Value nnue = psqt + positional;
+
+    return std::make_tuple(nnue, scale_nnue_eval(nnue, pos, optimism));
 }
 
 // Like evaluate(), but instead of returning a value, it returns
@@ -91,8 +96,8 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     v = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
 
-    v = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
-    v = pos.side_to_move() == WHITE ? v : -v;
+    auto [nnue, scaled] = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
+    v = pos.side_to_move() == WHITE ? scaled : -scaled;
 
     ss << "Final evaluation      ";
     ss << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
