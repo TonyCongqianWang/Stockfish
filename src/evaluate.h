@@ -41,13 +41,18 @@ struct AccumulatorCaches;
 class AccumulatorStack;
 }
 
+using EvaluateOutput = std::tuple<Value, Value>;
+
 std::string trace(Position& pos, const Eval::NNUE::Network& network);
 
-Value evaluate(const NNUE::Network&           network,
-               const Position&                pos,
+EvaluateOutput evaluate(const NNUE::Network&           network,
+                        const Position&                pos,
                Eval::NNUE::AccumulatorStack&  accumulators,
                Eval::NNUE::AccumulatorCaches& caches,
                int                            optimism);
+
+Value scale_nnue_eval(Value nnue, const Position& pos, int optimism);
+
 }  // namespace Eval
 
 }  // namespace Stockfish

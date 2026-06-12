@@ -34,37 +34,55 @@
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
 
+#include "tune.h"
+
 namespace Stockfish {
+
+constexpr int SCALE_SHIFT = 14;
+constexpr int QUAD_SHIFT  = 24; // Deeper virtual bit-depth for the quadratic precision
+
+// All values are now beautifully aligned in the thousands for SPSA
+int VAL_NNUE_LINEAR = 16094, VAL_OPT_LINEAR = 2582, VAL_OPT_QUAD = 5120;
+TUNE(VAL_NNUE_LINEAR, VAL_OPT_LINEAR, VAL_OPT_QUAD)
+
+Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
+
+    int nnueMagnitude = std::abs(nnue);
+    int optSign       = (optimism > 0) - (optimism < 0);
+    int nnueSign      = (nnue > 0) - (nnue < 0);
+
+    // 3 operational arithmetic steps as requested, strictly following your formula:
+    i64 optLinear  = i64(std::abs(optimism)) * VAL_OPT_LINEAR;
+    i64 optScaled  = optLinear + ((i64(std::abs(optimism)) * nnueMagnitude * VAL_OPT_QUAD) >> QUAD_SHIFT);
+    i64 nnueScaled = i64(nnueMagnitude) * VAL_NNUE_LINEAR;
+
+    // Reapply signs symmetrically using power-of-two division
+    int v = (nnueScaled * nnueSign + optScaled * optSign) >> SCALE_SHIFT;
+
+    // linear shuffle dampening.
+    v -= v * pos.rule50_count() / 199;
+
+    // clamping to avoid TB values.
+    v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
+
+    return v;
+}
 
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
-Value Eval::evaluate(const Eval::NNUE::Network&     network,
-                     const Position&                pos,
-                     Eval::NNUE::AccumulatorStack&  accumulators,
-                     Eval::NNUE::AccumulatorCaches& caches,
-                     int                            optimism) {
+Eval::EvaluateOutput Eval::evaluate(const Eval::NNUE::Network&     network,
+                              const Position&                pos,
+                              Eval::NNUE::AccumulatorStack&  accumulators,
+                              Eval::NNUE::AccumulatorCaches& caches,
+                              int                            optimism) {
 
     assert(!pos.checkers());
 
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
+    Value nnue = psqt + positional;
 
-    // Blend optimism and eval with nnue complexity
-    int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 476;
-    nnue -= nnue * nnueComplexity / 18236;
-
-    int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
-
-    // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 199;
-
-    // Guarantee evaluation does not hit the tablebase range
-    v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-
-    return v;
+    return std::make_tuple(nnue, scale_nnue_eval(nnue, pos, optimism));
 }
 
 // Like evaluate(), but instead of returning a value, it returns
@@ -91,8 +109,8 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     v = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
 
-    v = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
-    v = pos.side_to_move() == WHITE ? v : -v;
+    auto [nnue, scaled] = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
+    v = pos.side_to_move() == WHITE ? scaled : -scaled;
 
     ss << "Final evaluation      ";
     ss << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
