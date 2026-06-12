@@ -38,26 +38,25 @@
 
 namespace Stockfish {
 
-constexpr int SCALE_SHIFT = 14;
-constexpr int QUAD_SHIFT  = 24; // Deeper virtual bit-depth for the quadratic precision
-
-// All values are now beautifully aligned in the thousands for SPSA
-int VAL_NNUE_LINEAR = 16094, VAL_OPT_LINEAR = 2582, VAL_OPT_QUAD = 5120;
+// All values are cleanly aligned in the thousands for SPSA
+int VAL_NNUE_LINEAR = 17000, VAL_OPT_LINEAR = 2500, VAL_OPT_QUAD = 5000;
 TUNE(VAL_NNUE_LINEAR, VAL_OPT_LINEAR, VAL_OPT_QUAD)
 
 Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
 
     int nnueMagnitude = std::abs(nnue);
-    int optSign       = (optimism > 0) - (optimism < 0);
-    int nnueSign      = (nnue > 0) - (nnue < 0);
 
-    // 3 operational arithmetic steps as requested, strictly following your formula:
-    i64 optLinear  = i64(std::abs(optimism)) * VAL_OPT_LINEAR;
-    i64 optScaled  = optLinear + ((i64(std::abs(optimism)) * nnueMagnitude * VAL_OPT_QUAD) >> QUAD_SHIFT);
-    i64 nnueScaled = i64(nnueMagnitude) * VAL_NNUE_LINEAR;
+    // 1. Compute both components natively using signed 64-bit integers.
+    // We upscale the linear term by 1024 to match the 5120 scaling of the quad term.
+    i64 optLinearHigh = (i64(optimism) * VAL_OPT_LINEAR) * 1024;
+    i64 optQuadHigh   = i64(optimism) * nnueMagnitude * VAL_OPT_QUAD;
 
-    // Reapply signs symmetrically using power-of-two division
-    int v = (nnueScaled * nnueSign + optScaled * optSign) >> SCALE_SHIFT;
+    // 2. Combine and scale back down. The compiler replaces these divisions
+    // with optimal single-cycle arithmetic shifts + automatic sign-bias corrections.
+    i64 optScaled     = (optLinearHigh + optQuadHigh) / 1024;
+    i64 nnueScaled    = i64(nnue) * VAL_NNUE_LINEAR;
+
+    int v = int(nnueScaled + optScaled) / 16384;
 
     // linear shuffle dampening.
     v -= v * pos.rule50_count() / 199;
