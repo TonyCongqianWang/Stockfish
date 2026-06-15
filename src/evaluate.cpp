@@ -39,7 +39,7 @@
 namespace Stockfish {
 
 // All values are cleanly aligned in the thousands for SPSA
-int VAL_NNUE_LINEAR = 17000, VAL_OPT_LINEAR = 2500, VAL_OPT_QUAD = 5000;
+int VAL_NNUE_LINEAR = 17778, VAL_OPT_LINEAR = 330, VAL_OPT_QUAD = 631;
 TUNE(VAL_NNUE_LINEAR, VAL_OPT_LINEAR, VAL_OPT_QUAD)
 
 Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {

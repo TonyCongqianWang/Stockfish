@@ -49,7 +49,12 @@
 #include "uci.h"
 #include "ucioption.h"
 
+#include "tune.h"
+
 namespace Stockfish {
+
+int VAL_OPT_SHAPE = 82944;
+TUNE(VAL_OPT_SHAPE)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
@@ -376,7 +381,8 @@ bool Search::Worker::iterative_deepening() {
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
-            optimism[us]  = 137 * avg / (std::abs(avg) + 81);
+            int denominator = std::abs(avg) + (VAL_OPT_SHAPE / 1024);
+            optimism[us]  = int(i64(avg) * 1024 / denominator);
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
