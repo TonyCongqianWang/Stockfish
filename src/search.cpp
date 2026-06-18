@@ -49,12 +49,12 @@
 #include "uci.h"
 #include "ucioption.h"
 
-//#include "tune.h"
+#include "tune.h"
 
 namespace Stockfish {
 
-constexpr int VAL_OPT_SHAPE = 98811;
-//TUNE(VAL_OPT_SHAPE)
+int VAL_OPT_SHAPE = 98811;
+TUNE(VAL_OPT_SHAPE)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};

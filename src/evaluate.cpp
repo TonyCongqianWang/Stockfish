@@ -34,13 +34,13 @@
 #include "uci.h"
 #include "nnue/nnue_accumulator.h"
 
-//#include "tune.h"
+#include "tune.h"
 
 namespace Stockfish {
 
 // All values are cleanly aligned in the thousands for SPSA
-constexpr int VAL_NNUE_LINEAR = 20349, VAL_OPT_LINEAR = 656, VAL_OPT_QUAD = 281;
-//TUNE(VAL_NNUE_LINEAR, VAL_OPT_LINEAR, VAL_OPT_QUAD)
+int VAL_NNUE_LINEAR = 20349, VAL_OPT_LINEAR = 656, VAL_OPT_QUAD = 281;
+TUNE(VAL_NNUE_LINEAR, VAL_OPT_LINEAR, VAL_OPT_QUAD)
 
 Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
 
