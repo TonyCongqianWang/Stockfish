@@ -53,10 +53,10 @@ Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
 
     // 2. Combine and scale back down. The compiler replaces these divisions
     // with optimal single-cycle arithmetic shifts + automatic sign-bias corrections.
-    i64 optScaled     = (optLinearHigh + optQuadHigh) / 1024;
-    i64 nnueScaled    = i64(nnue) * VAL_NNUE_LINEAR;
+    i64 optScaled     = (optLinearHigh + optQuadHigh);
+    i64 nnueScaled    = i64(nnue) * 1024 * VAL_NNUE_LINEAR;
 
-    int v = int(nnueScaled + optScaled) / 16384;
+    int v = int((nnueScaled + optScaled) / 1024 / 16384);
 
     // linear shuffle dampening.
     v -= v * pos.rule50_count() / 199;
