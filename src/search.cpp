@@ -1404,10 +1404,10 @@ moves_loop:  // When in check, search starts here
             rm.effort += nodes - nodeCount;
 
             rm.averageScore =
-              rm.averageScore != -VALUE_INFINITE ? (value + rm.averageScore) / 2 : value;
+              rm.averageScore != -VALUE_INFINITE ? (5 * value + 11 * rm.averageScore) / 16 : value; 
 
             rm.meanSquaredScore = rm.meanSquaredScore != -VALUE_INFINITE * VALUE_INFINITE
-                                  ? (value * std::abs(value) + rm.meanSquaredScore) / 2
+                                  ? (5 * value * std::abs(value) + 11 * rm.meanSquaredScore) / 16
                                   : value * std::abs(value);
 
             // PV move or new best move?
