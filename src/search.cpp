@@ -53,7 +53,7 @@
 
 namespace Stockfish {
 
-int VAL_OPT_SHAPE = 76013;
+int VAL_OPT_SHAPE = 71772;
 TUNE(VAL_OPT_SHAPE)
 
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
