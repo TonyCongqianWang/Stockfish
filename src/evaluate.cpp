@@ -41,10 +41,9 @@ constexpr int VAL0 = 556, VAL1 = 470, VAL2 = 518, VAL3 = 7366, VAL4 = 24885, VAL
 
 Value Eval::scale_nnue_eval(Value nnue, const Position& pos, int optimism) {
     // Blend optimism and eval with nnue complexity
-    int nnueMagnitude = std::abs(nnue);
     int material      = VAL0 * pos.count<PAWN>() + pos.non_pawn_material();
-    optimism          = optimism * (VAL1 + nnueMagnitude) / VAL2 * (VAL3 + material);
-    nnue              = nnue * (VAL4 - nnueMagnitude) / VAL5 * (VAL6 + material);
+    optimism          = optimism * (VAL3 + material);
+    nnue              = nnue * (VAL6 + material) / VAL5;
     int v             = (nnue + optimism) / VAL7;
 
     // Damp down the evaluation linearly when shuffling
