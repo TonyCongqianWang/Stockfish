@@ -54,6 +54,19 @@ namespace Stockfish {
 static constexpr std::array<int, 16> lmrDivisor = {3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782,
                                                    2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599};
 
+// Lookup table for optimism calculation, replacing runtime division.
+// Maps |averageScore| >> 1 (index 0..255) to optimism value in [0, 512].
+// Initialized with 512 * (2i) / (2i + 81); constexpr division has no runtime cost.
+static constexpr auto OptimismLUT = [] {
+    std::array<int16_t, 256> lut{};
+    for (int i = 0; i < 256; i++)
+    {
+        int x = i << 1;
+        lut[i] = static_cast<int16_t>(x > 0 ? 512 * x / (x + 81) : 0);
+    }
+    return lut;
+}();
+
 namespace TB = Tablebases;
 
 void syzygy_extend_pv(const OptionsMap&            options,
@@ -376,7 +389,8 @@ bool Search::Worker::iterative_deepening() {
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
-            optimism[us]  = 137 * avg / (std::abs(avg) + 81);
+            int optIdx    = std::min(std::abs(int(avg)) >> 1, 255);
+            optimism[us]  = avg >= 0 ? OptimismLUT[optIdx] : -OptimismLUT[optIdx];
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail

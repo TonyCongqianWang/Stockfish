@@ -55,6 +55,9 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     optimism += optimism * nnueComplexity / 476;
     nnue -= nnue * nnueComplexity / 18236;
 
+    // Convert optimism from LUT's 512-scale back to original 137-scale
+    optimism = optimism * 137 / 512;
+
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
     int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
 
