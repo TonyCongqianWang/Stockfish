@@ -567,7 +567,7 @@ bool Search::Worker::iterative_deepening() {
         {
             u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
 
-            double fallingEval = (11.87 + 2.21 * (mainThread->bestPreviousAverageScore - bestValue)
+            double fallingEval = (11.87 + 2.26 * (mainThread->bestPreviousAverageScore - bestValue)
                                   + 1.0 * (mainThread->iterValue[iterIdx] - bestValue))
                                / 100.0;
             fallingEval = std::clamp(fallingEval, 0.572, 1.708);
@@ -1407,12 +1407,33 @@ moves_loop:  // When in check, search starts here
 
             rm.effort += nodes - nodeCount;
 
-            rm.averageScore =
-              rm.averageScore != -VALUE_INFINITE ? (value + rm.averageScore) / 2 : value;
+            u64 N = nodes - nodeCount;
+            u64 E_prev = std::max(u64(1), rm.effort - N);
 
-            rm.meanSquaredScore = rm.meanSquaredScore != -VALUE_INFINITE * VALUE_INFINITE
-                                  ? (value * std::abs(value) + rm.meanSquaredScore) / 2
-                                  : value * std::abs(value);
+            // Dynamic EMA parameters for root moves (easy to tune)
+            constexpr u64 Scale          = 32;
+            constexpr u64 ChiNumerator   = 3;
+            constexpr u64 ChiDenominator = 2; // Chi = 3/2 = 1.5
+            constexpr u64 MinWeight      = 12; // 37.5% minimum weight
+            constexpr u64 MaxWeight      = 24; // 75% maximum weight
+
+            u64 w = std::clamp((Scale * N * ChiDenominator) / (N * ChiDenominator + ChiNumerator * E_prev),
+                               MinWeight, MaxWeight);
+
+            // 1. Update averageScore
+            if (rm.averageScore == -VALUE_INFINITE)
+                rm.averageScore = value;
+            else
+                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+
+            // 2. Update meanSquaredScore
+            if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
+                rm.meanSquaredScore = value * std::abs(value);
+            else
+            {
+                int64_t v2 = int64_t(value) * std::abs(value);
+                rm.meanSquaredScore = Value((v2 * w + int64_t(rm.meanSquaredScore) * (Scale - w)) / Scale);
+            }
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
