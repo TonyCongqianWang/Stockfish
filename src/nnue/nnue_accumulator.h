@@ -83,9 +83,9 @@ struct AccumulatorCaches {
                 entry.clear(network.featureTransformer.biases);
     }
 
-    std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
+    std::array<Entry, COLOR_NB>& operator[](int index) { return entries[index]; }
 
-    std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
+    std::array<std::array<Entry, COLOR_NB>, 2 * SQUARE_NB> entries;
 };
 
 

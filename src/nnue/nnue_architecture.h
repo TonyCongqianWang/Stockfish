@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <iosfwd>
 
-#include "features/half_ka_v2_hm.h"
+#include "features/k16q2.h"
 #include "features/full_threats.h"
 #include "features/pp_3wide.h"
 #include "layers/affine_transform.h"
@@ -39,7 +39,7 @@ namespace Stockfish::Eval::NNUE {
 // Input features used in evaluation function
 using ThreatFeatureSet = Features::FullThreats;
 using PairFeatureSet   = Features::PP_3Wide;
-using PSQFeatureSet    = Features::HalfKAv2_hm;
+using PSQFeatureSet    = Features::K16Q2;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType L1 = 1024;
