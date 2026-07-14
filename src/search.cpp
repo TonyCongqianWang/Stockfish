@@ -244,7 +244,7 @@ void Search::Worker::start_searching() {
         bestThread = threads.get_best_thread()->worker.get();
 
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
-    main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
+    main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].stableAverageScore;
 
     if (bestThread->rootMoves[0].pv.size() == 1
         && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
@@ -261,6 +261,19 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
+}
+
+namespace {
+    inline int isqrt(i64 n) {
+        if (n <= 0) return 0;
+        i64 x = n;
+        i64 y = (x + 1) / 2;
+        while (y < x) {
+            x = y;
+            y = (x + n / x) / 2;
+        }
+        return int(x);
+    }
 }
 
 // Main iterative deepening loop. It calls search()
@@ -348,6 +361,7 @@ bool Search::Worker::iterative_deepening() {
             rootMoves[i].previousScore      = rootMoves[i].score;
             rootMoves[i].previousPV         = rootMoves[i].pv;
             rootMoves[i].previousScoreExact = i < multiPV;
+            rootMoves[i].previousCorrectionValue = rootMoves[i].currentCorrectionValue;
         }
 
         usize pvFirst = pvLast = 0;
@@ -372,19 +386,52 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10588;
-            Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            Value avg_center = rootMoves[pvIdx].stableAverageScore;
+            if (avg_center == -VALUE_INFINITE)
+            {
+                alpha = -VALUE_INFINITE;
+                beta  = VALUE_INFINITE;
+                delta = VALUE_INFINITE;
+            }
+            else
+            {
+                // First search variance standard deviation using integer isqrt
+                i64 m_first = rootMoves[pvIdx].firstAverageScore;
+                i64 v_first = rootMoves[pvIdx].firstMeanSquaredScore;
+                int std_first = isqrt(std::max(i64(0), v_first - m_first * m_first));
+                std_first = std::min(50, std_first);
+
+                // Stable search variance standard deviation using integer isqrt
+                i64 m_last = rootMoves[pvIdx].stableAverageScore;
+                i64 v_last = rootMoves[pvIdx].stableMeanSquaredScore;
+                int std_last = isqrt(std::max(i64(0), v_last - m_last * m_last));
+                std_last = std::min(50, std_last);
+
+                // 0.4 * corr_diff is equivalent to std::abs(diff) * 4 / 1310720
+                int corr_diff_term = (std::abs(rootMoves[pvIdx].currentCorrectionValue - rootMoves[pvIdx].previousCorrectionValue) * 4) / 1310720;
+                corr_diff_term = std::min(50, corr_diff_term);
+
+                delta = 6 + threadIdx % 8 
+                      + std_first * 10 / 100 
+                      + std_last * 80 / 100 
+                      + corr_diff_term
+                      + std::abs(avg_center) / 100;
+
+                alpha = std::max(avg_center - delta, -VALUE_INFINITE);
+                beta  = std::min(avg_center + delta, VALUE_INFINITE);
+            }
 
             // Adjust optimism based on root move's averageScore
-            optimism[us]  = 137 * avg / (std::abs(avg) + 81);
+            optimism[us]  = 137 * avg_center / (std::abs(avg_center) + 81);
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
             int failedHighCnt = 0;
+            int firstValue = 0;
+            int lastValue = 0;
+            int loopCalls = 0;
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
@@ -393,6 +440,11 @@ bool Search::Worker::iterative_deepening() {
                   std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
                 rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+
+                if (loopCalls == 0)
+                    firstValue = bestValue;
+                lastValue = bestValue;
+                loopCalls++;
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -438,6 +490,44 @@ bool Search::Worker::iterative_deepening() {
                 delta += 44 * delta / 128;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
+            }
+
+            // Update move-specific first and second moments and correction history exactly once per depth
+            if (!threads.stop)
+            {
+                int firstClamped = std::max(-3000, std::min(3000, firstValue));
+                int lastClamped  = std::max(-3000, std::min(3000, lastValue));
+                i64 v_first = i64(firstClamped) * firstClamped;
+                i64 v_last  = i64(lastClamped) * lastClamped;
+                
+                constexpr u64 Scale = 32;
+                constexpr u64 w     = 18;
+                
+                // Update first search EMAs
+                if (rootMoves[pvIdx].firstAverageScore == -VALUE_INFINITE)
+                    rootMoves[pvIdx].firstAverageScore = firstClamped;
+                else
+                    rootMoves[pvIdx].firstAverageScore = Value((firstClamped * w + i64(rootMoves[pvIdx].firstAverageScore) * (Scale - w)) / Scale);
+
+                if (rootMoves[pvIdx].firstMeanSquaredScore == 0)
+                    rootMoves[pvIdx].firstMeanSquaredScore = v_first;
+                else
+                    rootMoves[pvIdx].firstMeanSquaredScore =
+                      (v_first * w + rootMoves[pvIdx].firstMeanSquaredScore * (Scale - w)) / Scale;
+
+                // Update stable (last search) EMAs
+                if (rootMoves[pvIdx].stableAverageScore == -VALUE_INFINITE)
+                    rootMoves[pvIdx].stableAverageScore = lastClamped;
+                else
+                    rootMoves[pvIdx].stableAverageScore = Value((lastClamped * w + i64(rootMoves[pvIdx].stableAverageScore) * (Scale - w)) / Scale);
+
+                if (rootMoves[pvIdx].stableMeanSquaredScore == 0)
+                    rootMoves[pvIdx].stableMeanSquaredScore = v_last;
+                else
+                    rootMoves[pvIdx].stableMeanSquaredScore =
+                      (v_last * w + rootMoves[pvIdx].stableMeanSquaredScore * (Scale - w)) / Scale;
+
+                rootMoves[pvIdx].currentCorrectionValue = correction_value(*this, rootPos, ss);
             }
 
             if (threads.stop && pvIdx)
@@ -1408,33 +1498,6 @@ moves_loop:  // When in check, search starts here
             RootMove& rm = *std::find(rootMoves.begin(), rootMoves.end(), move);
 
             rm.effort += nodes - nodeCount;
-
-            u64 N      = nodes - nodeCount;
-            u64 E_prev = std::max(u64(1), rm.effort - N);
-
-            // Dynamic EMA parameters for root move
-            constexpr u64 Scale          = 32;
-            constexpr u64 ChiNumerator   = 3;
-            constexpr u64 ChiDenominator = 2;   // Chi = 3/2 = 1.5
-            constexpr u64 MinWeight      = 12;  // 37.5% minimum weight
-            constexpr u64 MaxWeight      = 24;  // 75% maximum weight
-
-            u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
-
-            if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
-            else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
-
-            if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
-            else
-                rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
