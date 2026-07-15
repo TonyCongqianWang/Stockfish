@@ -328,11 +328,17 @@ bool Search::Worker::iterative_deepening() {
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
             mainHistory[c][i] = mainHistory[c][i] * 789 / 1024;
 
+    int  previousCorr       = 0;
+
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (rootDepth + 1 < MAX_PLY && !threads.stop
            && !(limits.depth && mainThread && rootDepth >= limits.depth))
     {
         rootDepth++;
+
+        int currentCorr = correction_value(*this, rootPos, ss);
+        int corrDiff = (previousCorr > 0) ? std::abs(currentCorr - previousCorr) : 0;
+        previousCorr = currentCorr;
 
         // Age out PV variability metric and signal the start of a new iteration.
         if (mainThread)
@@ -372,7 +378,8 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10588;
+            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10588
+                            + rootDepth * std::min(corrDiff / 1024, 16) / 16;
             Value avg = rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
