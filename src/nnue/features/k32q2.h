@@ -16,10 +16,10 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//Definition of input features K16Q2 of NNUE evaluation function
+//Definition of input features K32Q2 of NNUE evaluation function
 
-#ifndef NNUE_FEATURES_K16Q2_H_INCLUDED
-#define NNUE_FEATURES_K16Q2_H_INCLUDED
+#ifndef NNUE_FEATURES_K32Q2_H_INCLUDED
+#define NNUE_FEATURES_K32Q2_H_INCLUDED
 
 #include "../../misc.h"
 #include "../../types.h"
@@ -27,9 +27,9 @@
 
 namespace Stockfish::Eval::NNUE::Features {
 
-// Feature K16Q2: Combination of the position of own king, opponent queen presence,
-// and the position of pieces. Position mirrored such that king is always on e..h files.
-class K16Q2 {
+// Feature K32Q2: Combination of the position of own king (32 buckets), opponent queen presence (2 states),
+// piece-square positions (45,056 features), and 4-state Queen Check Threat features (6,912 features).
+class K32Q2 {
 
     // Unique number for each piece type on each square
     enum {
@@ -60,21 +60,21 @@ class K16Q2 {
     // Hash value embedded in the evaluation file
     static constexpr u32 HashValue = 0x32b5e284u;
 
-    // Number of feature dimensions
+    // Number of feature dimensions (45,056 piece-squares + 6,912 QK4 threats = 51,968)
     static constexpr IndexType Dimensions =
-      static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2;
+      (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2) * 64 + 6912;
 
 #define B(v) (v * 2 * PS_NB)
     // clang-format off
     static constexpr IndexType KingBuckets[SQUARE_NB] = {
-        B( 3), B( 2), B( 1), B( 0), B( 0), B( 1), B( 2), B( 3),
+        B(31), B(30), B(29), B(28), B(28), B(29), B(30), B(31),
+        B(27), B(26), B(25), B(24), B(24), B(25), B(26), B(27),
+        B(23), B(22), B(21), B(20), B(20), B(21), B(22), B(23),
+        B(19), B(18), B(17), B(16), B(16), B(17), B(18), B(19),
+        B(15), B(14), B(13), B(12), B(12), B(13), B(14), B(15),
+        B(11), B(10), B( 9), B( 8), B( 8), B( 9), B(10), B(11),
         B( 7), B( 6), B( 5), B( 4), B( 4), B( 5), B( 6), B( 7),
-        B(11), B(10), B( 9), B( 8), B( 8), B( 9), B(10), B(11),
-        B(11), B(10), B( 9), B( 8), B( 8), B( 9), B(10), B(11),
-        B(13), B(13), B(12), B(12), B(12), B(12), B(13), B(13),
-        B(13), B(13), B(12), B(12), B(12), B(12), B(13), B(13),
-        B(15), B(15), B(14), B(14), B(14), B(14), B(15), B(15),
-        B(15), B(15), B(14), B(14), B(14), B(14), B(15), B(15),
+        B( 3), B( 2), B( 1), B( 0), B( 0), B( 1), B( 2), B( 3),
     };
     // clang-format on
 #undef B
@@ -93,7 +93,7 @@ class K16Q2 {
     // clang-format on
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 32;
+    static constexpr IndexType MaxActiveDimensions = 34;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
 
@@ -124,4 +124,4 @@ class K16Q2 {
 
 }  // namespace Stockfish::Eval::NNUE::Features
 
-#endif  // #ifndef NNUE_FEATURES_K16Q2_H_INCLUDED
+#endif  // #ifndef NNUE_FEATURES_K32Q2_H_INCLUDED

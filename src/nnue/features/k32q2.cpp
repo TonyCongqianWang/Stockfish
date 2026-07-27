@@ -16,9 +16,9 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//Definition of input features K16Q2 of NNUE evaluation function
+//Definition of input features K32Q2 of NNUE evaluation function
 
-#include "k16q2.h"
+#include "k32q2.h"
 
 #include "../../types.h"
 #include "../nnue_common.h"
@@ -30,7 +30,7 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 #if defined(USE_AVX512ICL)
-void K16Q2::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
+void K32Q2::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
                           const std::array<Piece, SQUARE_NB>& newPieces,
                           Bitboard                            removedBB,
                           Bitboard                            addedBB,
@@ -53,11 +53,10 @@ void K16Q2::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
     const u16     flip   = 56 * perspective;
     const u16     orient = u16(OrientTBL[ksq]) ^ flip;
     const __m512i psi =
-<<<<<<< HEAD:src/nnue/features/half_ka_v2_hm.cpp
       _mm512_castsi256_si512(_mm256_loadu_si256((const __m256i*) PieceSquareIndex[perspective]));
     const u16     queen_offset = opponent_has_queen ? PS_NB : 0;
     const __m512i psi_plus_offset =
-      _mm512_add_epi16(psi, _mm512_set1_epi16(u16(KingBuckets[int(ksq) ^ flip] + queen_offset + orient)));:src/nnue/features/k16q2.cpp
+      _mm512_add_epi16(psi, _mm512_set1_epi16(u16(KingBuckets[int(ksq) ^ flip] + queen_offset + orient)));
 
     __m512i removed_squares = _mm512_maskz_compress_epi8(removedBB, AllSquares);
     __m512i added_squares   = _mm512_maskz_compress_epi8(addedBB, AllSquares);
@@ -86,7 +85,7 @@ void K16Q2::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
 
 // Index of a feature for a given king position and another piece on some square
 
-IndexType K16Q2::make_index(Color perspective, Square s, Piece pc, Square ksq, bool opponent_has_queen) {
+IndexType K32Q2::make_index(Color perspective, Square s, Piece pc, Square ksq, bool opponent_has_queen) {
     const IndexType flip = 56 * perspective;
     return (IndexType(s) ^ OrientTBL[ksq] ^ flip) + PieceSquareIndex[perspective][pc]
          + KingBuckets[int(ksq) ^ flip] + (opponent_has_queen ? PS_NB : 0);
@@ -94,7 +93,7 @@ IndexType K16Q2::make_index(Color perspective, Square s, Piece pc, Square ksq, b
 
 // Get a list of indices for recently changed features
 
-void K16Q2::append_changed_indices(
+void K32Q2::append_changed_indices(
   Color perspective, Square ksq, const DiffType& diff, bool opponent_has_queen, IndexList& removed, IndexList& added) {
     removed.push_back(make_index(perspective, diff.from, diff.pc, ksq, opponent_has_queen));
     if (diff.to != SQ_NONE)
@@ -107,7 +106,7 @@ void K16Q2::append_changed_indices(
         added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq, opponent_has_queen));
 }
 
-bool K16Q2::requires_refresh(const DiffType& diff, Color perspective) {
+bool K32Q2::requires_refresh(const DiffType& diff, Color perspective) {
     if (diff.pc == make_piece(perspective, KING))
         return true;
 
