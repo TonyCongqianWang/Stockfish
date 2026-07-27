@@ -81,7 +81,7 @@ class FullThreats {
                                        const DiffType&         diff,
                                        IndexList&              removed,
                                        IndexList&              added,
-                                       const ThreatWeightType* prefetchBase   = nullptr,
+                                       const WeightType* prefetchBase   = nullptr,
                                        IndexType               prefetchStride = 0);
 };
 
