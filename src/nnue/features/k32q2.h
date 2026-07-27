@@ -62,7 +62,7 @@ class K32Q2 {
 
     // Number of feature dimensions (45,056 piece-squares)
     static constexpr IndexType Dimensions =
-      (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2) * 64;
+      (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2) * 2;
 
 #define B(v) (v * 2 * PS_NB)
     // clang-format off
