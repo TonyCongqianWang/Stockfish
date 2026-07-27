@@ -192,7 +192,7 @@ class FeatureTransformer {
                                              QKThreatInputDimensions * HalfDimensions);
         read_leb_128(stream, qk4PsqtWeights(), QKThreatFeatureSet::Dimensions * PSQTBuckets);
 
-        read_leb_128(stream, weights);
+        read_little_endian<WeightType>(stream, weights.data(), HalfDimensions * PSQFeatureSet::Dimensions);
         read_leb_128(stream, psqtWeights);
 
         permute_weights();
@@ -222,7 +222,7 @@ class FeatureTransformer {
         write_leb_128<PSQTWeightType>(stream, copy->qk4PsqtWeights(),
                                       QKThreatFeatureSet::Dimensions * PSQTBuckets);
 
-        write_leb_128<WeightType>(stream, copy->weights);
+        write_little_endian<WeightType>(stream, copy->weights.data(), HalfDimensions * PSQFeatureSet::Dimensions);
         write_leb_128<PSQTWeightType>(stream, copy->psqtWeights);
 
         return !stream.fail();
