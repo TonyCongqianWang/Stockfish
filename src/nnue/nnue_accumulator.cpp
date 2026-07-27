@@ -196,18 +196,36 @@ void apply_combined(Color                              perspective,
 
         for (int i = 0; i < psqRemoved.ssize(); ++i)
         {
-            auto* row =
-              reinterpret_cast<const vec_t*>(&psqWeights[psqRemoved[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &psqWeights[psqRemoved[i] * Dimensions + tileOff]);
+
+    #ifdef USE_NEON
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vsubw_s8(acc[k], vget_low_s8(column[k / 2]));
+                acc[k + 1] = vsubw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #else
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], row[k]);
+                acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
+    #endif
         }
 
         for (int i = 0; i < psqAdded.ssize(); ++i)
         {
-            auto* row =
-              reinterpret_cast<const vec_t*>(&psqWeights[psqAdded[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &psqWeights[psqAdded[i] * Dimensions + tileOff]);
+
+    #ifdef USE_NEON
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vaddw_s8(acc[k], vget_low_s8(column[k / 2]));
+                acc[k + 1] = vaddw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #else
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], row[k]);
+                acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
+    #endif
         }
 
         for (int i = 0; i < thrRemoved.ssize(); ++i)
@@ -309,11 +327,11 @@ void apply_combined(Color                              perspective,
 
         vint16m8_t accum = __riscv_vle16_v_i16m8(&fromAcc[tileOffset], vl);
         for (int i : psqRemoved)
-            accum = __riscv_vsub_vv_i16m8(
-              accum, __riscv_vle16_v_i16m8(&psqWeights[i * Dimensions + tileOffset], vl), vl);
+            accum = __riscv_vwsub_wv_i16m8(
+              accum, __riscv_vle8_v_i8m4(&psqWeights[i * Dimensions + tileOffset], vl), vl);
         for (int i : psqAdded)
-            accum = __riscv_vadd_vv_i16m8(
-              accum, __riscv_vle16_v_i16m8(&psqWeights[i * Dimensions + tileOffset], vl), vl);
+            accum = __riscv_vwadd_wv_i16m8(
+              accum, __riscv_vle8_v_i8m4(&psqWeights[i * Dimensions + tileOffset], vl), vl);
         for (int i : thrRemoved)
             accum = __riscv_vwsub_wv_i16m8(
               accum, __riscv_vle8_v_i8m4(&threatWeights[i * Dimensions + tileOffset], vl), vl);
@@ -611,17 +629,35 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
         for (int i = 0; i < removed.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[removed[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[removed[i] * Dimensions + tileOff]);
+
+    #ifdef USE_NEON
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vsubw_s8(acc[k], vget_low_s8(column[k / 2]));
+                acc[k + 1] = vsubw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #else
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
+                acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
+    #endif
         }
         for (int i = 0; i < added.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[added[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[added[i] * Dimensions + tileOff]);
+
+    #ifdef USE_NEON
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vaddw_s8(acc[k], vget_low_s8(column[k / 2]));
+                acc[k + 1] = vaddw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #else
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+                acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
+    #endif
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
@@ -703,11 +739,11 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
         vint16m8_t accum = __riscv_vle16_v_i16m8(&entry.accumulation[tileOffset], vl);
         for (int i : removed)
-            accum = __riscv_vsub_vv_i16m8(
-              accum, __riscv_vle16_v_i16m8(&weights[i * Dimensions + tileOffset], vl), vl);
+            accum = __riscv_vwsub_wv_i16m8(
+              accum, __riscv_vle8_v_i8m4(&weights[i * Dimensions + tileOffset], vl), vl);
         for (int i : added)
-            accum = __riscv_vadd_vv_i16m8(
-              accum, __riscv_vle16_v_i16m8(&weights[i * Dimensions + tileOffset], vl), vl);
+            accum = __riscv_vwadd_wv_i16m8(
+              accum, __riscv_vle8_v_i8m4(&weights[i * Dimensions + tileOffset], vl), vl);
 
         __riscv_vse16_v_i16m8(&entry.accumulation[tileOffset], accum, vl);
 
