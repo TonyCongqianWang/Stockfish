@@ -28,7 +28,7 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Feature K32Q2: Combination of the position of own king (32 buckets), opponent queen presence (2 states),
-// piece-square positions (45,056 features), and 4-state Queen Check Threat features (6,912 features).
+// and piece-square positions (45,056 features).
 class K32Q2 {
 
     // Unique number for each piece type on each square
@@ -60,9 +60,9 @@ class K32Q2 {
     // Hash value embedded in the evaluation file
     static constexpr u32 HashValue = 0x32b5e284u;
 
-    // Number of feature dimensions (45,056 piece-squares + 6,912 QK4 threats = 51,968)
+    // Number of feature dimensions (45,056 piece-squares)
     static constexpr IndexType Dimensions =
-      (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2) * 64 + 6912;
+      (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2) * 64;
 
 #define B(v) (v * 2 * PS_NB)
     // clang-format off
@@ -93,7 +93,7 @@ class K32Q2 {
     // clang-format on
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 34;
+    static constexpr IndexType MaxActiveDimensions = 32;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
 
