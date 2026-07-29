@@ -91,7 +91,7 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
                                      const FeatureTransformer& featureTransformer,
                                      AccumulatorCaches&        cache) noexcept {
 
-    const auto last_usable_accum = find_last_usable_accumulator(perspective);
+    const auto last_usable_accum = find_last_usable_accumulator(perspective, pos);
 
     if (accumulators[last_usable_accum].computed[perspective])
         forward_update_incremental(perspective, pos, featureTransformer, last_usable_accum);
@@ -105,7 +105,7 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
 
 // Find the earliest usable accumulator, this can either be a computed accumulator or the accumulator
 // state just before a change that requires full refresh.
-usize AccumulatorStack::find_last_usable_accumulator(Color perspective) const noexcept {
+usize AccumulatorStack::find_last_usable_accumulator(Color perspective, const Position& pos) const noexcept {
 
     for (usize curr_idx = size - 1; curr_idx > 0; curr_idx--)
     {
@@ -115,6 +115,27 @@ usize AccumulatorStack::find_last_usable_accumulator(Color perspective) const no
         // Threat feature set refreshes require a king move across the center, i.e.,
         // a subset of halfka refreshes
         if (PSQFeatureSet::requires_refresh(accumulators[curr_idx].dirtyPiece, perspective))
+            return curr_idx;
+
+        // QK4 check threat feature refresh if a blocker moves onto or off of any check ray of the king
+        const auto& diff = accumulators[curr_idx].dirtyPiece;
+        Square ksq = pos.square<KING>(perspective);
+        Bitboard queens = accumulators[curr_idx].opponentQueens[perspective];
+
+        bool QK4_affected = false;
+        while (queens) {
+            Square qsq = pop_lsb(queens);
+            int fd = file_of(qsq) - file_of(ksq);
+            int rd = rank_of(qsq) - rank_of(ksq);
+            if (fd == 0 || rd == 0 || fd == rd || fd == -rd) {
+                Bitboard ray = Attacks::between_bb(ksq, qsq);
+                if (ray & (square_bb(diff.from) | square_bb(diff.to))) {
+                    QK4_affected = true;
+                    break;
+                }
+            }
+        }
+        if (QK4_affected)
             return curr_idx;
     }
 
@@ -431,6 +452,7 @@ void update_accumulator_incremental(Color                     perspective,
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
                    thrAdded, thrRemoved);
 
+    target_state.opponentQueens[perspective] = computed.opponentQueens[perspective];
     target_state.computed[perspective] = true;
 }
 
@@ -579,7 +601,9 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
     PairFeatureSet::append_active_indices(perspective, pos, active);
+    QKThreatFeatureSet::append_active_indices(perspective, pos, active);
 
+    accumulator.opponentQueens[perspective] = pos.pieces(~perspective, QUEEN);
     accumulator.computed[perspective] = true;
 
 #ifdef VECTOR

@@ -25,21 +25,30 @@
 #include "../../types.h"
 #include "../nnue_common.h"
 
+namespace Stockfish {
+class Position;
+}
+
 namespace Stockfish::Eval::NNUE::Features {
 
-// Feature QK4: 4-State Queen Check Threat features (6,912 features)
+// Feature QK4: 4-State Queen Check Threat features (6,144 features)
 class QK4 {
    public:
     // Hash value embedded in the evaluation file
     static constexpr u32 HashValue = 0x41514b34u;
 
     // Number of feature dimensions
-    static constexpr IndexType Dimensions = 6912;
+    static constexpr IndexType Dimensions = 6144;
+
+    // Index base in the auxiliary weights array
+    static constexpr IndexType IndexBase = 64368;
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 2;
-    using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
+    static constexpr IndexType MaxActiveDimensions = 24;
+    using IndexList                                = ValueList<IndexType, 256>;
     using DiffType                                 = DirtyPiece;
+
+    static void append_active_indices(Color perspective, const Position& pos, IndexList& active);
 
     static void append_changed_indices(
       Color perspective, Square ksq, const DiffType& diff, bool opponent_has_queen, IndexList& removed, IndexList& added);

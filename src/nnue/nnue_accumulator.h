@@ -46,6 +46,7 @@ struct alignas(CacheLineSize) Accumulator {
     std::array<std::array<i16, L1>, COLOR_NB>          accumulation;
     std::array<std::array<i32, PSQTBuckets>, COLOR_NB> psqtAccumulation;
     std::array<bool, COLOR_NB>                         computed = {};
+    std::array<Bitboard, COLOR_NB>                     opponentQueens = {};
 };
 
 
@@ -115,7 +116,7 @@ class AccumulatorStack {
                        // Silence spurious warning on GCC 10
                        [[maybe_unused]] AccumulatorCaches& cache) noexcept;
 
-    [[nodiscard]] usize find_last_usable_accumulator(Color perspective) const noexcept;
+    [[nodiscard]] usize find_last_usable_accumulator(Color perspective, const Position& pos) const noexcept;
 
     void forward_update_incremental(Color                     perspective,
                                     const Position&           pos,
