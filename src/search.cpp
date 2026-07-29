@@ -373,10 +373,67 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
+            // Tuning Parameters (Scaled by 65536 fixed-point integer math)
+            constexpr int64_t c_base      = 204472;
+            constexpr int64_t c_depth     = 2818;
+            constexpr int64_t c_std       = 21627;
+            constexpr int64_t c_avg       = 7864;
+            constexpr int64_t c_d_std     = 590;
+            constexpr int64_t c_d_avg     = 721;
+            constexpr int64_t c_cap_base  = 983040;
+            constexpr int64_t c_cap_depth = 35521;
+
             Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            Value mss = rootMoves[pvIdx].meanSquaredScore;
+
+            if (avg <= -VALUE_INFINITE)
+            {
+                delta = VALUE_INFINITE * VALUE_INFINITE;
+                alpha = -VALUE_INFINITE;
+                beta  = VALUE_INFINITE;
+            }
+            else
+            {
+                int64_t abs_avg  = std::abs(avg);
+                u32     temp_var = static_cast<u32>(std::max(0, static_cast<int>(mss - avg * avg)));
+                u32     res      = 0;
+                for (u32 bit = 1U << 30; bit != 0; bit >>= 2)
+                {
+                    if (temp_var >= res + bit)
+                    {
+                        temp_var -= res + bit;
+                        res = (res >> 1) + bit;
+                    }
+                    else
+                    {
+                        res >>= 1;
+                    }
+                }
+                int64_t std_dev  = static_cast<int64_t>(res);
+                int64_t depth_64 = static_cast<int64_t>(rootDepth);
+
+                int64_t base_terms = c_base + (c_depth * depth_64);
+                int64_t var_terms  = (c_std * std_dev) + (c_avg * abs_avg)
+                                    + (c_d_std * depth_64 * std_dev) + (c_d_avg * depth_64 * abs_avg);
+                int64_t cap_terms = c_cap_base + (c_cap_depth * depth_64);
+
+                int64_t scaled_delta = base_terms + std::min(var_terms, cap_terms);
+                delta                = std::max(1, static_cast<int>(scaled_delta >> 16));
+
+                alpha = std::max(avg - delta, -VALUE_INFINITE);
+                beta  = std::min(avg + delta, VALUE_INFINITE);
+
+                if (alpha >= beta)
+                {
+                    alpha = std::max(avg - 1, -VALUE_INFINITE);
+                    beta  = std::min(avg + 1, VALUE_INFINITE);
+                    if (alpha >= beta)
+                    {
+                        alpha = -VALUE_INFINITE;
+                        beta  = VALUE_INFINITE;
+                    }
+                }
+            }
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
@@ -1428,22 +1485,21 @@ moves_loop:  // When in check, search starts here
             constexpr u64 MinWeight      = 12;  // 37.5% minimum weight
             constexpr u64 MaxWeight      = 24;  // 75% maximum weight
 
+            int clamped_val = std::clamp(value, -6000, 6000);
             u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+                                   / (N * ChiDenominator + ChiNumerator * E_prev),
+                                 MinWeight, MaxWeight);
+            int v_sqr = clamped_val * clamped_val;
 
             if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
+                rm.averageScore = clamped_val;
             else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+                rm.averageScore = Value((clamped_val * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
+                rm.meanSquaredScore = v_sqr;
             else
-                rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
+                rm.meanSquaredScore = Value((v_sqr * w + rm.meanSquaredScore * (Scale - w)) / Scale);
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
