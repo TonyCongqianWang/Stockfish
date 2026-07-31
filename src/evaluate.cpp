@@ -54,7 +54,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     // Blend optimism and eval with nnue complexity
     int nnueComplexity = std::abs(psqt - positional);
     optimism += optimism * i64(nnueComplexity) / 476;
-    nnue = std::clamp(nnue, -2400, 2400) + nnue / 2;
+    nnue = std::clamp(nnue, -2400, 2400) / 2 + nnue / 2;
 
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
     int v        = (nnue * i64(77871 + material) + optimism * i64(7191 + material)) / 77871;
