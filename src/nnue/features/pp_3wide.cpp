@@ -97,7 +97,7 @@ void PP_3Wide::append_changed_indices(Color                                    p
                                       const DiffType&                          diff,
                                       IndexList&                               removed,
                                       IndexList&                               added,
-                                      [[maybe_unused]] const ThreatWeightType* prefetchBase,
+                                      [[maybe_unused]] const WeightType* prefetchBase,
                                       [[maybe_unused]] IndexType               prefetchStride) {
 
     const Bitboard whiteBefore = diff.before[WHITE];
@@ -136,8 +136,8 @@ void PP_3Wide::append_changed_indices(Color                                    p
               _mm512_castsi512_si128(_mm512_maskz_compress_epi8(partners, ids)));
             const __m256i feats = pp_idx_epi16(_mm256_set1_epi16(aId), pids);
 
-            u16* w = out.make_space(n);
-            _mm256_storeu_epi16(w, feats);
+            u32* w = out.make_space(n);
+            _mm512_storeu_si512(w, _mm512_cvtepu16_epi32(feats));
         }
     };
 #else

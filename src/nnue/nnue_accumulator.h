@@ -46,6 +46,7 @@ struct alignas(CacheLineSize) Accumulator {
     std::array<std::array<i16, L1>, COLOR_NB>          accumulation;
     std::array<std::array<i32, PSQTBuckets>, COLOR_NB> psqtAccumulation;
     std::array<bool, COLOR_NB>                         computed = {};
+    std::array<Bitboard, COLOR_NB>                     opponentQueens = {};
 };
 
 
@@ -78,14 +79,15 @@ struct AccumulatorCaches {
 
     template<typename Network>
     void clear(const Network& network) {
-        for (auto& entries1D : entries)
-            for (auto& entry : entries1D)
-                entry.clear(network.featureTransformer.biases);
+        for (auto& entries2D : entries)
+            for (auto& entries1D : entries2D)
+                for (auto& entry : entries1D)
+                    entry.clear(network.featureTransformer.biases);
     }
 
-    std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
+    std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>& operator[](bool oppQueen) { return entries[oppQueen]; }
 
-    std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
+    std::array<std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>, 2> entries;
 };
 
 
@@ -100,6 +102,17 @@ class AccumulatorStack {
     void     reset() noexcept;
     Dirties& push() noexcept;
     void     pop() noexcept;
+
+    const i16* get_accumulation(
+        Color                     perspective,
+        const Position&           pos,
+        const FeatureTransformer& featureTransformer);
+
+    i32 get_psqt(
+        Color                     perspective,
+        int                       bucket,
+        const Position&           pos,
+        const FeatureTransformer& featureTransformer) const;
 
     void evaluate(const Position&           pos,
                   const FeatureTransformer& featureTransformer,
@@ -129,6 +142,7 @@ class AccumulatorStack {
 
     std::array<AccumulatorState, MaxSize> accumulators;
     usize                                 size = 1;
+    alignas(64) std::array<i16, L1>       qkBuffer;
 };
 
 }  // namespace Stockfish::Eval::NNUE
