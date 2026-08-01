@@ -74,9 +74,6 @@ Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
     optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / 512;
     int v        = (nnue * i64(80000 + material) + optimism) / 80000;
 
-    // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 199;
-
     // Guarantee evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 

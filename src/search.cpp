@@ -378,6 +378,9 @@ bool Search::Worker::iterative_deepening() {
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
+            if (avg == -VALUE_INFINITE)
+                avg = 0;
+
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
             optimism[~us] = -optimism[us];
@@ -849,6 +852,12 @@ Value Search::Worker::search(
     improving         = ss->staticEval > (ss - 2)->staticEval;
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
+    // Calculate the virtual evaluation offset through optimism
+    // we use this to bias move ordering and reductions.
+    Value virtualStaticEval = Eval::scale_evaluation(ss->staticEval, optimism[us], pos);
+    Value optimismOffset    = virtualStaticEval - ss->staticEval;
+    Value virtualEval       = eval + optimismOffset;
+
     // Hindsight adjustment of reductions based on static evaluation difference.
     if (priorReduction >= 3 && !opponentWorsening)
         depth++;
@@ -973,12 +982,12 @@ Value Search::Worker::search(
     // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
-    if (!PvNode && eval < alpha - 483 - 318 * depth * depth)
+    if (!PvNode && virtualEval < alpha - 483 - 318 * depth * depth)
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
-    if (!ss->ttPv && depth < 19 && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta)
+    if (!ss->ttPv && depth < 19 && virtualEval >= beta && (!ttData.move || ttCapture) && !is_loss(beta)
         && !is_win(eval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
@@ -993,7 +1002,7 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && ss->staticEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
+    if (cutNode && virtualStaticEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -1047,7 +1056,7 @@ Value Search::Worker::search(
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
+        MovePicker mp(pos, ttData.move, probCutBeta - virtualStaticEval, &captureHistory);
         Depth      probCutDepth = depth - (improving ? 5 : 3);
 
         while ((move = mp.next_move()) != Move::none())
@@ -1168,7 +1177,7 @@ moves_loop:  // When in check, search starts here
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 8)
                 {
-                    Value futilityValue = ss->staticEval + 234 + 247 * lmrDepth
+                    Value futilityValue = virtualStaticEval + 234 + 247 * lmrDepth
                                         + PieceValue[capturedPiece] + 134 * captHist / 1024;
 
                     if (futilityValue <= alpha)
@@ -1322,9 +1331,14 @@ moves_loop:  // When in check, search starts here
         else if (move == ttData.move)
             r -= 2179;
 
-        if (capture)
+        if (capture) {
             ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
                           + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+
+            // Sign aware Simplification Bias through optimism
+            if (optimismOffset > 0)
+                ss->statScore += int(300 * i64(optimismOffset) / 128);
+        }
         else
             ss->statScore =
               (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
@@ -1873,7 +1887,7 @@ TimePoint Search::Worker::elapsed() const {
 
 Value Search::Worker::evaluate(const Position& pos) {
     Value raw_nnue = Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable);
-    return Eval::scale_evaluation(raw_nnue, optimism[pos.side_to_move()], pos);
+    return raw_nnue;
 }
 
 namespace {
@@ -2016,6 +2030,11 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
 
 void update_quiet_histories(
   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
+
+    // Linearly dampen history updates to force graph-resetting moves to surface
+    // earlier in the MovePicker as the rule 50 counter climbs.
+    int r50_dampening = 199 - pos.rule50_count();
+    bonus = bonus * r50_dampening / 199;
 
     Color us = pos.side_to_move();
     workerThread.mainHistory[us][move.raw()] << bonus;  // Untuned to prevent duplicate effort
