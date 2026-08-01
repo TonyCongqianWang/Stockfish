@@ -52,6 +52,21 @@
 
 namespace Stockfish {
 
+#include "tune.h"
+// Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
+int c_base_0 = 200000,           c_base_1 = 300000;
+int c_depth_0 = 2000,            c_depth_1 = 3000;
+int c_std_0 = 15000,             c_std_1 = 10000;
+int c_avg_0 = 5000,              c_avg_1 = 4000;
+int c_d_std_0 = 500,             c_d_std_1 = 500;
+int c_d_avg_0 = 700,             c_d_avg_1 = 700;
+int c_cap_base_0 = 1500000,     c_cap_base_1 = 3000000;
+int c_cap_depth_0 = 150000,     c_cap_depth_1 = 300000;
+
+TUNE(c_base_0, c_base_1, c_depth_0, c_depth_1, c_std_0, c_std_1, c_avg_0,
+    c_avg_1, c_d_std_0, c_d_std_1, c_d_avg_0, c_d_avg_1, c_cap_base_0,
+    c_cap_base_1, c_cap_depth_0, c_cap_depth_1)
+
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
 
@@ -281,7 +296,7 @@ bool Search::Worker::iterative_deepening() {
     Value  bestValue     = -VALUE_INFINITE;
     Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
-    int    delta, iterIdx                        = 0;
+    int    delta, deltaGrowth, iterIdx           = 0;
 
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
@@ -373,28 +388,18 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            // Tuning Parameters (Scaled by 65536 fixed-point integer math)
-            constexpr int64_t c_base      = 204472;
-            constexpr int64_t c_depth     = 2818;
-            constexpr int64_t c_std       = 21627;
-            constexpr int64_t c_avg       = 7864;
-            constexpr int64_t c_d_std     = 590;
-            constexpr int64_t c_d_avg     = 721;
-            constexpr int64_t c_cap_base  = 983040;
-            constexpr int64_t c_cap_depth = 35521;
-
             Value avg = rootMoves[pvIdx].averageScore;
             Value mss = rootMoves[pvIdx].meanSquaredScore;
 
-            if (avg <= -VALUE_INFINITE)
+            if (avg <= -VALUE_INFINITE || avg >= VALUE_INFINITE)
             {
-                delta = VALUE_INFINITE * VALUE_INFINITE;
-                alpha = -VALUE_INFINITE;
-                beta  = VALUE_INFINITE;
+                avg         = 0;
+                delta       = VALUE_INFINITE * VALUE_INFINITE;
+                deltaGrowth = 0;
             }
             else
             {
-                int64_t abs_avg  = std::abs(avg);
+                i64 abs_avg  = std::abs(avg);
                 u32     temp_var = static_cast<u32>(std::max(0, static_cast<int>(mss - avg * avg)));
                 u32     res      = 0;
                 for (u32 bit = 1U << 30; bit != 0; bit >>= 2)
@@ -409,31 +414,28 @@ bool Search::Worker::iterative_deepening() {
                         res >>= 1;
                     }
                 }
-                int64_t std_dev  = static_cast<int64_t>(res);
-                int64_t depth_64 = static_cast<int64_t>(rootDepth);
+                i64 std_dev  = static_cast<i64>(res);
+                i64 depth_64 = static_cast<i64>(rootDepth);
 
-                int64_t base_terms = c_base + (c_depth * depth_64);
-                int64_t var_terms  = (c_std * std_dev) + (c_avg * abs_avg)
-                                    + (c_d_std * depth_64 * std_dev) + (c_d_avg * depth_64 * abs_avg);
-                int64_t cap_terms = c_cap_base + (c_cap_depth * depth_64);
+                i64 base_terms_0 = c_base_0 + (c_depth_0 * depth_64);
+                i64 var_terms_0  = (c_std_0 * std_dev) + (c_avg_0 * abs_avg)
+                                    + (c_d_std_0 * depth_64 * std_dev) + (c_d_avg_0 * depth_64 * abs_avg);
+                i64 cap_terms_0 = c_cap_base_0 + (c_cap_depth_0 * depth_64);
 
-                int64_t scaled_delta = base_terms + std::min(var_terms, cap_terms);
-                delta                = std::max(1, static_cast<int>(scaled_delta >> 16));
+                i64 base_terms_1 = c_base_1 + (c_depth_1 * depth_64);
+                i64 var_terms_1  = (c_std_1 * std_dev) + (c_avg_1 * abs_avg)
+                                    + (c_d_std_1 * depth_64 * std_dev) + (c_d_avg_1 * depth_64 * abs_avg);
+                i64 cap_terms_1 = c_cap_base_1 + (c_cap_depth_1 * depth_64);
 
-                alpha = std::max(avg - delta, -VALUE_INFINITE);
-                beta  = std::min(avg + delta, VALUE_INFINITE);
+                i64 scaled_delta_0 = base_terms_0 + std::min(var_terms_0, cap_terms_0);
+                i64 scaled_delta_1 = base_terms_1 + std::min(var_terms_1, cap_terms_1);
 
-                if (alpha >= beta)
-                {
-                    alpha = std::max(avg - 1, -VALUE_INFINITE);
-                    beta  = std::min(avg + 1, VALUE_INFINITE);
-                    if (alpha >= beta)
-                    {
-                        alpha = -VALUE_INFINITE;
-                        beta  = VALUE_INFINITE;
-                    }
-                }
+                delta           = std::max(1, static_cast<int>(scaled_delta_0 >> 16));
+                deltaGrowth     = std::max(1, static_cast<int>(scaled_delta_1 >> 16));
             }
+
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
@@ -493,7 +495,9 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                delta += 47 * delta / 128;
+                int deltaInc = 47 * deltaGrowth / 128;
+                delta       += deltaInc;
+                deltaGrowth += deltaInc;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
