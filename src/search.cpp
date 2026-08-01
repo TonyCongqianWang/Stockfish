@@ -1429,10 +1429,7 @@ moves_loop:  // When in check, search starts here
             u64 w_mss = std::min(w, u64(16));
             i64 v2    = i64(value) * std::abs(value);
 
-            if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
-            else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+            rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
                 rm.meanSquaredScore = value * std::abs(value);
