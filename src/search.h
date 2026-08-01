@@ -40,6 +40,7 @@
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
+#include "tt.h"
 
 namespace Stockfish {
 
@@ -312,6 +313,19 @@ class NullSearchManager: public ISearchManager {
     void check_time(Search::Worker&) override {}
 };
 
+struct SearchEvals {
+    Value unadjusted;
+    Value staticEval;        // Pure NNUE eval
+    Value virtualEval;       // NNUE + optimism-dependent-offset
+    Value searchVirtualEval; // The TT-bounded evaluation + offset
+};
+
+struct QSearchEvals {
+    Value unadjusted;
+    Value staticEval;        // Pure NNUE eval
+    Value bestValue;         // The TT-bounded evaluation for stand-pat
+};
+
 // Search::Worker is the class that does the actual search.
 // It is instantiated once per thread, and it is responsible for keeping track
 // of the search history, and storing data required for the search.
@@ -377,6 +391,14 @@ class Worker {
     TimePoint elapsed() const;
 
     Value evaluate(const Position&);
+
+    SearchEvals probe_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+                                    Move excludedMove, bool ttHit, const TTData& ttData,
+                                    int correctionValue, int optimismUs);
+
+    QSearchEvals probe_qsearch_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+                                         bool ttHit, const TTData& ttData,
+                                         int correctionValue);
 
     LimitsType limits;
 

@@ -741,7 +741,7 @@ Value Search::Worker::search(
     Key   posKey;
     Move  move, excludedMove, bestMove;
     Depth extension, newDepth;
-    Value bestValue, value, eval, maxValue, probCutBeta;
+    Value bestValue, value, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
     bool  capture, ttCapture;
     int   priorReduction;
@@ -813,36 +813,19 @@ Value Search::Worker::search(
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
     // Step 5. Static evaluation of the position
-    Value unadjustedStaticEval = VALUE_NONE;
+    SearchEvals evals = probe_evaluations(*this, pos, ss, excludedMove, ttHit, ttData,
+                                          correctionValue, optimism[us]);
+    // Explicit state mutations
+    ss->staticEval       = evals.staticEval;
+    ss->virtualEval      = evals.virtualEval;
 
-    // Skip early pruning when in check
-    if (ss->inCheck)
-        ss->staticEval = eval = (ss - 2)->staticEval;
-    else if (excludedMove)
-        unadjustedStaticEval = eval = ss->staticEval;
-    else if (ss->ttHit)
-    {
-        // Never assume anything about values stored in TT
-        unadjustedStaticEval = ttData.eval;
-        if (!is_valid(unadjustedStaticEval))
-            unadjustedStaticEval = evaluate(pos);
+    // Local scope variables
+    Value searchVirtualEval     = evals.searchVirtualEval;
+    Value unadjustedStaticEval  = evals.unadjusted;
 
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-        // ttValue can be used as a better position evaluation
-        if (is_valid(ttData.value)
-            && (ttData.bound & (ttData.value > eval ? BOUND_LOWER : BOUND_UPPER)))
-            eval = ttData.value;
-    }
-    else
-    {
-        unadjustedStaticEval = evaluate(pos);
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-        // Static evaluation is saved as it was before adjustment by correction history
+    if (!ss->inCheck && !excludedMove && !ttHit)
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
                        unadjustedStaticEval, tt.generation());
-    }
 
     // Set up the improving flag, which is true if current static evaluation is
     // bigger than the previous static evaluation at our turn (if we were in
@@ -852,11 +835,6 @@ Value Search::Worker::search(
     // for us than at the last ply.
     improving         = ss->staticEval > (ss - 2)->staticEval;
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
-
-    // Calculate the virtual evaluation offset through optimism
-    // we use this to bias move ordering and reductions.
-    ss->virtualEval    = Eval::scale_evaluation(ss->staticEval, optimism[us], pos);
-    Value virtualEval       = eval + ss->virtualEval - ss->staticEval;
 
     // Hindsight adjustment of reductions based on static evaluation difference.
     if (priorReduction >= 3 && !opponentWorsening)
@@ -980,15 +958,15 @@ Value Search::Worker::search(
 
 
     // Step 7. Razoring
-    // If eval is really low, skip search entirely and return the qsearch value.
+    // If searchVirtualEval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
-    if (!PvNode && virtualEval < alpha - 483 - 318 * depth * depth)
+    if (!PvNode && searchVirtualEval < alpha - 483 - 318 * depth * depth)
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding.
-    if (!ss->ttPv && depth < 19 && virtualEval >= beta && (!ttData.move || ttCapture) && !is_loss(beta)
-        && !is_win(eval))
+    if (!ss->ttPv && depth < 19 && searchVirtualEval >= beta && (!ttData.move || ttCapture) && !is_loss(beta)
+        && !is_win(searchVirtualEval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
         futilityMult -= 20 * !ss->ttHit;
@@ -997,8 +975,8 @@ Value Search::Worker::search(
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
                              + std::abs(correctionValue) / 198435;
 
-        if (virtualEval - futilityMargin >= beta)
-            return (661 * beta + 363 * eval) / 1024;
+        if (searchVirtualEval - futilityMargin >= beta)
+            return (661 * beta + 363 * searchVirtualEval) / 1024;
     }
 
     // Step 9. Null move search with verification search
@@ -1697,45 +1675,28 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         return ttData.value;
 
     // Step 4. Static evaluation of the position
-    Value unadjustedStaticEval = VALUE_NONE;
+    const auto correctionValue = ss->inCheck ? 0 : correction_value(*this, pos, ss);
+
+    QSearchEvals evals = probe_qsearch_evaluations(*this, pos, ss, ttHit, ttData, correctionValue);
+
     if (ss->inCheck)
+    {
         bestValue = futilityBase = -VALUE_INFINITE;
+    }
     else
     {
-        const auto correctionValue = correction_value(*this, pos, ss);
+        ss->staticEval = evals.staticEval;
 
-        if (ss->ttHit)
-        {
-            // Never assume anything about values stored in TT
-            unadjustedStaticEval = ttData.eval;
+        bestValue = evals.bestValue;
 
-            if (!is_valid(unadjustedStaticEval))
-                unadjustedStaticEval = evaluate(pos);
-
-            ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-
-            // ttValue can be used as a better position evaluation
-            if (is_valid(ttData.value) && !is_decisive(ttData.value)
-                && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
-                bestValue = ttData.value;
-        }
-        else
-        {
-            unadjustedStaticEval = evaluate(pos);
-            ss->staticEval       = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
-        }
-
-        // Stand pat. Return immediately if static value is at least beta
         if (bestValue >= beta)
         {
             if (!is_decisive(bestValue))
                 bestValue = (441 * bestValue + 583 * beta) / 1024;
 
-            if (!ss->ttHit)
+            if (!ttHit)
                 ttWriter.write(posKey, VALUE_NONE, false, BOUND_LOWER, DEPTH_UNSEARCHED,
-                               Move::none(), unadjustedStaticEval, tt.generation());
+                               Move::none(), evals.unadjusted, tt.generation());
             return bestValue;
         }
 
@@ -1861,7 +1822,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // is saved as it was before adjustment by correction history.
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
                    bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
+                   evals.unadjusted, tt.generation());
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
@@ -1884,6 +1845,80 @@ TimePoint Search::Worker::elapsed() const {
 Value Search::Worker::evaluate(const Position& pos) {
     Value raw_nnue = Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable);
     return raw_nnue;
+}
+
+SearchEvals Search::Worker::probe_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+                              Move excludedMove, bool ttHit, const TTData& ttData,
+                              int correctionValue, int optimismUs) {
+    SearchEvals result;
+    Value searchEval;
+    result.unadjusted = VALUE_NONE;
+
+    if (ss->inCheck)
+    {
+        result.staticEval  = (ss - 2)->staticEval;
+        result.virtualEval = (ss - 2)->virtualEval;
+        searchEval  = (ss - 2)->staticEval;
+    }
+    else if (excludedMove)
+    {
+        result.unadjusted  = ss->staticEval;
+        result.staticEval  = ss->staticEval;
+        result.virtualEval = ss->virtualEval;
+        searchEval  = ss->staticEval;
+    }
+    else
+    {
+        if (ttHit && is_valid(ttData.eval)) {
+            result.unadjusted = ttData.eval;
+        } else {
+            result.unadjusted = worker.evaluate(pos);
+        }
+
+        result.staticEval  = to_corrected_static_eval(result.unadjusted, correctionValue);
+        result.virtualEval = Eval::scale_evaluation(result.staticEval, optimismUs, pos);
+        searchEval  = result.staticEval;
+
+        if (ttHit && is_valid(ttData.value) &&
+            (ttData.bound & (ttData.value > searchEval ? BOUND_LOWER : BOUND_UPPER))) {
+            searchEval = ttData.value;
+        }
+    }
+
+    Value optimismOffset     = is_valid(result.staticEval) ? result.virtualEval - result.staticEval : 0;
+    result.searchVirtualEval = searchEval + optimismOffset;
+
+    return result;
+}
+
+QSearchEvals Search::Worker::probe_qsearch_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+                                       bool ttHit, const TTData& ttData, int correctionValue) {
+    QSearchEvals result;
+    result.unadjusted = VALUE_NONE;
+
+    if (ss->inCheck)
+    {
+        result.staticEval = VALUE_NONE;
+        result.bestValue  = -VALUE_INFINITE;
+    }
+    else
+    {
+        if (ttHit && is_valid(ttData.eval)) {
+            result.unadjusted = ttData.eval;
+        } else {
+            result.unadjusted = worker.evaluate(pos);
+        }
+
+        result.staticEval = to_corrected_static_eval(result.unadjusted, correctionValue);
+        result.bestValue  = result.staticEval;
+
+        if (ttHit && is_valid(ttData.value) && !is_decisive(ttData.value) &&
+            (ttData.bound & (ttData.value > result.bestValue ? BOUND_LOWER : BOUND_UPPER))) {
+            result.bestValue = ttData.value;
+        }
+    }
+
+    return result;
 }
 
 namespace {
@@ -2032,12 +2067,6 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
 
 void update_quiet_histories(
   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
-
-    // Linearly dampen history updates to force graph-resetting moves to surface
-    // earlier in the MovePicker as the rule 50 counter climbs.
-    int r50_dampening = 199 - pos.rule50_count();
-    bonus = bonus * r50_dampening / 199;
-
     Color us = pos.side_to_move();
     workerThread.mainHistory[us][move.raw()] << bonus;  // Untuned to prevent duplicate effort
 
