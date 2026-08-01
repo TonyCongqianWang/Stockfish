@@ -376,7 +376,7 @@ bool Search::Worker::iterative_deepening() {
             Value avg = rootMoves[pvIdx].averageScore;
             delta     = (avg >= VALUE_INFINITE || avg <= -VALUE_INFINITE)
                         ? VALUE_INFINITE * VALUE_INFINITE
-                        : 25 + threadIdx % 8;
+                        : 20 + threadIdx % 8;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
@@ -388,6 +388,7 @@ bool Search::Worker::iterative_deepening() {
             // high/low, re-search with a bigger window until we don't fail
             // high/low anymore.
             int failedHighCnt = 0;
+            int totalFailCnt  = 0;
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
@@ -438,7 +439,9 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                delta += 47 * delta / 128;
+                totalFailCnt++;
+                int deltaGrowthRate = 50 + totalFailCnt * 10;
+                delta += delta * deltaGrowthRate / 128;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
