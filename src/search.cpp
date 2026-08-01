@@ -295,6 +295,7 @@ bool Search::Worker::iterative_deepening() {
           &continuationHistory[0][0][NO_PIECE][0];  // Use as a sentinel
         (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
         (ss - i)->staticEval                    = VALUE_NONE;
+        (ss - i)->virtualEval                   = VALUE_NONE;
     }
 
     for (int i = 0; i <= MAX_PLY + 2; ++i)
@@ -854,9 +855,8 @@ Value Search::Worker::search(
 
     // Calculate the virtual evaluation offset through optimism
     // we use this to bias move ordering and reductions.
-    Value virtualStaticEval = Eval::scale_evaluation(ss->staticEval, optimism[us], pos);
-    Value optimismOffset    = virtualStaticEval - ss->staticEval;
-    Value virtualEval       = eval + optimismOffset;
+    ss->virtualEval    = Eval::scale_evaluation(ss->staticEval, optimism[us], pos);
+    Value virtualEval       = eval + ss->virtualEval - ss->staticEval;
 
     // Hindsight adjustment of reductions based on static evaluation difference.
     if (priorReduction >= 3 && !opponentWorsening)
@@ -971,7 +971,7 @@ Value Search::Worker::search(
     // Use static evaluation difference to improve quiet move ordering
     if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture)
     {
-        int evalDiff = std::clamp(-int((ss - 1)->staticEval + ss->staticEval), -189, 194) + 60;
+        int evalDiff = std::clamp(-int((ss - 1)->virtualEval + ss->virtualEval), -189, 194) + 60;
         mainHistory[~us][((ss - 1)->currentMove).raw()] << evalDiff * 11;
         if (!ttHit && type_of(pos.piece_on(prevSq)) != PAWN
             && ((ss - 1)->currentMove).type_of() != PROMOTION)
@@ -997,12 +997,12 @@ Value Search::Worker::search(
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
                              + std::abs(correctionValue) / 198435;
 
-        if (eval - futilityMargin >= beta)
+        if (virtualEval - futilityMargin >= beta)
             return (661 * beta + 363 * eval) / 1024;
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && virtualStaticEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
+    if (cutNode && ss->virtualEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -1056,7 +1056,7 @@ Value Search::Worker::search(
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-        MovePicker mp(pos, ttData.move, probCutBeta - virtualStaticEval, &captureHistory);
+        MovePicker mp(pos, ttData.move, probCutBeta - ss->virtualEval, &captureHistory);
         Depth      probCutDepth = depth - (improving ? 5 : 3);
 
         while ((move = mp.next_move()) != Move::none())
@@ -1177,7 +1177,7 @@ moves_loop:  // When in check, search starts here
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 8)
                 {
-                    Value futilityValue = virtualStaticEval + 234 + 247 * lmrDepth
+                    Value futilityValue = ss->virtualEval + 234 + 247 * lmrDepth
                                         + PieceValue[capturedPiece] + 134 * captHist / 1024;
 
                     if (futilityValue <= alpha)
@@ -1334,10 +1334,6 @@ moves_loop:  // When in check, search starts here
         if (capture) {
             ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
                           + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
-
-            // Sign aware Simplification Bias through optimism
-            if (optimismOffset > 0)
-                ss->statScore += int(300 * i64(optimismOffset) / 128);
         }
         else
             ss->statScore =
@@ -1978,9 +1974,15 @@ void update_all_stats(const Position& pos,
     }
     else
     {
+        int capBonus = bonus;
+        Value optOffset = ss->virtualEval - ss->staticEval;
+
+        if (optOffset > 0)
+            capBonus += std::min(int(optOffset) * int(depth) / 16, 1000); // 16 is ready for SPSA tuning
+
         // Increase stats for the best move in case it was a capture move
         capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
-        captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1427 / 1024;
+        captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << capBonus * 1427 / 1024;
     }
 
     // Extra penalty for a quiet early move that was not a TT move in

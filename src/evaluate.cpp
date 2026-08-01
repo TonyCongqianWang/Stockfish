@@ -63,16 +63,33 @@ Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
     int se = simple_eval(pos);
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
 
-    // Human theory logic: Are we winning and ahead, or losing and behind?
-    // If signs match, simplification is good. If they differ, keep pieces.
-    bool same_sign = (optimism > 0 && se > 0) || (optimism < 0 && se < 0);
+    // 1. Measure Alignment (Are optimism and simple_eval pulling in the same direction?)
+    // The divisor (256) dictates the "width" of the transition zone.
+    // Higher divisor = smoother, slower transition.
+    int alignment = (optimism * se) / 256;
 
-    // Invert the historical scaling bounds (7191 to ~32339) to reward simplification
-    int base_multiplier = 7191;
-    int mat_multiplier  = same_sign ? std::max(39530 - material, base_multiplier) : (base_multiplier + material);
+    // 2. Create a blending weight [0, 1024]
+    // Clamp to [-512, 512], then shift.
+    // Highly Aligned (+512)      -> weight = 0
+    // Highly Anti-aligned (-512) -> weight = 1024
+    // Neutral (0)                -> weight = 512
+    int weight = 512 - std::clamp(alignment, -512, 512);
+
+    // 3. Smoothly interpolate between the two material philosophies.
+    // M_max is an approximation of full board material (using a fast power of 2).
+    constexpr int M_max = 32768;
+    int inverted_material = std::max(0, M_max - material);
+
+    // Lerp: As weight approaches 0, we favor the inverted material (rewarding trades)
+    int effective_material = (weight * material + (1024 - weight) * inverted_material) / 1024;
+
+    int mat_multiplier = 7191 + effective_material;
 
     optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / 512;
     int v        = (nnue * i64(80000 + material) + optimism) / 80000;
+
+    // Damp down the evaluation linearly when shuffling
+    v -= v * pos.rule50_count() / 199;
 
     // Guarantee evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
