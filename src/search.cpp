@@ -1675,20 +1675,20 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         return ttData.value;
 
     // Step 4. Static evaluation of the position
-    const auto correctionValue = ss->inCheck ? 0 : correction_value(*this, pos, ss);
-
-    QSearchEvals evals = probe_qsearch_evaluations(*this, pos, ss, ttHit, ttData, correctionValue);
-
+    Value unadjustedStaticEval = VALUE_NONE;
     if (ss->inCheck)
     {
         bestValue = futilityBase = -VALUE_INFINITE;
     }
     else
     {
-        ss->staticEval = evals.staticEval;
+        const auto correctionValue = correction_value(*this, pos, ss);
+        QSearchEvals evals         = probe_qsearch_evaluations(*this, pos, ss, ttHit, ttData, correctionValue);
+        ss->staticEval             = evals.staticEval;
+        bestValue                  = evals.bestValue;
+        unadjustedStaticEval       = evals.unadjusted;
 
-        bestValue = evals.bestValue;
-
+        // Stand pat. Return immediately if static value is at least beta
         if (bestValue >= beta)
         {
             if (!is_decisive(bestValue))
@@ -1696,7 +1696,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
             if (!ttHit)
                 ttWriter.write(posKey, VALUE_NONE, false, BOUND_LOWER, DEPTH_UNSEARCHED,
-                               Move::none(), evals.unadjusted, tt.generation());
+                               Move::none(), unadjustedStaticEval, tt.generation());
             return bestValue;
         }
 
@@ -1822,7 +1822,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // is saved as it was before adjustment by correction history.
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
                    bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   evals.unadjusted, tt.generation());
+                   unadjustedStaticEval, tt.generation());
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
@@ -2010,7 +2010,7 @@ void update_all_stats(const Position& pos,
     else
     {
         int capBonus = bonus;
-        Value optOffset = ss->virtualEval - ss->staticEval;
+        Value optOffset = is_valid(ss->staticEval) ? ss->virtualEval - ss->staticEval : 0;
 
         if (optOffset > 0)
             capBonus += std::min(int(optOffset) * int(depth) / 16, 1000); // 16 is ready for SPSA tuning
