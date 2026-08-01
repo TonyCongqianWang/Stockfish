@@ -394,11 +394,11 @@ class Worker {
 
     SearchEvals probe_evaluations(Worker& worker, const Position& pos, const Stack* ss,
                                     Move excludedMove, bool ttHit, const TTData& ttData,
-                                    int correctionValue, int optimismUs);
+                                    int correctionValue, int optimism);
 
     QSearchEvals probe_qsearch_evaluations(Worker& worker, const Position& pos, const Stack* ss,
                                          bool ttHit, const TTData& ttData,
-                                         int correctionValue);
+                                         int correctionValue, int optimism);
 
     LimitsType limits;
 

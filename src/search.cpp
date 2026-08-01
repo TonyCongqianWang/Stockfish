@@ -814,7 +814,7 @@ Value Search::Worker::search(
 
     // Step 5. Static evaluation of the position
     SearchEvals evals = probe_evaluations(*this, pos, ss, excludedMove, ttHit, ttData,
-                                          correctionValue, optimism[us]);
+                                          correctionValue, optimism[pos.side_to_move()]);
     // Explicit state mutations
     ss->staticEval       = evals.staticEval;
     ss->virtualEval      = evals.virtualEval;
@@ -1252,10 +1252,10 @@ moves_loop:  // When in check, search starts here
             {
                 ttMoveHistory << -421 - 110 * depth;
 
-                if (!ss->inCheck && value > ss->staticEval)
+                if (!ss->inCheck && value > ss->virtualEval)
                 {
                     const int bonus =
-                      std::clamp(int(value - ss->staticEval) * singularDepth * 177 / 1024,
+                      std::clamp(int(value - ss->virtualEval) * singularDepth * 177 / 1024,
                                  -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
                     update_correction_history(pos, ss, *this, bonus);
                 }
@@ -1592,10 +1592,10 @@ moves_loop:  // When in check, search starts here
     // Adjust correction history if the best move is not a capture
     // and the error direction matches whether we are above/below bounds.
     if (!ss->inCheck && !(bestMove && pos.capture(bestMove))
-        && (bestValue > ss->staticEval) == bool(bestMove))
+        && (bestValue > ss->virtualEval) == bool(bestMove))
     {
         auto bonus =
-          std::clamp(int(bestValue - ss->staticEval) * depth * (bestMove ? 12 : 18) / 128,
+          std::clamp(int(bestValue - ss->virtualEval) * depth * (bestMove ? 12 : 18) / 128,
                      -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
         update_correction_history(pos, ss, *this, 1061 * bonus / 1024);
     }
@@ -1683,7 +1683,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     else
     {
         const auto correctionValue = correction_value(*this, pos, ss);
-        QSearchEvals evals         = probe_qsearch_evaluations(*this, pos, ss, ttHit, ttData, correctionValue);
+        QSearchEvals evals         = probe_qsearch_evaluations(*this, pos, ss, ttHit, ttData, correctionValue, optimism[pos.side_to_move()]);
         ss->staticEval             = evals.staticEval;
         bestValue                  = evals.bestValue;
         unadjustedStaticEval       = evals.unadjusted;
@@ -1848,8 +1848,8 @@ Value Search::Worker::evaluate(const Position& pos) {
 }
 
 SearchEvals Search::Worker::probe_evaluations(Worker& worker, const Position& pos, const Stack* ss,
-                              Move excludedMove, bool ttHit, const TTData& ttData,
-                              int correctionValue, int optimismUs) {
+                                              Move excludedMove, bool ttHit, const TTData& ttData,
+                                              int correctionValue, int optimismSide) {
     SearchEvals result;
     Value searchEval;
     result.unadjusted = VALUE_NONE;
@@ -1858,14 +1858,14 @@ SearchEvals Search::Worker::probe_evaluations(Worker& worker, const Position& po
     {
         result.staticEval  = (ss - 2)->staticEval;
         result.virtualEval = (ss - 2)->virtualEval;
-        searchEval  = (ss - 2)->staticEval;
+        searchEval         = (ss - 2)->staticEval;
     }
     else if (excludedMove)
     {
         result.unadjusted  = ss->staticEval;
         result.staticEval  = ss->staticEval;
         result.virtualEval = ss->virtualEval;
-        searchEval  = ss->staticEval;
+        searchEval         = ss->staticEval;
     }
     else
     {
@@ -1875,9 +1875,14 @@ SearchEvals Search::Worker::probe_evaluations(Worker& worker, const Position& po
             result.unadjusted = worker.evaluate(pos);
         }
 
-        result.staticEval  = to_corrected_static_eval(result.unadjusted, correctionValue);
-        result.virtualEval = Eval::scale_evaluation(result.staticEval, optimismUs, pos);
-        searchEval  = result.staticEval;
+        // 1. Pristine Objective Eval (Raw NNUE)
+        result.staticEval = result.unadjusted;
+
+        // 2. Heuristic Search Eval (Scaled Raw NNUE + Correction)
+        Value scaled_nnue  = Eval::scale_evaluation(result.unadjusted, optimismSide, pos);
+        result.virtualEval = to_corrected_static_eval(scaled_nnue, correctionValue);
+
+        searchEval = result.staticEval;
 
         if (ttHit && is_valid(ttData.value) &&
             (ttData.bound & (ttData.value > searchEval ? BOUND_LOWER : BOUND_UPPER))) {
@@ -1892,7 +1897,7 @@ SearchEvals Search::Worker::probe_evaluations(Worker& worker, const Position& po
 }
 
 QSearchEvals Search::Worker::probe_qsearch_evaluations(Worker& worker, const Position& pos, const Stack* ss,
-                                       bool ttHit, const TTData& ttData, int correctionValue) {
+                                                       bool ttHit, const TTData& ttData, int correctionValue, int optimismSide) {
     QSearchEvals result;
     result.unadjusted = VALUE_NONE;
 
@@ -1909,7 +1914,8 @@ QSearchEvals Search::Worker::probe_qsearch_evaluations(Worker& worker, const Pos
             result.unadjusted = worker.evaluate(pos);
         }
 
-        result.staticEval = to_corrected_static_eval(result.unadjusted, correctionValue);
+        // QSearch is strictly Heuristic (Scaled Raw NNUE + Correction)
+        result.staticEval  = to_corrected_static_eval(Eval::scale_evaluation(result.unadjusted, optimismSide, pos), correctionValue);
         result.bestValue  = result.staticEval;
 
         if (ttHit && is_valid(ttData.value) && !is_decisive(ttData.value) &&
