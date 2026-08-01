@@ -86,7 +86,7 @@ Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
     int mat_multiplier = 7191 + effective_material;
 
     optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / i64(80000 + material) / 512;
-    int v        = (nnue * i64(80000 + material) + optimism) ;
+    int v        = nnue + optimism;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
