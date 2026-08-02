@@ -981,7 +981,7 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && ss->virtualEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
+    if (cutNode && ss->staticEval >= beta - 13 * depth - 47 * improving + 365 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -1015,7 +1015,7 @@ Value Search::Worker::search(
         }
     }
 
-    improving |= ss->virtualEval >= beta;
+    improving |= ss->staticEval >= beta;
 
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
@@ -1035,7 +1035,7 @@ Value Search::Worker::search(
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-        MovePicker mp(pos, ttData.move, probCutBeta - ss->virtualEval, &captureHistory);
+        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
         Depth      probCutDepth = depth - (improving ? 5 : 3);
 
         while ((move = mp.next_move()) != Move::none())
@@ -1156,7 +1156,7 @@ moves_loop:  // When in check, search starts here
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 8)
                 {
-                    Value futilityValue = ss->virtualEval + 234 + 247 * lmrDepth
+                    Value futilityValue = ss->staticEval + 234 + 247 * lmrDepth
                                         + PieceValue[capturedPiece] + 134 * captHist / 1024;
 
                     if (futilityValue <= alpha)
@@ -2021,7 +2021,7 @@ void update_all_stats(const Position& pos,
         Value optOffset = is_valid(ss->staticEval) ? ss->virtualEval - ss->staticEval : 0;
 
         if (optOffset > 0)
-            capBonus += std::min(int(optOffset) * int(depth) / 256, 1000); // 16 is ready for SPSA tuning
+            capBonus += std::min(int(optOffset) * int(depth) / 128, 256);
 
         // Increase stats for the best move in case it was a capture move
         capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
