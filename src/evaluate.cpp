@@ -58,38 +58,70 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     return psqt + positional;
 }
 
+
+namespace ScaleParams {
+    // Normalization: 1024 ensures the derivative near 0 is exactly 1.0.
+    // This perfectly matches the slope of your original raw `se` implementation.
+    constexpr int SeNormMult    = 1024;
+    constexpr int SeNormDiv     = 1024;
+    constexpr int NnueNormMult  = 1024;
+    constexpr int NnueNormDiv   = 1024;
+
+    // Alignment: tunable multipliers.
+    // OptAlignMult = 64 matches old OptAlignDiv = 256 (64 / 16384 = 1 / 256).
+    constexpr int OptAlignMult  = 54;
+    // Set to 0 by default to remove the static bias it introduced. Let SPSA prove if >0 helps.
+    constexpr int NnueAlignMult = 12;
+    constexpr int AlignBaseDiv  = 16384; // DO NOT TUNE
+
+    // Material interpolation
+    constexpr int MaxMaterial   = 32768;
+    constexpr int MatBase       = 7191;
+
+    // Confidence scaling
+    constexpr int SeConfBase    = 512;
+    constexpr int SeConfMax     = 3000; // Capped to prevent edge-case blowups
+
+    // Final evaluation scaling
+    constexpr int BaseEvalDiv   = 80000; // DO NOT TUNE
+    constexpr int Rule50Div     = 199;
+}
+
 // Applies search-dependent scaling (optimism and rule50) to the raw NNUE eval
 Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
     int se = simple_eval(pos);
     int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
 
-    // 1. Measure Alignment (Are optimism and simple_eval pulling in the same direction?)
-    // The divisor (256) dictates the "width" of the transition zone.
-    // Higher divisor = smoother, slower transition.
-    int alignment = (optimism * se) / 256;
+    // 1. Normalize SE and NNUE for ALIGNMENT only
+    int se_norm   = (se * ScaleParams::SeNormMult) / (std::abs(se) + ScaleParams::SeNormDiv);
+    int nnue_norm = (nnue * ScaleParams::NnueNormMult) / (std::abs(nnue) + ScaleParams::NnueNormDiv);
 
-    // 2. Create a blending weight [0, 1024]
-    // Clamp to [-512, 512], then shift.
-    // Highly Aligned (+512)      -> weight = 0
-    // Highly Anti-aligned (-512) -> weight = 1024
-    // Neutral (0)                -> weight = 512
+    // 2. Measure Alignment dynamically
+    int opt_align  = optimism * se_norm;
+    int nnue_align = nnue_norm * se_norm;
+
+    int alignment = (opt_align * ScaleParams::OptAlignMult +
+                     nnue_align * ScaleParams::NnueAlignMult) / ScaleParams::AlignBaseDiv;
+
+    // 3. Create a blending weight [0, 1024]
     int weight = 512 - std::clamp(alignment, -512, 512);
 
-    // 3. Smoothly interpolate between the two material philosophies.
-    // M_max is an approximation of full board material (using a fast power of 2).
-    constexpr int M_max = 32768;
-    int inverted_material = std::max(0, M_max - material);
+    // 4. Smoothly interpolate between the two material philosophies.
+    int inverted_material = std::max(0, ScaleParams::MaxMaterial - material);
 
-    // Lerp: As weight approaches 0, we favor the inverted material (rewarding trades)
     int effective_material = (weight * material + (1024 - weight) * inverted_material) / 1024;
+    int mat_multiplier = ScaleParams::MatBase + effective_material;
 
-    int mat_multiplier = 7191 + effective_material;
+    // 5. Apply optimism scaling SAFELY.
+    int se_confidence = ScaleParams::SeConfBase + std::min(std::abs(se), ScaleParams::SeConfMax);
+    optimism = (optimism * i64(se_confidence) * i64(mat_multiplier)) / 512;
 
-    optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / 512;
-    int v        = (nnue * i64(80000 + material) + optimism) / 80000;
+    // 6. RESTORED: Direct material scaling on NNUE.
+    // This is mathematically identical to your first version.
+    int v = (nnue * i64(ScaleParams::BaseEvalDiv + material) + optimism) / ScaleParams::BaseEvalDiv;
 
     // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 199;
+    v -= v * pos.rule50_count() / ScaleParams::Rule50Div;
 
     // Guarantee evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
