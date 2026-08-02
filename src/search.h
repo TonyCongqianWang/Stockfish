@@ -317,7 +317,8 @@ struct SearchEvals {
     Value unadjusted;
     Value staticEval;        // Pure NNUE eval
     Value virtualEval;       // NNUE + optimism-dependent-offset
-    Value searchVirtualEval; // The TT-bounded evaluation + offset
+    Value searchEval;        // TT-bounded eval
+    Value virtualSearchEval; // The TT-bounded evaluation + offset
 };
 
 struct QSearchEvals {
@@ -392,13 +393,13 @@ class Worker {
 
     Value evaluate(const Position&);
 
-    SearchEvals probe_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+    SearchEvals probe_evaluations(const Position& pos, const Stack* ss,
                                     Move excludedMove, bool ttHit, const TTData& ttData,
-                                    int correctionValue, int optimism);
+                                    int correctionValue);
 
-    QSearchEvals probe_qsearch_evaluations(Worker& worker, const Position& pos, const Stack* ss,
+    QSearchEvals probe_qsearch_evaluations(const Position& pos, const Stack* ss,
                                          bool ttHit, const TTData& ttData,
-                                         int correctionValue, int optimism);
+                                         int correctionValue);
 
     LimitsType limits;
 
