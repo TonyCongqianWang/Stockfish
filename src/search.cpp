@@ -54,18 +54,14 @@ namespace Stockfish {
 
 #include "tune.h"
 // Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
-int c_base_0 = 200000,           c_base_1 = 300000;
-int c_depth_0 = 2000,            c_depth_1 = 3000;
-int c_std_0 = 15000,             c_std_1 = 10000;
-int c_avg_0 = 5000,              c_avg_1 = 4000;
-int c_d_std_0 = 500,             c_d_std_1 = 500;
-int c_d_avg_0 = 700,             c_d_avg_1 = 700;
-int c_cap_base_0 = 1500000,     c_cap_base_1 = 3000000;
-int c_cap_depth_0 = 150000,     c_cap_depth_1 = 300000;
-
-TUNE(c_base_0, c_base_1, c_depth_0, c_depth_1, c_std_0, c_std_1, c_avg_0,
-    c_avg_1, c_d_std_0, c_d_std_1, c_d_avg_0, c_d_avg_1, c_cap_base_0,
-    c_cap_base_1, c_cap_depth_0, c_cap_depth_1)
+constexpr int c_base_0 = 198211,           c_base_1 = 332107;
+constexpr int c_depth_0 = 1857,            c_depth_1 = 3007;
+constexpr int c_std_0 = 14401,             c_std_1 = 9803;
+constexpr int c_avg_0 = 5025,              c_avg_1 = 3791;
+constexpr int c_d_std_0 = 496,             c_d_std_1 = 531;
+constexpr int c_d_avg_0 = 687,             c_d_avg_1 = 722;
+constexpr int c_cap_base_0 = 1371736,     c_cap_base_1 = 2938002;
+constexpr int c_cap_depth_0 = 46883,     c_cap_depth_1 = 46883;
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
