@@ -55,7 +55,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 
     assert(!pos.checkers());
     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
-    return psqt + positional;
+    return 1200 * i64(psqt + positional) / 1024;
 }
 
 // Applies search-dependent scaling (optimism and rule50) to the raw NNUE eval
@@ -85,7 +85,7 @@ Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
 
     int mat_multiplier = 7191 + effective_material;
 
-    optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / i64(80000 + material) / 512;
+    optimism = (optimism * i64(512 + std::abs(se)) * i64(mat_multiplier)) / 80000 / 512;
     int v        = nnue + optimism;
 
     // Damp down the evaluation linearly when shuffling

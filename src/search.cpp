@@ -2018,10 +2018,11 @@ void update_all_stats(const Position& pos,
     else
     {
         int capBonus = bonus;
-        Value optOffset = is_valid(ss->staticEval) ? ss->virtualEval - ss->staticEval : 0;
-
-        if (optOffset > 0)
-            capBonus += std::min(int(optOffset) * int(depth) / 128, 256);
+        if (is_valid((ss - 2)->virtualEval) && is_valid(ss->virtualEval))
+        {
+            int evalDiff = std::clamp(-int((ss - 2)->virtualEval + ss->virtualEval), -512, 512);
+            capBonus += std::clamp(int(evalDiff) * depth / 32, -capBonus / 4, capBonus / 4);
+        }
 
         // Increase stats for the best move in case it was a capture move
         capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
