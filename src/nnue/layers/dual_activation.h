@@ -26,22 +26,10 @@
 #include <iosfwd>
 
 #include "../nnue_common.h"
+#include "clipped_relu.h"
+#include "sqr_clipped_relu.h"
 
 namespace Stockfish::Eval::NNUE::Layers {
-
-// Elementwise activation helpers
-inline u8 square_clipped_relu(i32 input, i32 sqr_bias) {
-    i64 sum = static_cast<i64>(input) + 2 * static_cast<i64>(sqr_bias);
-    if (sum <= 0) return 0;
-    i32 sqr_val = static_cast<i32>((sum * sum) >> 23);
-    return static_cast<u8>(std::min(sqr_val, 127));
-}
-
-inline u8 clipped_relu(i32 input) {
-    if (input <= 0) return 0;
-    i32 lin_val = input >> 8;
-    return static_cast<u8>(std::min(lin_val, 127));
-}
 
 template<IndexType InDims>
 class DualActivation {
@@ -55,6 +43,11 @@ class DualActivation {
       ceil_to_multiple<IndexType>(OutputDimensions, 32);
 
     using OutputBuffer = OutputType[PaddedOutputDimensions];
+    using SqrAct = SqrClippedReLU<InputDimensions, 8>;
+    using LinAct = ClippedReLU<InputDimensions, 8>;
+
+    SqrAct ac_sqr;
+    LinAct ac;
 
     static constexpr u32 get_hash_value(u32 prevHash) {
         u32 hashValue = 0x538D24C7u;
@@ -80,11 +73,20 @@ class DualActivation {
     }
 
     void propagate(const InputType* input, OutputType* output) const {
+        // 1. Add the independent bias to a temporary buffer for the squared path
+        alignas(CacheLineSize) InputType sqr_input[InputDimensions];
         for (IndexType i = 0; i < InputDimensions; ++i)
         {
-            output[i]                   = square_clipped_relu(input[i], sqr_biases[i]);
-            output[InputDimensions + i] = clipped_relu(input[i]);
+            sqr_input[i] = input[i] + sqr_biases[i];
         }
+
+#if defined(USE_PAIR_ACTIVATIONS)
+        ac_sqr.propagate_pair(sqr_input, output,
+                                output + InputDimensions);
+#else
+        ac_sqr.propagate(sqr_input, output);
+        ac.propagate(input, output + InputDimensions);
+#endif
     }
 
    private:
