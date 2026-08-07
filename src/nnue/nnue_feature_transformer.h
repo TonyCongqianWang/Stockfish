@@ -242,6 +242,27 @@ class FeatureTransformer {
           / 2;
 
         const auto& accumulation = accumulatorState.accumulation;
+        const auto& us_acc       = accumulation[perspectives[0]];
+        const auto& them_acc     = accumulation[perspectives[1]];
+
+        // Swizzle inputs into contiguous arrays to allow
+        // existing optimized SIMD loops to perform cross-perspective multiplication
+        alignas(CacheLineSize) BiasType swizzled_in0[HalfDimensions];
+        alignas(CacheLineSize) BiasType swizzled_in1[HalfDimensions];
+        constexpr IndexType Q = HalfDimensions / 4;
+        constexpr usize QBytes = Q * sizeof(BiasType);
+
+        // Buffer A (in0): [us0, them0, us2, them2]
+        std::memcpy(&swizzled_in0[0 * Q], &us_acc[0 * Q], QBytes);
+        std::memcpy(&swizzled_in0[1 * Q], &them_acc[0 * Q], QBytes);
+        std::memcpy(&swizzled_in0[2 * Q], &us_acc[2 * Q], QBytes);
+        std::memcpy(&swizzled_in0[3 * Q], &them_acc[2 * Q], QBytes);
+
+        // Buffer B (in1): [us1, them1, them3, us3]
+        std::memcpy(&swizzled_in1[0 * Q], &us_acc[1 * Q], QBytes);
+        std::memcpy(&swizzled_in1[1 * Q], &them_acc[1 * Q], QBytes);
+        std::memcpy(&swizzled_in1[2 * Q], &them_acc[3 * Q], QBytes);
+        std::memcpy(&swizzled_in1[3 * Q], &us_acc[3 * Q], QBytes);
 
         for (IndexType p = 0; p < 2; ++p)
         {
@@ -259,9 +280,8 @@ class FeatureTransformer {
             [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
             [[maybe_unused]] constexpr int shift = 7;
 
-            const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
-            const vec_t* in1 =
-              reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
+            const vec_t* in0 = reinterpret_cast<const vec_t*>(&swizzled_in0[offset]);
+            const vec_t* in1 = reinterpret_cast<const vec_t*>(&swizzled_in1[offset]);
             vec_t* out = reinterpret_cast<vec_t*>(output + offset);
 
             // Per the NNUE architecture, here we want to multiply pairs of
@@ -380,14 +400,13 @@ class FeatureTransformer {
                 vid8 = __riscv_vid_v_u8m1(VL);
             else
                 vid16 = __riscv_vid_v_u16m2(VL);
-            const auto& accp = accumulation[perspectives[p]];
 
             for (usize vl; j < HalfDimensions / 2; j += vl)
             {
                 vl = __riscv_vsetvl_e16m2(HalfDimensions / 2 - j);
 
-                vint16m2_t acc0 = __riscv_vle16_v_i16m2(&accp[j], vl);
-                vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accp[j + HalfDimensions / 2], vl);
+                vint16m2_t acc0 = __riscv_vle16_v_i16m2(&swizzled_in0[offset + j], vl);
+                vint16m2_t acc1 = __riscv_vle16_v_i16m2(&swizzled_in1[offset + j], vl);
 
                 acc0 = __riscv_vmax(acc0, 0, vl);
                 acc1 = __riscv_vmax(acc1, 0, vl);
@@ -416,9 +435,8 @@ class FeatureTransformer {
 
             for (IndexType j = 0; j < HalfDimensions / 2; ++j)
             {
-                BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
-                BiasType sum1 =
-                  accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
+                BiasType sum0 = swizzled_in0[offset + j];
+                BiasType sum1 = swizzled_in1[offset + j];
 
                 sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
                 sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
