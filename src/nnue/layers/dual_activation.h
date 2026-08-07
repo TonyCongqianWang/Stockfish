@@ -79,8 +79,8 @@ class DualActivation {
 
         for (IndexType i = 0; i < InputDimensions; ++i)
         {
-            lin_input[i] = input[i] >> 1;
-            sqr_input[i] = (input[i] + sqr_biases[i]) >> 1;;
+            lin_input[i] = input[i];
+            sqr_input[i] = input[i] + sqr_biases[i];
         }
         ac_sqr.propagate(sqr_input, output);
         ac.propagate(lin_input, output + InputDimensions);
