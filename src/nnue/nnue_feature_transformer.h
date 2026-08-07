@@ -275,6 +275,19 @@ class FeatureTransformer {
             output[3 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
 
+        using namespace SIMD;
+        for (IndexType p = 0; p < 2; ++p)
+        {
+            auto cursor = nnzInfo.make_cursor(p);
+            const IndexType p_offset = p * (HalfDimensions / 2);
+            for (IndexType j = 0; j < HalfDimensions / 2; j += 64)
+            {
+                vec_t v0 = vec_load(reinterpret_cast<const vec_t*>(&output[p_offset + j]));
+                vec_t v1 = vec_load(reinterpret_cast<const vec_t*>(&output[p_offset + j + 32]));
+                cursor.record2(v0, v1);
+            }
+        }
+
         return psqt;
     }  // end of function transform()
 

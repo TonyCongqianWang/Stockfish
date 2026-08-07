@@ -152,6 +152,16 @@ struct NetworkArchitecture {
         // 4. Final bottleneck block -> fused output preactivation (scale 4096.0)
         i32 fwdOut = final_block.propagate(res_stream);
 
+        static bool logged = false;
+        if (!logged)
+        {
+            logged = true;
+            std::cout << "[DEBUG C++] L1 res_stream (first 8):";
+            for (int i = 0; i < 8; ++i)
+                std::cout << " " << res_stream[i];
+            std::cout << "\n[DEBUG C++] fwdOut: " << fwdOut << "\n";
+        }
+
         // 5. Convert to internal score units (scale 4096.0 to 600 * OutputScale)
         i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 256);
         return outputValue;
