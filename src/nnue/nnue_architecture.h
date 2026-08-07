@@ -153,7 +153,7 @@ struct NetworkArchitecture {
         i32 fwdOut = final_block.propagate(res_stream);
 
         // 5. Convert to internal score units (scale 4096.0 to 600 * OutputScale)
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 2048);
+        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 256);
         return outputValue;
     }
 

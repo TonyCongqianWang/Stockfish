@@ -590,7 +590,7 @@ int UCIEngine::to_cp(Value v, const Position& pos) {
 
     auto [a, b] = win_rate_params(pos);
 
-    return int(std::round(100 * int(v) / a));
+    return int(std::round(100 * static_cast<int64_t>(v) / a));
 }
 
 std::string UCIEngine::wdl(Value v, const Position& pos) {
