@@ -139,7 +139,7 @@ struct NetworkArchitecture {
         typename decltype(l1)::OutputBuffer l1_out;
         l1.propagate(transformedFeatures, l1_out, nnzInfo);
 
-        // 2. Initial Residual Stream R in int32_t (scale 256.0)
+        // 2. Initial Residual Stream R in int32_t (scale 512.0)
         alignas(CacheLineSize) i32 res_stream[ResDim];
         for (int i = 0; i < ResDim; ++i)
             res_stream[i] = l1_out[i] >> 7;
@@ -163,7 +163,7 @@ struct NetworkArchitecture {
         std::cout << "\n[DEBUG C++] fwdOut: " << fwdOut << "\n";
 
         // 5. Convert to internal score units (scale 4096.0 to 600 * OutputScale)
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 256);
+        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 128);
         return outputValue;
     }
 

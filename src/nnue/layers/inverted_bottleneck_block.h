@@ -133,21 +133,22 @@ class InvertedBottleneckBlock {
             typename AffineTransform<ActDimensions, ResDim>::OutputBuffer down_out;
             down.propagate(act_out, down_out);
 
-            // 5. Standard Residual Addition: res_stream += (down_out >> 6)
+            // 5. Standard Residual Addition: res_stream += (down_out >> 7)
             for (IndexType i = 0; i < ResDim; ++i)
             {
-                i32 delta     = down_out[i] >> 6;
+                i32 delta     = down_out[i] >> 7;
                 res_stream[i] = res_stream[i] + delta;
             }
         }
         else
         {
             // 4. Fused Output Projection
+            // If quantized one for residual stream and expanded dim differ, multiply the smaller by appropiate factor.
             i32 sum = output_bias;
             for (IndexType j = 0; j < ResDim; ++j)
                 sum += static_cast<i32>(clamped_r[j]) * static_cast<i32>(output_weights[j]);
             for (IndexType k = 0; k < ActDimensions; ++k)
-                sum += 2 * (static_cast<i32>(act_out[k])
+                sum += (static_cast<i32>(act_out[k])
                             * static_cast<i32>(output_weights[ResDim + k]));
 
             return sum;
