@@ -46,13 +46,16 @@ class InvertedBottleneckBlock {
 
     static constexpr u32 get_hash_value(u32 prevHash) {
         u32 hashValue = decltype(up)::get_hash_value(prevHash);
-        hashValue     = decltype(act)::get_hash_value(hashValue);
         if constexpr (!IsFinalBlock)
+        {
             hashValue = decltype(down)::get_hash_value(hashValue);
+        }
         else
         {
-            hashValue = (hashValue ^ PaddedFusedDimensions) + 0xCC03DAE4u;
-            hashValue = (hashValue + 0x538D24C7u);
+            u32 outHash = 0xCC03DAE4u + 1;
+            outHash ^= hashValue >> 1;
+            outHash ^= hashValue << 31;
+            hashValue = outHash;
         }
         return hashValue;
     }

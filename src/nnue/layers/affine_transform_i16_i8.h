@@ -45,9 +45,12 @@ class AffineTransformI16I8 {
     using OutputBuffer = OutputType[OutputDimensions];
 
     static constexpr u32 get_hash_value(u32 prevHash) {
-        u32 hashValue = 0xCC168800u;
-        hashValue += prevHash;
-        hashValue ^= OutputDimensions;
+        u32 hashValue = 0xCC03DAE4u;
+        hashValue += OutputDimensions;
+        hashValue ^= prevHash >> 1;
+        hashValue ^= prevHash << 31;
+        if constexpr (OutputDimensions != 1)
+            hashValue += 0x538D24C7u;
         return hashValue;
     }
 
