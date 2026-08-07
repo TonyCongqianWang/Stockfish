@@ -77,7 +77,8 @@ class DualActivation {
         alignas(CacheLineSize) InputType sqr_input[InputDimensions];
         for (IndexType i = 0; i < InputDimensions; ++i)
         {
-            sqr_input[i] = input[i] + sqr_biases[i];
+            sqr_input[i] = (input[i] + sqr_biases[i]) >> 1;;
+            input[i] = input[i] >> 1;
         }
         ac_sqr.propagate(sqr_input, output);
         ac.propagate(input, output + InputDimensions);
