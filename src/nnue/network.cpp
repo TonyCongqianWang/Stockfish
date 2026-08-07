@@ -302,8 +302,17 @@ bool Network::read_header(std::istream& stream, u32* hashValue, std::string* des
     version    = read_little_endian<u32>(stream);
     *hashValue = read_little_endian<u32>(stream);
     size       = read_little_endian<u32>(stream);
-    if (!stream || version != Version)
+    if (!stream)
+    {
+        std::cerr << "[NNUE Load Error] Failed reading network header fields.\n";
         return false;
+    }
+    if (version != Version)
+    {
+        std::cerr << "[NNUE Load Error] File version mismatch! File=0x" << std::hex << version
+                  << " Expected=0x" << Version << std::dec << "\n";
+        return false;
+    }
     desc->resize(size);
     stream.read(&(*desc)[0], size);
     return !stream.fail();
@@ -323,17 +332,46 @@ bool Network::write_header(std::ostream& stream, u32 hashValue, const std::strin
 bool Network::read_parameters(std::istream& stream, std::string& netDescription) {
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
+    {
+        std::cerr << "[NNUE Load Error] read_header failed.\n";
         return false;
+    }
     if (hashValue != Network::hash)
+    {
+        std::cerr << "[NNUE Load Error] Overall network hash mismatch!\n"
+                  << "  File Header Hash : 0x" << std::hex << hashValue << "\n"
+                  << "  Expected Hash    : 0x" << Network::hash << std::dec << "\n"
+                  << "  (FT Hash: 0x" << std::hex << FeatureTransformer::get_hash_value()
+                  << ", Arch Hash: 0x" << NetworkArchitecture::get_hash_value() << std::dec << ")\n";
         return false;
+    }
     if (!Detail::read_parameters(stream, featureTransformer))
+    {
+        std::cerr << "[NNUE Load Error] FeatureTransformer read_parameters failed.\n";
         return false;
+    }
     for (usize i = 0; i < LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
+        {
+            std::cerr << "[NNUE Load Error] Layer stack bucket [" << i << "] read_parameters failed.\n";
             return false;
+        }
     }
-    return stream && stream.peek() == std::ios::traits_type::eof();
+    if (!stream || stream.peek() != std::ios::traits_type::eof())
+    {
+        std::streamoff trailing = 0;
+        if (stream)
+        {
+            std::streamoff pos = stream.tellg();
+            stream.seekg(0, std::ios::end);
+            trailing = stream.tellg() - pos;
+        }
+        std::cerr << "[NNUE Load Error] Trailing unread bytes at end of network file! Unread bytes: "
+                  << trailing << "\n";
+        return false;
+    }
+    return true;
 }
 
 

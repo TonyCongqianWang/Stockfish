@@ -72,13 +72,43 @@ struct NetworkArchitecture {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
-        u32 hashValue = 0xEC42E90Du;
-        hashValue ^= TransformedFeatureDimensions * 2;
+        u32 hashValue = 0xEC42E90Du ^ (TransformedFeatureDimensions * 2);
 
-        hashValue = decltype(l1)::get_hash_value(hashValue);
+        // 1. l1 layer
+        u32 h_l1 = 0xCC03DAE4u + ResDim;
+        h_l1 ^= hashValue >> 1;
+        h_l1 ^= hashValue << 31;
+        h_l1 += 0x538D24C7u;
+        hashValue = h_l1;
+
+        // 2. Intermediate blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)
-            hashValue = std::remove_reference_t<decltype(blocks[0])>::get_hash_value(hashValue);
-        hashValue = decltype(final_block)::get_hash_value(hashValue);
+        {
+            u32 h_up = 0xCC03DAE4u + ExpandedDim;
+            h_up ^= hashValue >> 1;
+            h_up ^= hashValue << 31;
+            h_up += 0x538D24C7u;
+            hashValue = h_up;
+
+            u32 h_down = 0xCC03DAE4u + ResDim;
+            h_down ^= hashValue >> 1;
+            h_down ^= hashValue << 31;
+            h_down += 0x538D24C7u;
+            hashValue = h_down;
+        }
+
+        // 3. Final block up layer
+        u32 h_fup = 0xCC03DAE4u + ExpandedDim;
+        h_fup ^= hashValue >> 1;
+        h_fup ^= hashValue << 31;
+        h_fup += 0x538D24C7u;
+        hashValue = h_fup;
+
+        // 4. Final block output layer (out_features = 1)
+        u32 h_out = 0xCC03DAE4u + 1;
+        h_out ^= hashValue >> 1;
+        h_out ^= hashValue << 31;
+        hashValue = h_out;
 
         return hashValue;
     }
