@@ -28,6 +28,7 @@
 #include <iterator>
 
 #include "../position.h"
+#include "nnz_helper.h"
 #include "../types.h"
 #include "nnue_accumulator.h"
 #include "nnue_architecture.h"
@@ -251,28 +252,28 @@ class FeatureTransformer {
         {
             BiasType sum0 = std::clamp<BiasType>(us_acc[0 * Q + j], 0, FtMaxVal);
             BiasType sum1 = std::clamp<BiasType>(us_acc[1 * Q + j], 0, FtMaxVal);
-            output[0 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 256);
+            output[0 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
         // Quarter 1: b0 * b1
         for (IndexType j = 0; j < Q; ++j)
         {
             BiasType sum0 = std::clamp<BiasType>(them_acc[0 * Q + j], 0, FtMaxVal);
             BiasType sum1 = std::clamp<BiasType>(them_acc[1 * Q + j], 0, FtMaxVal);
-            output[1 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 256);
+            output[1 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
         // Quarter 2: w2 * b3
         for (IndexType j = 0; j < Q; ++j)
         {
             BiasType sum0 = std::clamp<BiasType>(us_acc[2 * Q + j], 0, FtMaxVal);
             BiasType sum1 = std::clamp<BiasType>(them_acc[3 * Q + j], 0, FtMaxVal);
-            output[2 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 256);
+            output[2 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
         // Quarter 3: b2 * w3
         for (IndexType j = 0; j < Q; ++j)
         {
             BiasType sum0 = std::clamp<BiasType>(them_acc[2 * Q + j], 0, FtMaxVal);
             BiasType sum1 = std::clamp<BiasType>(us_acc[3 * Q + j], 0, FtMaxVal);
-            output[3 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 256);
+            output[3 * Q + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
 
         std::memset(nnzInfo.bitset, 0xFF, sizeof(nnzInfo.bitset));
