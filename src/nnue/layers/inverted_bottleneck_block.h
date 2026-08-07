@@ -136,7 +136,7 @@ class InvertedBottleneckBlock {
             // 5. Standard Residual Addition: res_stream += (down_out >> 7)
             for (IndexType i = 0; i < ResDim; ++i)
             {
-                i32 delta     = down_out[i] >> 7;
+                i32 delta     = down_out[i] >> 6;
                 res_stream[i] = res_stream[i] + delta;
             }
         }

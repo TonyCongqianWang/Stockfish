@@ -139,16 +139,16 @@ struct NetworkArchitecture {
         typename decltype(l1)::OutputBuffer l1_out;
         l1.propagate(transformedFeatures, l1_out, nnzInfo);
 
-        // 2. Initial Residual Stream R in int32_t (scale 512.0)
+        // 2. Initial Residual Stream R in int32_t (scale 128.0)
         alignas(CacheLineSize) i32 res_stream[ResDim];
         for (int i = 0; i < ResDim; ++i)
-            res_stream[i] = l1_out[i] >> 7;
+            res_stream[i] = l1_out[i] >> 6;
 
         // 3. Intermediate bottleneck residual blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)
             blocks[i].propagate(res_stream);
 
-        // 4. Final bottleneck block -> fused output preactivation (scale 4096.0)
+        // 4. Final bottleneck block -> fused output preactivation (scale 128.0 * 128.0 = 16384.0)
         i32 fwdOut = final_block.propagate(res_stream);
 
         std::cout << "[DEBUG C++] FT output (first 8):";
@@ -162,8 +162,8 @@ struct NetworkArchitecture {
             std::cout << " " << res_stream[i];
         std::cout << "\n[DEBUG C++] fwdOut: " << fwdOut << "\n";
 
-        // 5. Convert to internal score units (scale 4096.0 to 600 * OutputScale)
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600) / 128);
+        // 5. Convert to internal score units do not simplify formula as it corresponds to pytorch values.
+        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600 * 16) / 128 / 128);
         return outputValue;
     }
 
