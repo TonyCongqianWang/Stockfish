@@ -116,7 +116,7 @@ class InvertedBottleneckBlock {
         i16 clamped_r[ResDim];
         for (IndexType i = 0; i < ResDim; ++i)
             clamped_r[i] =
-              std::clamp(res_stream[i], static_cast<i16>(-32767), static_cast<i16>(32767));
+              static_cast<i16>(std::clamp(res_stream[i], -32767, 32767));
 
         // 2. Up-Projection (i16 -> i32 preactivation)
         typename AffineTransformI16I8<ResDim, ExpandedDim>::OutputBuffer up_out;
