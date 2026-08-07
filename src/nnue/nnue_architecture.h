@@ -152,7 +152,13 @@ struct NetworkArchitecture {
         // 4. Final bottleneck block -> fused output preactivation (scale 4096.0)
         i32 fwdOut = final_block.propagate(res_stream);
 
-        std::cout << "[DEBUG C++] L1 res_stream (first 8):";
+        std::cout << "[DEBUG C++] FT output (first 8):";
+        for (int i = 0; i < 8; ++i)
+            std::cout << " " << static_cast<int>(transformedFeatures[i]);
+        std::cout << "\n[DEBUG C++] L1 l1_out (first 8):";
+        for (int i = 0; i < 8; ++i)
+            std::cout << " " << l1_out[i];
+        std::cout << "\n[DEBUG C++] L1 res_stream (first 8):";
         for (int i = 0; i < 8; ++i)
             std::cout << " " << res_stream[i];
         std::cout << "\n[DEBUG C++] fwdOut: " << fwdOut << "\n";
