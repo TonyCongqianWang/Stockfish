@@ -85,7 +85,7 @@ class AffineTransformI16I8 {
             {
                 product_sum += static_cast<i32>(input[j]) * static_cast<i32>(row[j]);
             }
-            output[i] = product_sum + biases[i];
+            output[i] = (product_sum + biases[i]) >> 1;
         }
     }
 

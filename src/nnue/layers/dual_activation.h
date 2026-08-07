@@ -79,14 +79,8 @@ class DualActivation {
         {
             sqr_input[i] = input[i] + sqr_biases[i];
         }
-
-#if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr.propagate_pair(sqr_input, output,
-                                output + InputDimensions);
-#else
         ac_sqr.propagate(sqr_input, output);
         ac.propagate(input, output + InputDimensions);
-#endif
     }
 
    private:
