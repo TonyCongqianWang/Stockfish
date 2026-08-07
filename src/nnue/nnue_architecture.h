@@ -139,11 +139,10 @@ struct NetworkArchitecture {
         typename decltype(l1)::OutputBuffer l1_out;
         l1.propagate(transformedFeatures, l1_out, nnzInfo);
 
-        // 2. Initial Residual Stream R in int16_t (scale 256.0)
-        alignas(CacheLineSize) i16 res_stream[ResDim];
+        // 2. Initial Residual Stream R in int32_t (scale 256.0)
+        alignas(CacheLineSize) i32 res_stream[ResDim];
         for (int i = 0; i < ResDim; ++i)
-            res_stream[i] =
-              std::clamp(l1_out[i] >> 7, static_cast<i32>(-32767), static_cast<i32>(32767));
+            res_stream[i] = l1_out[i] >> 7;
 
         // 3. Intermediate bottleneck residual blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)

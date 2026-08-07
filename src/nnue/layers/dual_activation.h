@@ -74,14 +74,16 @@ class DualActivation {
 
     void propagate(const InputType* input, OutputType* output) const {
         // 1. Add the independent bias to a temporary buffer for the squared path
+        alignas(CacheLineSize) InputType lin_input[InputDimensions];
         alignas(CacheLineSize) InputType sqr_input[InputDimensions];
+
         for (IndexType i = 0; i < InputDimensions; ++i)
         {
+            lin_input[i] = input[i] >> 1;
             sqr_input[i] = (input[i] + sqr_biases[i]) >> 1;;
-            input[i] = input[i] >> 1;
         }
         ac_sqr.propagate(sqr_input, output);
-        ac.propagate(input, output + InputDimensions);
+        ac.propagate(lin_input, output + InputDimensions);
     }
 
    private:

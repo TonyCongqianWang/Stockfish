@@ -111,7 +111,7 @@ class InvertedBottleneckBlock {
         return h;
     }
 
-    auto propagate(i16* res_stream) const {
+    i32 propagate(i32* res_stream) const {
         // 1. Pre-block clamp R in-place to [-32767, 32767]
         i16 clamped_r[ResDim];
         for (IndexType i = 0; i < ResDim; ++i)
@@ -136,7 +136,7 @@ class InvertedBottleneckBlock {
             for (IndexType i = 0; i < ResDim; ++i)
             {
                 i32 delta     = down_out[i] >> 6;
-                res_stream[i] = static_cast<i16>(res_stream[i] + delta);
+                res_stream[i] = res_stream[i] + delta;
             }
         }
         else
@@ -151,6 +151,7 @@ class InvertedBottleneckBlock {
 
             return sum;
         }
+        return 0;
     }
 
    private:

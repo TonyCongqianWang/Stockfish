@@ -277,8 +277,9 @@ class FeatureTransformer {
         }
 
         std::memset(nnzInfo.bitset, 0xFF, sizeof(nnzInfo.bitset));
+#if defined(USE_RVV)
         nnzInfo.count = HalfDimensions;
-
+#endif
         return psqt;
     }  // end of function transform()
 
