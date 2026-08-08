@@ -333,7 +333,7 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
     {
-        std::cerr << "[NNUE Load Error] read_header failed.\n";
+        // std::cerr << "[NNUE Load Error] read_header failed.\n";
         return false;
     }
     if (hashValue != Network::hash)
@@ -347,28 +347,28 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     }
     if (!Detail::read_parameters(stream, featureTransformer))
     {
-        std::cerr << "[NNUE Load Error] FeatureTransformer read_parameters failed.\n";
+        // std::cerr << "[NNUE Load Error] FeatureTransformer read_parameters failed.\n";
         return false;
     }
     for (usize i = 0; i < LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
         {
-            std::cerr << "[NNUE Load Error] Layer stack bucket [" << i << "] read_parameters failed.\n";
+            // std::cerr << "[NNUE Load Error] Layer stack bucket [" << i << "] read_parameters failed.\n";
             return false;
         }
     }
     if (!stream || stream.peek() != std::ios::traits_type::eof())
     {
-        std::streamoff trailing = 0;
-        if (stream)
-        {
-            std::streamoff pos = stream.tellg();
-            stream.seekg(0, std::ios::end);
-            trailing = stream.tellg() - pos;
-        }
-        std::cerr << "[NNUE Load Error] Trailing unread bytes at end of network file! Unread bytes: "
-                  << trailing << "\n";
+        // std::streamoff trailing = 0;
+        // if (stream)
+        // {
+        //     std::streamoff pos = stream.tellg();
+        //     stream.seekg(0, std::ios::end);
+        //     trailing = stream.tellg() - pos;
+        // }
+        //std::cerr << "[NNUE Load Error] Trailing unread bytes at end of network file! Unread bytes: "
+        //          << trailing << "\n";
         return false;
     }
     return true;
