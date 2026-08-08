@@ -108,7 +108,7 @@ Value Eval::scale_evaluation(Value nnue, int optimism, const Position& pos) {
     // The raw product is shifted by AlignOffset to guarantee a strictly positive modifier,
     // yielding high values (~4096) for easy positions and low values (~0) for hard ones.
     int raw_alignment = (se_norm * nnue_norm) / 512;
-    int alignment = raw_alignment + ScaleParams::AlignOffset;
+    int alignment = std::max(0, raw_alignment + ScaleParams::AlignOffset - std::min(std::abs(se - nnue) / 4 - 8, 256));
 
     // 3. Blend optimism and NNUE using the difficulty modifier.
     // We favor easily convertible positions by heavily boosting optimism when alignment is high.
