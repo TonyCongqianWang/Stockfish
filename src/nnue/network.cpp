@@ -304,13 +304,13 @@ bool Network::read_header(std::istream& stream, u32* hashValue, std::string* des
     size       = read_little_endian<u32>(stream);
     if (!stream)
     {
-        std::cerr << "[NNUE Load Error] Failed reading network header fields.\n";
+        // std::cerr << "[NNUE Load Error] Failed reading network header fields.\n";
         return false;
     }
     if (version != Version)
     {
-        std::cerr << "[NNUE Load Error] File version mismatch! File=0x" << std::hex << version
-                  << " Expected=0x" << Version << std::dec << "\n";
+        // std::cerr << "[NNUE Load Error] File version mismatch! File=0x" << std::hex << version
+        //           << " Expected=0x" << Version << std::dec << "\n";
         return false;
     }
     desc->resize(size);
@@ -338,11 +338,11 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     }
     if (hashValue != Network::hash)
     {
-        std::cerr << "[NNUE Load Error] Overall network hash mismatch!\n"
-                  << "  File Header Hash : 0x" << std::hex << hashValue << "\n"
-                  << "  Expected Hash    : 0x" << Network::hash << std::dec << "\n"
-                  << "  (FT Hash: 0x" << std::hex << FeatureTransformer::get_hash_value()
-                  << ", Arch Hash: 0x" << NetworkArchitecture::get_hash_value() << std::dec << ")\n";
+        // std::cerr << "[NNUE Load Error] Overall network hash mismatch!\n"
+        //           << "  File Header Hash : 0x" << std::hex << hashValue << "\n"
+        //           << "  Expected Hash    : 0x" << Network::hash << std::dec << "\n"
+        //           << "  (FT Hash: 0x" << std::hex << FeatureTransformer::get_hash_value()
+        //           << ", Arch Hash: 0x" << NetworkArchitecture::get_hash_value() << std::dec << ")\n";
         return false;
     }
     if (!Detail::read_parameters(stream, featureTransformer))
