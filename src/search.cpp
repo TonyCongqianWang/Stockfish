@@ -56,8 +56,8 @@ namespace Stockfish {
 constexpr int c_base_0 = 65536,            c_base_1 = 328016;
 constexpr int c_std_0 = 11986,             c_std_1 = 61364;
 constexpr int c_avg_0 = 1667,              c_avg_1 = 1601;
-constexpr int c_cap_base_0 = 3932160,      c_cap_base_1 = 6553600;
-constexpr int c_delta_growth_rate = 36;
+constexpr int c_cap_base_0 = 7864320,      c_cap_base_1 = 5242880;
+constexpr int c_delta_growth_rate = 40;
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
