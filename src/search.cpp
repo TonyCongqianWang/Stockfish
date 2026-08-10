@@ -53,11 +53,11 @@
 namespace Stockfish {
 
 // Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math).
-constexpr int c_base_0 = 65536,            c_base_1 = 328016;
-constexpr int c_std_0 = 11986,             c_std_1 = 61364;
-constexpr int c_avg_0 = 1667,              c_avg_1 = 1601;
-constexpr int c_cap_base_0 = 7864320,      c_cap_base_1 = 5242880;
-constexpr int c_delta_growth_rate = 39;
+constexpr int c_base_0 = 65536,            c_base_1 = 1441792;
+constexpr int c_std_0 = 11986,             c_std_1 = 0;
+constexpr int c_avg_0 = 1667,              c_avg_1 = 0;
+constexpr int c_cap_base_0 = 6553600,      c_cap_base_1 = 5242880, c_cap_score = 10000;
+constexpr int c_delta_growth_rate = 47;
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
@@ -1482,7 +1482,8 @@ moves_loop:  // When in check, search starts here
                                      / (N * ChiDenominator + ChiNumerator * E_prev),
                                    MinWeight, MaxWeight);
             u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+            int clamped_value = std::clamp(value, -c_cap_score, c_cap_score);
+            i64 v2    = i64(std::abs(clamped_value)) * std::abs(clamped_value);
 
             if (rm.averageScore == -VALUE_INFINITE)
                 rm.averageScore = value;
@@ -1490,7 +1491,7 @@ moves_loop:  // When in check, search starts here
                 rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
+                rm.meanSquaredScore = v2;
             else
                 rm.meanSquaredScore =
                   Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
