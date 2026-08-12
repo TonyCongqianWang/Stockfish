@@ -52,6 +52,13 @@
 
 namespace Stockfish {
 
+// Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math).
+constexpr int c_base_0 = 327680,            c_base_1 = 1310720;
+constexpr int c_std_0 = 512,             c_std_1 = 256;
+constexpr int c_avg_0 = 256,              c_avg_1 = 128;
+constexpr int c_cap_base_0 = 655360,      c_cap_base_1 = 1638400, c_cap_score = 10000;
+constexpr int c_delta_growth_rate = 47;
+
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
 
@@ -281,7 +288,7 @@ bool Search::Worker::iterative_deepening() {
     Value  bestValue     = -VALUE_INFINITE;
     Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
-    int    delta, iterIdx                        = 0;
+    int    delta, deltaGrowth, iterIdx           = 0;
 
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
@@ -373,10 +380,51 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
             Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            Value mss = rootMoves[pvIdx].meanSquaredScore;
+
+            if (avg <= -VALUE_INFINITE || avg >= VALUE_INFINITE)
+            {
+                avg         = 0;
+                delta       = VALUE_INFINITE * VALUE_INFINITE;
+                deltaGrowth = 0;
+            }
+            else
+            {
+                i64 abs_avg  = std::abs(avg);
+                u32     temp_var = static_cast<u32>(std::max(0, static_cast<int>(mss - avg * avg)));
+                u32     res      = 0;
+                for (u32 bit = 1U << 30; bit != 0; bit >>= 2)
+                {
+                    if (temp_var >= res + bit)
+                    {
+                        temp_var -= res + bit;
+                        res = (res >> 1) + bit;
+                    }
+                    else
+                    {
+                        res >>= 1;
+                    }
+                }
+                i64 std_dev  = static_cast<i64>(res);
+
+                i64 base_terms_0 = c_base_0;
+                i64 var_terms_0  = (c_std_0 * std_dev) + (c_avg_0 * abs_avg);
+                i64 cap_terms_0 = c_cap_base_0;
+
+                i64 base_terms_1 = c_base_1;
+                i64 var_terms_1  = (c_std_1 * std_dev) + (c_avg_1 * abs_avg);
+                i64 cap_terms_1 = c_cap_base_1;
+
+                i64 scaled_delta_0 = base_terms_0 + std::min(var_terms_0, cap_terms_0);
+                i64 scaled_delta_1 = base_terms_1 + std::min(var_terms_1, cap_terms_1);
+
+                delta           = std::max(1, static_cast<int>(scaled_delta_0 >> 16));
+                deltaGrowth     = std::max(1, static_cast<int>(scaled_delta_1 >> 16));
+            }
+
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
@@ -435,7 +483,9 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                delta += 47 * delta / 128;
+                int deltaInc = std::max(c_delta_growth_rate * deltaGrowth / 128, 1);
+                delta       += deltaInc;
+                deltaGrowth += deltaInc;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
@@ -1454,7 +1504,8 @@ moves_loop:  // When in check, search starts here
                                      / (N * ChiDenominator + ChiNumerator * E_prev),
                                    MinWeight, MaxWeight);
             u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+            int clamped_value = std::clamp(value, -c_cap_score, c_cap_score);
+            i64 v2    = i64(std::abs(clamped_value)) * std::abs(clamped_value);
 
             if (rm.averageScore == -VALUE_INFINITE)
                 rm.averageScore = value;
@@ -1462,7 +1513,7 @@ moves_loop:  // When in check, search starts here
                 rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
+                rm.meanSquaredScore = v2;
             else
                 rm.meanSquaredScore =
                   Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
