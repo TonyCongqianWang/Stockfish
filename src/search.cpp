@@ -54,9 +54,9 @@ namespace Stockfish {
 
 // Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math).
 constexpr int c_base_0 = 327680,            c_base_1 = 1310720;
-constexpr int c_std_0 = 512,             c_std_1 = 256;
-constexpr int c_avg_0 = 256,              c_avg_1 = 128;
-constexpr int c_cap_base_0 = 655360,      c_cap_base_1 = 1638400, c_cap_score = 10000;
+constexpr int c_std_0 = 8192,             c_std_1 = 1024;
+constexpr int c_avg_0 = 1024,              c_avg_1 = 1024;
+constexpr int c_cap_base_0 = 3276800,      c_cap_base_1 = 1638400, c_cap_score = 10000;
 constexpr int c_delta_growth_rate = 47;
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
