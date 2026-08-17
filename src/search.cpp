@@ -52,7 +52,7 @@
 
 namespace Stockfish {
 
-// Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
+// Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math).
 constexpr int c_base_0 = 65536,            c_base_1 = 1441792;
 constexpr int c_std_0 = 11986,             c_std_1 = 0;
 constexpr int c_avg_0 = 1667,              c_avg_1 = 0;
