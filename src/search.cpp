@@ -292,7 +292,6 @@ bool Search::Worker::iterative_deepening() {
 
     Value  alpha, beta;
     Value  bestValue     = -VALUE_INFINITE;
-    Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
 
@@ -391,9 +390,10 @@ bool Search::Worker::iterative_deepening() {
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
-            // Adjust optimism based on root move's averageScore
-            optimism[us]  = 114 * avg / (std::abs(avg) + 85);
-            optimism[~us] = -optimism[us];
+
+            // Set the root score for this PV line so evaluate() at any depth
+            // reads the correct avgScoreSlow for the move being searched.
+            rootAvgScore = rootMoves[pvIdx].avgScoreSlow;
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, re-search with a bigger window until we don't fail
@@ -452,6 +452,16 @@ bool Search::Worker::iterative_deepening() {
                 delta += 47 * delta / 128;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
+            }
+
+            if (!threads.stop)
+            {
+                // Asymmetric EMA update
+                Value& slow    = rootMoves[pvIdx].avgScoreSlow;
+                Value  current = rootMoves[pvIdx].score;
+                Value  diff    = current - slow;
+                bool   toZero  = std::abs(current) < std::abs(slow);
+                slow          += diff * (5 + toZero * 4) / 16;
             }
 
             if (threads.stop && pvIdx)
@@ -1901,8 +1911,10 @@ TimePoint Search::Worker::elapsed() const {
 }
 
 Value Search::Worker::evaluate(const Position& pos) {
-    return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
+    Value nnue = Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable);
+    // Scale sign to stm's perspective: +1 if same as root, -1 if opposite.
+    Value rs   = rootAvgScore * (1 - 2 * int(pos.side_to_move() != rootPos.side_to_move()));
+    return Eval::scale_evaluation(nnue, rs, pos);
 }
 
 namespace {

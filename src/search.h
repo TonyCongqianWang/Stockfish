@@ -156,6 +156,7 @@ struct RootMove {
     Value       score              = -VALUE_INFINITE;
     Value       previousScore      = -VALUE_INFINITE;
     Value       averageScore       = -VALUE_INFINITE;
+    Value       avgScoreSlow       = VALUE_ZERO;
     Value       meanSquaredScore   = -VALUE_INFINITE * VALUE_INFINITE;
     Value       uciScore           = -VALUE_INFINITE;
     bool        scoreLowerbound    = false;
@@ -394,13 +395,13 @@ class Worker {
     RelaxedAtomic<u64> nodes, tbHits, bestMoveChanges;
     int                selDepth, nmpMinPly;
 
-    Value optimism[COLOR_NB];
 
     Position  rootPos;
     StateInfo rootState;
     RootMoves rootMoves;
     Depth     rootDepth;
     Value     rootDelta;
+    Value     rootAvgScore;
 
     PVMoves lastIterationIdxPV;
 
