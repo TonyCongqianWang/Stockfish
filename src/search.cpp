@@ -1008,7 +1008,7 @@ Value Search::Worker::search(
         if (eval + razorMargin <= alpha)
         {
             Value v = qsearch<NonPV, true>(pos, ss, alpha, beta);
-            if (v <= alpha)
+            if (v + razorMargin / 4 <= alpha)
                 return (661 * alpha + 363 * v) / 1024;
         }
     }
