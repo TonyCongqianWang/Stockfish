@@ -999,16 +999,16 @@ Value Search::Worker::search(
     // Step 7. Razoring
     if (!PvNode && eval < alpha && !is_loss(alpha) && depth < futility_depth(eval, alpha))
     {
-        Value razorMult = 280 + 120 * depth;
+        Value razorMult = 120 + 60 * depth;
 
         Value razorMargin = razorMult * depth
-                          + (1500 * improving + 300 * opponentWorsening) * razorMult / 1024
+                          + (1200 * improving + 300 * opponentWorsening) * razorMult / 1024
                           + std::abs(correctionValue) / 198435;
 
         if (eval + razorMargin <= alpha)
         {
             Value v = qsearch<NonPV, true>(pos, ss, alpha, beta);
-            if (v + razorMargin / 4 <= alpha)
+            if (v + razorMargin / 2 <= alpha)
                 return (661 * alpha + 363 * v) / 1024;
         }
     }
