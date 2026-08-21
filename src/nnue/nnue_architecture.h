@@ -152,7 +152,7 @@ struct NetworkArchitecture {
         i32 fwdOut = final_block.propagate(res_stream);
 
         // 5. Convert to internal score units do not simplify formula as it corresponds to pytorch values.
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600 * 16) / 128 / 128);
+        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600 * 16) / 128 / 1024);
         return outputValue;
     }
 

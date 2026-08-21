@@ -149,7 +149,7 @@ class InvertedBottleneckBlock {
                 sum += static_cast<i32>(clamped_r[j]) * static_cast<i32>(output_weights[j]);
             for (IndexType k = 0; k < ActDimensions; ++k)
                 sum += (static_cast<i32>(act_out[k])
-                            * static_cast<i32>(output_weights[ResDim + k]));
+                            * static_cast<i32>(output_weights[ResDim + k])) << 3;
 
             return sum;
         }
