@@ -46,8 +46,15 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network);
 Value evaluate(const NNUE::Network&           network,
                const Position&                pos,
                Eval::NNUE::AccumulatorStack&  accumulators,
-               Eval::NNUE::AccumulatorCaches& caches,
-               int                            optimism);
+               Eval::NNUE::AccumulatorCaches& caches);
+
+// Applies search-dependent scaling (root score and rule50) to the raw NNUE eval
+Value scale_evaluation(Value nnue, int rootScore, const Position& pos);
+
+// Returns the material difference for the side to move.
+// Divide by PawnValue to get a vaguely traditional estimate
+int simple_eval(const Position& pos);
+
 }  // namespace Eval
 
 }  // namespace Stockfish
