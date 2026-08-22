@@ -278,7 +278,11 @@ class FeatureTransformer {
 
             [[maybe_unused]] const vec_t   Zero  = vec_zero();
             [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
-            [[maybe_unused]] constexpr int shift = 7;
+            [[maybe_unused]] constexpr int shift = 16 - InferenceL0Shift;
+            static_assert(shift >= 0 && shift <= 7,
+                          "Feature transformer shift (16 - InferenceL0Shift) must be in [0, 7]");
+            static_assert((FtMaxVal << shift) <= 32767,
+                          "FtMaxVal shifted by (16 - InferenceL0Shift) must not overflow signed 16-bit");
 
             const vec_t* in0 = reinterpret_cast<const vec_t*>(&swizzled_in0[offset]);
             const vec_t* in1 = reinterpret_cast<const vec_t*>(&swizzled_in1[offset]);
@@ -344,6 +348,10 @@ class FeatureTransformer {
                     vec_t acc1b = in1[i + 1];
 
                     static_assert(FtMaxVal == 255);
+    #if defined(USE_NEON) || defined(USE_LSX) || defined(USE_LASX) || defined(__wasm__)
+                    static_assert(InferenceL0Shift == 9,
+                                  "NEON/LSX/LASX/WASM pairwise multiplication paths require InferenceL0Shift == 9");
+    #endif
 
     #if defined(USE_NEON)
                     uint16x8_t mul0 = vmull_u8(vqmovun_s16(acc0a), vqmovun_s16(acc1a));
@@ -441,7 +449,7 @@ class FeatureTransformer {
                 sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
                 sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
 
-                output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
+                output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) >> InferenceL0Shift);
             }
 
 #endif

@@ -79,7 +79,9 @@ class SqrClippedReLU {
                       "propagate_pair() needs a tail path if L2/L3 change to multiple of 16");
 
         constexpr IndexType NumChunks       = InputDimensions / 32;
-        constexpr int       SimdShiftAmount = WeightScaleBitsLocal * 2 + 7 - 16;
+        constexpr int       SimdShiftAmount = WeightScaleBitsLocal * 2 + InferenceSqrCReLUClipShift - 16;
+        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 14,
+                      "SimdShiftAmount must be between 0 and 14 for SIMD 16-bit shift operations");
 
     #if defined(USE_AVX512)
         const auto in      = reinterpret_cast<const __m512i*>(input);
@@ -140,9 +142,12 @@ class SqrClippedReLU {
     void propagate(const InputType* input, OutputType* output) const {
         static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 8,
                       "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 8");
-        // After squaring we need to shift by WeightScaleBitsLocal * 2 + 7
+        // After squaring we need to shift by WeightScaleBitsLocal * 2 + InferenceSqrCReLUClipShift
         // MulHi strips the lower 16 bits (i.e. shift by 16) so we need to shift out the remaining.
-        [[maybe_unused]] constexpr int SimdShiftAmount = WeightScaleBitsLocal * 2 + 7 - 16;
+        [[maybe_unused]] constexpr int SimdShiftAmount =
+          WeightScaleBitsLocal * 2 + InferenceSqrCReLUClipShift - 16;
+        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 14,
+                      "SimdShiftAmount must be between 0 and 14 for SIMD 16-bit shift operations");
 
     #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
@@ -234,9 +239,9 @@ class SqrClippedReLU {
         {
             output[i] = static_cast<OutputType>(
               // Really should be /127 but we need to make it fast so we right-shift
-              // by an extra 7 bits instead. Needs to be accounted for in the trainer.
-              std::min(127ll,
-                       ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
+              // by an extra InferenceSqrCReLUClipShift bits instead. Needs to be accounted for in the trainer.
+              std::min(static_cast<long long>(ExpandedQuantizedMax),
+                       ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + InferenceSqrCReLUClipShift)));
         }
     }
 #endif

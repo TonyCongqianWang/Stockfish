@@ -69,6 +69,8 @@ class ClippedReLU {
 #if !defined(USE_PAIR_ACTIVATIONS)
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+        static_assert(WeightScaleBitsLocal >= 0 && WeightScaleBitsLocal <= 15,
+                      "WeightScaleBitsLocal must be between 0 and 15 for 16-bit SIMD shifts");
 
     #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
@@ -167,7 +169,7 @@ class ClippedReLU {
         for (IndexType i = Start; i < InputDimensions; ++i)
         {
             output[i] =
-              static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, 127));
+              static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, ExpandedQuantizedMax));
         }
     }
 #endif

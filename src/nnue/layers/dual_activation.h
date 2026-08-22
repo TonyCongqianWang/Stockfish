@@ -43,8 +43,8 @@ class DualActivation {
       ceil_to_multiple<IndexType>(OutputDimensions, 32);
 
     using OutputBuffer = OutputType[PaddedOutputDimensions];
-    using SqrAct = SqrClippedReLU<InputDimensions, 8>;
-    using LinAct = ClippedReLU<InputDimensions, 8>;
+    using SqrAct = SqrClippedReLU<InputDimensions, WeightScaleBlockUpBits>;
+    using LinAct = ClippedReLU<InputDimensions, WeightScaleBlockUpBits>;
 
     SqrAct ac_sqr;
     LinAct ac;

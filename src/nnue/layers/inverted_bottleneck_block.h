@@ -111,11 +111,17 @@ class InvertedBottleneckBlock {
         return h;
     }
 
+    // Shift factor to align activation output with residual output in fused final block
+    static constexpr int FusedActShift =
+      (ResQuantizedOneBits + WeightScaleOutResBits) - (ExpandedQuantizedOneBits + WeightScaleOutActBits);
+    static_assert(FusedActShift >= 0 && FusedActShift < 32,
+                  "FusedActShift must be non-negative and less than 32");
+
     i32 propagate(i32* res_stream) const {
-        // 1. Pre-block clamp R in-place to [-32767, 32767]
+        // 1. Pre-block clamp R in-place to [-ResQuantizedMax, ResQuantizedMax]
         alignas(CacheLineSize) i16 clamped_r[ResDim];
         for (IndexType i = 0; i < ResDim; ++i) {
-            res_stream[i] = std::clamp(res_stream[i], -32767, 32767);
+            res_stream[i] = std::clamp(res_stream[i], -ResQuantizedMax, ResQuantizedMax);
             clamped_r[i]  = static_cast<i16>(res_stream[i]);
         }
 
@@ -133,23 +139,23 @@ class InvertedBottleneckBlock {
             typename AffineTransform<ActDimensions, ResDim>::OutputBuffer down_out;
             down.propagate(act_out, down_out);
 
-            // 5. Standard Residual Addition: res_stream += (down_out >> 7)
+            // 5. Standard Residual Addition: res_stream += (down_out >> WeightScaleBlockDownBits)
             for (IndexType i = 0; i < ResDim; ++i)
             {
-                i32 delta     = down_out[i] >> 6;
+                i32 delta     = down_out[i] >> WeightScaleBlockDownBits;
                 res_stream[i] = res_stream[i] + delta;
             }
         }
         else
         {
             // 4. Fused Output Projection
-            // If quantized one for residual stream and expanded dim differ, multiply the smaller by appropiate factor.
+            // If quantized one for residual stream and expanded dim differ, multiply the smaller by appropriate factor.
             i32 sum = output_bias;
             for (IndexType j = 0; j < ResDim; ++j)
                 sum += static_cast<i32>(clamped_r[j]) * static_cast<i32>(output_weights[j]);
             for (IndexType k = 0; k < ActDimensions; ++k)
                 sum += (static_cast<i32>(act_out[k])
-                            * static_cast<i32>(output_weights[ResDim + k])) << 3;
+                            * static_cast<i32>(output_weights[ResDim + k])) << FusedActShift;
 
             return sum;
         }

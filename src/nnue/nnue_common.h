@@ -64,11 +64,48 @@ using IndexType        = u32;
 // Version of the evaluation file
 constexpr u32 Version = 0x6A448AFAu;
 
-// Constant used in evaluation value calculation
-constexpr int OutputScale     = 16;
-constexpr int WeightScaleBits = 6;
-constexpr int FtMaxVal        = 255;
-constexpr int HiddenOneVal    = 128;
+// Evaluation scaling
+constexpr int NNUE2Score  = 600;
+constexpr int OutputScale = 16;
+
+// Quantization scales (in log2 bits, assuming power-of-two weight scales)
+constexpr int WeightScaleL1Bits        = 6;   // scale = 64
+constexpr int WeightScaleBlockUpBits   = 8;   // scale = 256
+constexpr int WeightScaleBlockDownBits = 6;   // scale = 64
+constexpr int WeightScaleOutResBits    = 10;  // scale = 1024
+constexpr int WeightScaleOutActBits    = 7;   // scale = 128
+constexpr int WeightScaleBits          = WeightScaleL1Bits;
+
+// Activation representation scales and limits
+constexpr int FtQuantizedMax           = 255;
+constexpr int FtMaxVal                 = FtQuantizedMax;
+
+constexpr int ResQuantizedOneBits      = 7;   // scale = 128
+constexpr int ResQuantizedMax          = 32767;
+constexpr int HiddenOneVal             = 1 << ResQuantizedOneBits;
+
+constexpr int ExpandedQuantizedOneBits = 7;   // scale = 128
+constexpr int ExpandedQuantizedMax     = 127;
+
+// Inference division shifts (log2)
+constexpr int InferenceL0Shift          = 9;  // >> 9 (division by 512)
+constexpr int InferenceL1Shift          = 6;  // >> 6 (division by 64)
+constexpr int InferenceSqrCReLUClipShift = 7;  // >> 7 (division by 128)
+
+static_assert(ResQuantizedMax > 0 && ResQuantizedMax <= 32767,
+              "ResQuantizedMax must fit within a signed 16-bit integer");
+static_assert(ExpandedQuantizedMax > 0 && ExpandedQuantizedMax <= 127,
+              "ExpandedQuantizedMax must fit within signed 8-bit positive range");
+static_assert(InferenceL0Shift >= 9 && InferenceL0Shift <= 16,
+              "InferenceL0Shift must be in [9, 16] for SIMD pairwise feature multiplication");
+static_assert(InferenceL1Shift >= 0 && InferenceL1Shift < 32,
+              "InferenceL1Shift must be in [0, 31]");
+static_assert(InferenceSqrCReLUClipShift >= 0 && InferenceSqrCReLUClipShift < 32,
+              "InferenceSqrCReLUClipShift must be in [0, 31]");
+static_assert(WeightScaleBlockDownBits >= 0 && WeightScaleBlockDownBits < 32,
+              "WeightScaleBlockDownBits must be in [0, 31]");
+static_assert(WeightScaleBlockUpBits >= 5 && WeightScaleBlockUpBits <= 8,
+              "WeightScaleBlockUpBits must be between 5 and 8 for SIMD SqrCReLU");
 
 // Size of cache line (in bytes)
 constexpr usize CacheLineSize = 64;

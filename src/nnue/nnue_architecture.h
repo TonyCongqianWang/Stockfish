@@ -43,11 +43,16 @@ using ThreatFeatureSet = Features::FullThreats;
 using PairFeatureSet   = Features::PP_3Wide;
 using PSQFeatureSet    = Features::HalfKAv2_hm;
 
-// Number of input feature dimensions after conversion
+// Model architecture configuration (matching nnue-pytorch LayerStacksConfig)
 constexpr IndexType L1                    = 1024;
-constexpr int       L2                    = 32;  // Residual stream dimension (res_dim)
-constexpr int       L3                    = 32;  // Half expanded dimension (ExpandedDim = 64)
-constexpr int       NumIntermediateBlocks = 1;
+constexpr int       ResDim                = 32;  // Residual stream dimension (res_dim)
+constexpr int       ExpandedDim           = 64;  // Expanded dimension inside bottleneck blocks (expanded_dim)
+constexpr int       NumBlocks             = 2;   // Total number of inverted bottleneck blocks (num_blocks)
+constexpr int       NumIntermediateBlocks = NumBlocks - 1;
+
+// Compatibility aliases
+constexpr int L2 = ResDim;
+constexpr int L3 = ExpandedDim / 2;
 
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;
@@ -61,10 +66,10 @@ static_assert(
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
-    static constexpr int       ResDim                       = L2;
-    static constexpr int       ExpandedDim                  = L3 * 2;
+    static constexpr int       ResDim                       = Stockfish::Eval::NNUE::ResDim;
+    static constexpr int       ExpandedDim                  = Stockfish::Eval::NNUE::ExpandedDim;
     static constexpr int       FC_0_OUTPUTS                 = ResDim;
-    static constexpr int       FC_1_OUTPUTS                 = L3;
+    static constexpr int       FC_1_OUTPUTS                 = ExpandedDim / 2;
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, ResDim> l1;
     Layers::InvertedBottleneckBlock<ResDim, ExpandedDim, false> blocks[NumIntermediateBlocks];
@@ -139,20 +144,24 @@ struct NetworkArchitecture {
         typename decltype(l1)::OutputBuffer l1_out;
         l1.propagate(transformedFeatures, l1_out, nnzInfo);
 
-        // 2. Initial Residual Stream R in int32_t (scale 128.0)
+        // 2. Initial Residual Stream R in int32_t (scale 1 << ResQuantizedOneBits)
         alignas(CacheLineSize) i32 res_stream[ResDim];
         for (int i = 0; i < ResDim; ++i)
-            res_stream[i] = l1_out[i] >> 6;
+            res_stream[i] = l1_out[i] >> InferenceL1Shift;
 
         // 3. Intermediate bottleneck residual blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)
             blocks[i].propagate(res_stream);
 
-        // 4. Final bottleneck block -> fused output preactivation (scale 128.0 * 128.0 = 16384.0)
+        // 4. Final bottleneck block -> fused output preactivation
         i32 fwdOut = final_block.propagate(res_stream);
 
         // 5. Convert to internal score units do not simplify formula as it corresponds to pytorch values.
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * 600 * 16) / 128 / 1024);
+        constexpr int OutputDivisorBits = ResQuantizedOneBits + WeightScaleOutResBits;
+        static_assert(OutputDivisorBits >= 0 && OutputDivisorBits < 31,
+                      "OutputDivisorBits must be in [0, 30] so (1 << OutputDivisorBits) fits in signed 32-bit");
+        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * NNUE2Score * OutputScale)
+                                           / (1 << OutputDivisorBits));
         return outputValue;
     }
 
