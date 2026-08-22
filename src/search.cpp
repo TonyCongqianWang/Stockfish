@@ -454,16 +454,6 @@ bool Search::Worker::iterative_deepening() {
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
 
-            if (!threads.stop)
-            {
-                // Asymmetric EMA update
-                Value& slow    = rootMoves[pvIdx].avgScoreSlow;
-                Value  current = rootMoves[pvIdx].score;
-                Value  diff    = current - slow;
-                bool   toZero  = std::abs(current) < std::abs(slow);
-                slow          += diff * (5 + toZero * 4) / 16;
-            }
-
             if (threads.stop && pvIdx)
             {
                 // In multiPV analysis we do not let aborted searches spoil mated-in/
@@ -1483,6 +1473,13 @@ moves_loop:  // When in check, search starts here
             else
                 rm.meanSquaredScore =
                   Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
+
+            if (value > alpha && value < beta)
+            {
+                Value diff   = value - rm.avgScoreSlow;
+                bool  toZero = std::abs(value) < std::abs(rm.avgScoreSlow);
+                rm.avgScoreSlow += diff * (5 + toZero * 4) / 16;
+            }
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
