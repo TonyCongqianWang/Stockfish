@@ -80,8 +80,10 @@ class SqrClippedReLU {
 
         constexpr IndexType NumChunks       = InputDimensions / 32;
         constexpr int       SimdShiftAmount = WeightScaleBitsLocal * 2 + InferenceSqrCReLUClipShift - 16;
-        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 14,
-                      "SimdShiftAmount must be between 0 and 14 for SIMD 16-bit shift operations");
+        // Input is packed to int16 (max 32767), so mulhi_16 produces at most (32768^2 >> 16) = 16384.
+        // To reach the full [0, 127] int8 output range, SimdShiftAmount must be <= 7 (16384 >> 7 = 128 -> 127).
+        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 7,
+                      "SimdShiftAmount must be between 0 and 7 so that SqrCReLU reaches full [0, 127] dynamic range");
 
     #if defined(USE_AVX512)
         const auto in      = reinterpret_cast<const __m512i*>(input);
@@ -146,8 +148,8 @@ class SqrClippedReLU {
         // MulHi strips the lower 16 bits (i.e. shift by 16) so we need to shift out the remaining.
         [[maybe_unused]] constexpr int SimdShiftAmount =
           WeightScaleBitsLocal * 2 + InferenceSqrCReLUClipShift - 16;
-        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 14,
-                      "SimdShiftAmount must be between 0 and 14 for SIMD 16-bit shift operations");
+        static_assert(SimdShiftAmount >= 0 && SimdShiftAmount <= 7,
+                      "SimdShiftAmount must be between 0 and 7 so that SqrCReLU reaches full [0, 127] dynamic range");
 
     #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;

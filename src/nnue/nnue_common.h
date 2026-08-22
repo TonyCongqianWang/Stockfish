@@ -69,10 +69,10 @@ constexpr int NNUE2Score  = 600;
 constexpr int OutputScale = 16;
 
 // Quantization scales (in log2 bits, assuming power-of-two weight scales)
-constexpr int WeightScaleL1Bits        = 6;   // scale = 64
+constexpr int WeightScaleL1Bits        = 8;   // scale = 256
 constexpr int WeightScaleBlockUpBits   = 8;   // scale = 256
 constexpr int WeightScaleBlockDownBits = 6;   // scale = 64
-constexpr int WeightScaleOutResBits    = 10;  // scale = 1024
+constexpr int WeightScaleOutResBits    = 8;   // scale = 256
 constexpr int WeightScaleOutActBits    = 7;   // scale = 128
 constexpr int WeightScaleBits          = WeightScaleL1Bits;
 
@@ -89,7 +89,7 @@ constexpr int ExpandedQuantizedMax     = 127;
 
 // Inference division shifts (log2)
 constexpr int InferenceL0Shift          = 9;  // >> 9 (division by 512)
-constexpr int InferenceL1Shift          = 6;  // >> 6 (division by 64)
+constexpr int InferenceL1Shift          = 8;  // >> 8 (division by 256)
 constexpr int InferenceSqrCReLUClipShift = 7;  // >> 7 (division by 128)
 
 static_assert(ResQuantizedMax > 0 && ResQuantizedMax <= 32767,

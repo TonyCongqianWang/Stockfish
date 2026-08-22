@@ -47,7 +47,7 @@ using PSQFeatureSet    = Features::HalfKAv2_hm;
 constexpr IndexType L1                    = 1024;
 constexpr int       ResDim                = 32;  // Residual stream dimension (res_dim)
 constexpr int       ExpandedDim           = 64;  // Expanded dimension inside bottleneck blocks (expanded_dim)
-constexpr int       NumBlocks             = 2;   // Total number of inverted bottleneck blocks (num_blocks)
+constexpr int       NumBlocks             = 3;   // Total number of inverted bottleneck blocks (num_blocks)
 constexpr int       NumIntermediateBlocks = NumBlocks - 1;
 
 // Compatibility aliases
