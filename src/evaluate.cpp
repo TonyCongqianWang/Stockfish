@@ -75,7 +75,7 @@ Value Eval::scale_evaluation(Value nnue, int rootScore, const Position& pos) {
 
     // When winning, we favor easy positions with higher alignment, and vice versa.
     // As raw_alignment is centered, overall eval scale is preserved
-    int base_eval = (i64(nnue) * 80530636 + i64(nnue_norm * 2 + 1024) * rs_norm * raw_alignment) / 67108864;
+    int base_eval = (i64(nnue) * 76504105 + i64(nnue_norm * 3 + 1024) * rs_norm * raw_alignment) / 67108864;
 
     int v = base_eval;
 
