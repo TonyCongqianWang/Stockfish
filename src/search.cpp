@@ -997,10 +997,12 @@ Value Search::Worker::search(
 
 
     // Step 7. Razoring
-    // If eval is really low, skip search entirely and return the qsearch value.
-    // For PvNodes, we must have a guard against mates being returned.
-    if (!PvNode && eval < alpha - 482 * depth * depth)
-        return qsearch<NonPV>(pos, ss, alpha, beta);
+    if (!PvNode && eval < alpha - 480 && !is_loss(alpha) && !is_win(beta) && depth == 1)
+    {
+        Value v = qsearch<NonPV, true>(pos, ss, alpha, beta);
+        if (v <= alpha)
+            return v;
+    }
 
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding. It shouldn't be tuned.
@@ -1128,6 +1130,7 @@ moves_loop:  // When in check, search starts here
     value = bestValue;
 
     int moveCount = 0;
+    int futilitySkips = 0;
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -1221,11 +1224,11 @@ moves_loop:  // When in check, search starts here
 
                 history += 69 * mainHistory[us][move.raw()] / 32;
 
+                Value futilityValue =
+                  ss->staticEval + 119 * lmrDepth + 119 * history / lmrDivisor[dIndex] + 90 * (ss->staticEval > alpha) + 164;
+
                 // (*Scaler): Generally, lower divisors scale well
                 lmrDepth += history / lmrDivisor[dIndex];
-
-                Value futilityValue =
-                  ss->staticEval + 119 * lmrDepth + 90 * (ss->staticEval > alpha) + 164;
 
                 // Futility pruning: parent node
                 // (*Scaler): Generally, more frequent futility pruning
@@ -1235,6 +1238,11 @@ moves_loop:  // When in check, search starts here
                     if (bestValue <= futilityValue && !is_decisive(bestValue)
                         && !is_win(futilityValue))
                         bestValue = futilityValue;
+
+                    constexpr int MaxSkips[8] = { 0, 3, 3, 3, 4, 4, 4, 4 };
+                    if (depth <= 7 && ++futilitySkips >= MaxSkips[depth])
+                        mp.skip_quiet_moves();
+
                     continue;
                 }
 
@@ -1520,6 +1528,7 @@ moves_loop:  // When in check, search starts here
         if (value + inc > bestValue)
         {
             bestValue = value;
+            futilitySkips = 0;
 
             if (value + inc > alpha)
             {
@@ -1653,7 +1662,7 @@ moves_loop:  // When in check, search starts here
 // To fight this horizon effect, we implement this qsearch of tactical moves.
 // See https://www.chessprogramming.org/Horizon_Effect
 // and https://www.chessprogramming.org/Quiescence_Search
-template<NodeType nodeType>
+template<NodeType nodeType, bool RazorQSearch>
 Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta) {
 
     static_assert(nodeType != Root);
@@ -1829,7 +1838,19 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         // Step 7. Make and search the move
         do_move(pos, move, st, givesCheck, ss);
 
-        value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha);
+        if constexpr (RazorQSearch)
+        {
+            if (givesCheck)
+                value = -qsearch<nodeType, true>(pos, ss + 1, -beta, -alpha);
+            else
+            {
+                const auto cv = correction_value(*this, pos, ss + 1);
+                value = -to_corrected_static_eval(evaluate(pos), cv);
+            }
+        }
+        else
+            value = -qsearch<nodeType, false>(pos, ss + 1, -beta, -alpha);
+
         undo_move(pos, move);
 
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
