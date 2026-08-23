@@ -436,7 +436,7 @@ bool Search::Worker::iterative_deepening() {
                     beta  = alpha;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
-                    failedHighCnt = 0;
+                    failedHighCnt = std::max(0, failedHighCnt - 2);
                     if (mainThread)
                         mainThread->stopOnPonderhit = false;
                 }
@@ -445,6 +445,13 @@ bool Search::Worker::iterative_deepening() {
                     alpha = std::max(beta - delta, alpha);
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
+                }
+                else if (failedHighCnt)
+                {
+                    bool moveChanged = rootMoves[pvIdx].pv.empty()
+                                    || rootMoves[pvIdx].previousPV.empty()
+                                    || rootMoves[pvIdx].pv[0] != rootMoves[pvIdx].previousPV[0];
+                    failedHighCnt = moveChanged ? std::max(0, failedHighCnt - 2) : 0;
                 }
                 else
                     break;
