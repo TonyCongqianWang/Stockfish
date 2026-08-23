@@ -997,15 +997,16 @@ Value Search::Worker::search(
 
 
     // Step 7. Razoring
-    if (!PvNode && eval < alpha && !is_loss(alpha) && !is_win(beta))
+    if (!PvNode && eval < alpha && !is_loss(alpha) && !is_win(beta)
+        && depth <= 5 && depth < futility_depth(eval, alpha))
     {
-        Value razorMargin = 400 * depth * depth + 100 * improving;
+        Value razorMargin = (120 + 30 * depth) * depth + 150 * improving;
 
         if (eval + razorMargin <= alpha)
         {
             Value v = qsearch<NonPV, true>(pos, ss, alpha, beta);
-            if (v + razorMargin / 2 <= alpha)
-                return (661 * alpha + 363 * v) / 1024;
+            if (v + razorMargin / 4 <= alpha)
+                return v;
         }
     }
 
