@@ -1334,7 +1334,11 @@ moves_loop:  // When in check, search starts here
 
         // Increase reduction for cut nodes
         if (cutNode)
+        {
             r += 4026 + 933 * !ttData.move;
+            if (is_valid(eval) && !is_decisive(eval))
+                r += 2 * std::clamp(eval - beta, -128, 128);
+        }
 
         // Increase reduction if ttMove is a capture
         if (ttCapture)
