@@ -154,7 +154,8 @@ struct RootMove {
     Value       score            = -VALUE_INFINITE;
     Value       previousScore    = -VALUE_INFINITE;
     Value       averageScore     = -VALUE_INFINITE;
-    Value       meanSquaredScore = -VALUE_INFINITE * VALUE_INFINITE;
+    Value       aspMeanScore     = -VALUE_INFINITE;
+    Value       aspSqrMeanScore  = -VALUE_INFINITE * VALUE_INFINITE;
     Value       uciScore         = -VALUE_INFINITE;
     bool        inexactLower     = false;  // By default root scores are exact, unless flagged as a
     bool        inexactUpper     = false;  // one-sided bound here. See also `enum Bound` in types.h

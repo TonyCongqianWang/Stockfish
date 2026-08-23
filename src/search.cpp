@@ -53,11 +53,39 @@
 namespace Stockfish {
 
 // Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
-constexpr int c_base_0 = 327680,            c_base_1 = 1310720;
-constexpr int c_std_0 = 8192,             c_std_1 = 1024;
-constexpr int c_avg_0 = 1024,              c_avg_1 = 1024;
-constexpr int c_cap_base_0 = 3276800,      c_cap_base_1 = 1638400, c_cap_score = 10000;
-constexpr int c_delta_growth_rate = 47;
+int c_base_0            = 327680;
+int c_base_1            = 1310720;
+int c_std_0             = 8192;
+int c_std_1             = 1024;
+int c_avg_0             = 1024;
+int c_avg_1             = 1024;
+int c_cap_base_0        = 3276800;
+int c_cap_base_1        = 1638400;
+int c_cap_score         = 10000;
+int c_delta_growth_rate = 47;
+
+// Dynamic EMA parameters for aspiration window
+int c_ema_chi            = 1536;  // Chi = 1.5 * 1024
+int c_ema_min_weight_avg = 384;   // 37.5% * 1024
+int c_ema_max_weight_avg = 768;   // 75.0% * 1024
+int c_ema_min_weight_mss = 384;   // 37.5% * 1024
+int c_ema_max_weight_mss = 512;   // 50.0% * 1024
+
+TUNE(c_base_0,
+     c_base_1,
+     c_std_0,
+     c_std_1,
+     c_avg_0,
+     c_avg_1,
+     c_cap_base_0,
+     c_cap_base_1,
+     c_cap_score,
+     c_delta_growth_rate,
+     c_ema_chi,
+     c_ema_min_weight_avg,
+     c_ema_max_weight_avg,
+     c_ema_min_weight_mss,
+     c_ema_max_weight_mss);
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
@@ -380,8 +408,8 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            Value avg = rootMoves[pvIdx].averageScore;
-            Value mss = rootMoves[pvIdx].meanSquaredScore;
+            Value avg = rootMoves[pvIdx].aspMeanScore;
+            Value mss = rootMoves[pvIdx].aspSqrMeanScore;
 
             if (avg <= -VALUE_INFINITE || avg >= VALUE_INFINITE)
             {
@@ -426,8 +454,9 @@ bool Search::Worker::iterative_deepening() {
             alpha = std::max(avg - delta, -VALUE_INFINITE);
             beta  = std::min(avg + delta, VALUE_INFINITE);
 
-            // Adjust optimism based on root move's averageScore
-            optimism[us]  = 114 * avg / (std::abs(avg) + 85);
+            // Adjust optimism based on root move's averageScore (untuned)
+            Value optAvg  = rootMoves[pvIdx].averageScore;
+            optimism[us]  = 114 * optAvg / (std::abs(optAvg) + 85);
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
@@ -1493,30 +1522,48 @@ moves_loop:  // When in check, search starts here
             u64 N      = nodes - nodeCount;
             u64 E_prev = std::max(u64(1), rm.effort - N);
 
-            // Exponential moving average parameters for root move
-            constexpr u64 Scale          = 32;
-            constexpr u64 ChiNumerator   = 3;
-            constexpr u64 ChiDenominator = 2;   // Chi = 3/2 = 1.5
-            constexpr u64 MinWeight      = 12;  // 37.5% minimum weight
-            constexpr u64 MaxWeight      = 24;  // 75% maximum weight
+            // Dynamic EMA parameters for root move optimism (untuned)
+            constexpr u64 OptScale          = 32;
+            constexpr u64 OptChiNumerator   = 3;
+            constexpr u64 OptChiDenominator = 2;   // Chi = 3/2 = 1.5
+            constexpr u64 OptMinWeight      = 12;  // 37.5% minimum weight
+            constexpr u64 OptMaxWeight      = 24;  // 75% maximum weight
 
-            u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            int clamped_value = std::clamp(value, -c_cap_score, c_cap_score);
-            i64 v2    = i64(std::abs(clamped_value)) * std::abs(clamped_value);
+            u64 w_opt = std::clamp((OptScale * N * OptChiDenominator)
+                                     / (N * OptChiDenominator + OptChiNumerator * E_prev),
+                                   OptMinWeight, OptMaxWeight);
 
             if (rm.averageScore == -VALUE_INFINITE)
                 rm.averageScore = value;
             else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+                rm.averageScore = Value((value * w_opt + rm.averageScore * (OptScale - w_opt)) / OptScale);
 
-            if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = v2;
+            // Dynamic EMA parameters for aspiration window (tunable)
+            constexpr u64 EmaScale  = 1024;
+            u64           chi_eff   = std::max(u64(1), u64(c_ema_chi));
+            u64           raw_w     = (EmaScale * N * 1024) / (N * 1024 + chi_eff * E_prev);
+            u64           min_w_avg = std::clamp(u64(c_ema_min_weight_avg), u64(0), EmaScale);
+            u64           max_w_avg = std::clamp(u64(c_ema_max_weight_avg), min_w_avg, EmaScale);
+            u64           min_w_mss = std::clamp(u64(c_ema_min_weight_mss), u64(0), EmaScale);
+            u64           max_w_mss = std::clamp(u64(c_ema_max_weight_mss), min_w_mss, EmaScale);
+
+            u64 w_avg = std::clamp(raw_w, min_w_avg, max_w_avg);
+            u64 w_mss = std::clamp(raw_w, min_w_mss, max_w_mss);
+
+            int clamped_value = std::clamp(value, -c_cap_score, c_cap_score);
+            i64 v2            = i64(std::abs(clamped_value)) * std::abs(clamped_value);
+
+            if (rm.aspMeanScore == -VALUE_INFINITE)
+                rm.aspMeanScore = value;
             else
-                rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
+                rm.aspMeanScore =
+                  Value((value * w_avg + rm.aspMeanScore * (EmaScale - w_avg)) / EmaScale);
+
+            if (rm.aspSqrMeanScore == -VALUE_INFINITE * VALUE_INFINITE)
+                rm.aspSqrMeanScore = v2;
+            else
+                rm.aspSqrMeanScore =
+                  Value((v2 * w_mss + int64_t(rm.aspSqrMeanScore) * (EmaScale - w_mss)) / EmaScale);
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
