@@ -71,21 +71,37 @@ int c_ema_max_weight_avg = 768;   // 75.0% * 1024
 int c_ema_min_weight_mss = 384;   // 37.5% * 1024
 int c_ema_max_weight_mss = 512;   // 50.0% * 1024
 
-TUNE(c_base_0,
-     c_base_1,
-     c_std_0,
-     c_std_1,
-     c_avg_0,
-     c_avg_1,
-     c_cap_base_0,
-     c_cap_base_1,
-     c_cap_score,
-     c_delta_growth_rate,
-     c_ema_chi,
-     c_ema_min_weight_avg,
-     c_ema_max_weight_avg,
-     c_ema_min_weight_mss,
-     c_ema_max_weight_mss);
+SetRange r_c_base_0(65536, 1310720);
+SetRange r_c_base_1(65536, 3932160);
+SetRange r_c_std_0(0, 32768);
+SetRange r_c_std_1(0, 16384);
+SetRange r_c_avg_0(0, 16384);
+SetRange r_c_avg_1(0, 16384);
+SetRange r_c_cap_base_0(655360, 6553600);
+SetRange r_c_cap_base_1(327680, 6553600);
+SetRange r_c_cap_score(2000, 30000);
+SetRange r_c_delta_growth_rate(10, 128);
+SetRange r_c_ema_chi(256, 4096);
+SetRange r_c_ema_min_weight_avg(64, 768);
+SetRange r_c_ema_max_weight_avg(256, 1024);
+SetRange r_c_ema_min_weight_mss(64, 768);
+SetRange r_c_ema_max_weight_mss(128, 1024);
+
+TUNE(r_c_base_0, c_base_0,
+     r_c_base_1, c_base_1,
+     r_c_std_0, c_std_0,
+     r_c_std_1, c_std_1,
+     r_c_avg_0, c_avg_0,
+     r_c_avg_1, c_avg_1,
+     r_c_cap_base_0, c_cap_base_0,
+     r_c_cap_base_1, c_cap_base_1,
+     r_c_cap_score, c_cap_score,
+     r_c_delta_growth_rate, c_delta_growth_rate,
+     r_c_ema_chi, c_ema_chi,
+     r_c_ema_min_weight_avg, c_ema_min_weight_avg,
+     r_c_ema_max_weight_avg, c_ema_max_weight_avg,
+     r_c_ema_min_weight_mss, c_ema_min_weight_mss,
+     r_c_ema_max_weight_mss, c_ema_max_weight_mss);
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
