@@ -1128,6 +1128,7 @@ moves_loop:  // When in check, search starts here
     value = bestValue;
 
     int moveCount = 0;
+    int futilitySkips = 0;
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -1232,9 +1233,15 @@ moves_loop:  // When in check, search starts here
                 // scales well
                 if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
                 {
+                    constexpr int MaxSkips[] = { 2, 2, 2, 3, 4 };
+                    if (lmrDepth <= 4 && bestValue <= futilityValue - 10 * lmrDepth
+                        && ++futilitySkips >= MaxSkips[std::max(0, lmrDepth)])
+                        mp.skip_quiet_moves();
+
                     if (bestValue <= futilityValue && !is_decisive(bestValue)
                         && !is_win(futilityValue))
                         bestValue = futilityValue;
+
                     continue;
                 }
 
@@ -1520,6 +1527,7 @@ moves_loop:  // When in check, search starts here
         if (value + inc > bestValue)
         {
             bestValue = value;
+            futilitySkips = 0;
 
             if (value + inc > alpha)
             {
