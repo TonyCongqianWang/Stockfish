@@ -334,6 +334,7 @@ bool Search::Worker::iterative_deepening() {
     multiPV = std::min(multiPV, rootMoves.size());
 
     int  searchAgainCounter = 0;
+    int  failHighRecovery   = 0;
     bool uciPvSent          = false;
 
     lowPlyHistory.fill(102);
@@ -404,7 +405,7 @@ bool Search::Worker::iterative_deepening() {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
-                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
+                  std::max(1, rootDepth - failedHighCnt - failHighRecovery - 3 * (searchAgainCounter + 1) / 4);
                 rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
@@ -436,7 +437,7 @@ bool Search::Worker::iterative_deepening() {
                     beta  = alpha;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
-                    failedHighCnt = std::max(0, failedHighCnt - 2);
+                    failedHighCnt = 0;
                     if (mainThread)
                         mainThread->stopOnPonderhit = false;
                 }
@@ -446,13 +447,6 @@ bool Search::Worker::iterative_deepening() {
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
-                else if (failedHighCnt)
-                {
-                    bool moveChanged = rootMoves[pvIdx].pv.empty()
-                                    || rootMoves[pvIdx].previousPV.empty()
-                                    || rootMoves[pvIdx].pv[0] != rootMoves[pvIdx].previousPV[0];
-                    failedHighCnt = moveChanged ? std::max(0, failedHighCnt - 2) : 0;
-                }
                 else
                     break;
 
@@ -460,6 +454,11 @@ bool Search::Worker::iterative_deepening() {
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
+
+            if (failedHighCnt > 0)
+                failHighRecovery = (failedHighCnt + 1) / 2;
+            else
+                failHighRecovery = std::max(0, failHighRecovery - 2);
 
             if (threads.stop && pvIdx)
             {
