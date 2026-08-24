@@ -33,7 +33,7 @@ namespace Eval {
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro or the location where this macro is defined, as it is used
 // in the Makefile/Fishtest.
-#define EvalFileDefaultName "nn-1a298aa575a0.nnue"
+#define EvalFileDefaultName "nn-d6706884b82a.nnue"
 
 namespace NNUE {
 class Network;
@@ -46,8 +46,14 @@ std::string trace(Position& pos, const Eval::NNUE::Network& network);
 Value evaluate(const NNUE::Network&           network,
                const Position&                pos,
                Eval::NNUE::AccumulatorStack&  accumulators,
-               Eval::NNUE::AccumulatorCaches& caches,
-               int                            optimism);
+               Eval::NNUE::AccumulatorCaches& caches);
+
+// Applies optimism, rule50, and material scaling to the raw NNUE score
+Value scale_evaluation(Value nnue, int optimism, const Position& pos);
+
+// Purely materialistic evaluation
+int simple_eval(const Position& pos);
+
 }  // namespace Eval
 
 }  // namespace Stockfish

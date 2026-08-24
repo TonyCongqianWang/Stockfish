@@ -1901,8 +1901,8 @@ TimePoint Search::Worker::elapsed() const {
 }
 
 Value Search::Worker::evaluate(const Position& pos) {
-    return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
+    Value raw_nnue = Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable);
+    return Eval::scale_evaluation(raw_nnue, optimism[pos.side_to_move()], pos);
 }
 
 namespace {

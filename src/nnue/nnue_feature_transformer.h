@@ -236,15 +236,40 @@ class FeatureTransformer {
           / 2;
 
         const auto& accumulation = accumulatorState.accumulation;
+        const auto& us_acc       = accumulation[perspectives[0]];
+        const auto& them_acc     = accumulation[perspectives[1]];
+
+        // Swizzle inputs into contiguous arrays to allow
+        // existing optimized SIMD loops to perform cross-perspective multiplication
+        alignas(CacheLineSize) BiasType swizzled_in0[HalfDimensions];
+        alignas(CacheLineSize) BiasType swizzled_in1[HalfDimensions];
+        constexpr IndexType Q = HalfDimensions / 4;
+        constexpr usize QBytes = Q * sizeof(BiasType);
+
+        // Buffer A (in0): [us0, them0, us2, them2]
+        std::memcpy(&swizzled_in0[0 * Q], &us_acc[0 * Q], QBytes);
+        std::memcpy(&swizzled_in0[1 * Q], &them_acc[0 * Q], QBytes);
+        std::memcpy(&swizzled_in0[2 * Q], &us_acc[2 * Q], QBytes);
+        std::memcpy(&swizzled_in0[3 * Q], &them_acc[2 * Q], QBytes);
+
+        // Buffer B (in1): [us1, them1, them3, us3]
+        std::memcpy(&swizzled_in1[0 * Q], &us_acc[1 * Q], QBytes);
+        std::memcpy(&swizzled_in1[1 * Q], &them_acc[1 * Q], QBytes);
+        std::memcpy(&swizzled_in1[2 * Q], &them_acc[3 * Q], QBytes);
+        std::memcpy(&swizzled_in1[3 * Q], &us_acc[3 * Q], QBytes);
 
         for (IndexType p = 0; p < 2; ++p)
-            transform_perspective(accumulation[perspectives[p]], output, p, nnzInfo);
+        {
+            const IndexType offset = (HalfDimensions / 2) * p;
+            transform_perspective(&swizzled_in0[offset], &swizzled_in1[offset], output, p, nnzInfo);
+        }
 
         return psqt;
     }
 
    private:
-    static void transform_perspective(const std::array<i16, HalfDimensions>&      accumulation,
+    static void transform_perspective(const BiasType*                             in0,
+                                      const BiasType*                             in1,
                                       OutputType*                                 output,
                                       IndexType                                   perspective,
                                       [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) {
@@ -262,11 +287,15 @@ class FeatureTransformer {
 
         [[maybe_unused]] const vec_t   Zero  = vec_zero();
         [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
-        [[maybe_unused]] constexpr int shift = 7;
+        [[maybe_unused]] constexpr int shift = 16 - InferenceL0Shift;
+        static_assert(shift >= 0 && shift <= 7,
+                      "Feature transformer shift (16 - InferenceL0Shift) must be in [0, 7]");
+        static_assert((FtMaxVal << shift) <= 32767,
+                      "FtMaxVal shifted by (16 - InferenceL0Shift) must not overflow signed 16-bit");
 
-        const vec_t* in0 = reinterpret_cast<const vec_t*>(&accumulation[0]);
-        const vec_t* in1 = reinterpret_cast<const vec_t*>(&accumulation[HalfDimensions / 2]);
-        vec_t*       out = reinterpret_cast<vec_t*>(output + offset);
+        const vec_t* in0_vec = reinterpret_cast<const vec_t*>(in0);
+        const vec_t* in1_vec = reinterpret_cast<const vec_t*>(in1);
+        vec_t*       out     = reinterpret_cast<vec_t*>(output + offset);
 
         // Per the NNUE architecture, here we want to multiply pairs of
         // clipped elements and divide the product by 128. To do this,
@@ -322,27 +351,31 @@ class FeatureTransformer {
             {
                 const IndexType i = (j + k) * 2;
 
-                vec_t acc0a = in0[i + 0];
-                vec_t acc0b = in0[i + 1];
-                vec_t acc1a = in1[i + 0];
-                vec_t acc1b = in1[i + 1];
+                vec_t acc0a = in0_vec[i + 0];
+                vec_t acc0b = in0_vec[i + 1];
+                vec_t acc1a = in1_vec[i + 0];
+                vec_t acc1b = in1_vec[i + 1];
 
                 static_assert(FtMaxVal == 255);
+#if defined(USE_NEON) || defined(USE_LSX) || defined(USE_LASX) || defined(__wasm__)
+                static_assert(InferenceL0Shift == 9,
+                              "NEON/LSX/LASX/WASM pairwise multiplication paths require InferenceL0Shift == 9");
+#endif
 
-    #if defined(USE_NEON)
+#if defined(USE_NEON)
                 uint16x8_t mul0 = vmull_u8(vqmovun_s16(acc0a), vqmovun_s16(acc1a));
                 uint16x8_t mul1 = vmull_u8(vqmovun_s16(acc0b), vqmovun_s16(acc1b));
 
                 uint8x16x2_t uzp = vuzpq_u8(vreinterpretq_u8_u16(mul0), vreinterpretq_u8_u16(mul1));
                 uint8x16_t   pab = vshrq_n_u8(uzp.val[1], 1);
                 vec_t        result = reinterpret_cast<vec_t>(pab);
-    #elif defined(USE_LSX) || defined(USE_LASX)
+#elif defined(USE_LSX) || defined(USE_LASX)
                 vec_t pa = vec_packus_16(acc0a, acc0b);
                 vec_t pb = vec_packus_16(acc1a, acc1b);
 
                 vec_t hi     = vec_mulhi_8(pa, pb);
                 vec_t result = vec_srli_8(hi, 1);
-    #elif defined(__wasm__)
+#elif defined(__wasm__)
                 // _mm_mulhi_epi16 is lowered to 32-bit multiplies, so we take
                 // a similar approach as the NEON path.
                 vec_t mul0 = vec_packus_16(acc0a, acc0b);
@@ -355,7 +388,7 @@ class FeatureTransformer {
                 vec_t merged = wasm_i8x16_shuffle(low, hi, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21,
                                                   23, 25, 27, 29, 31);
                 vec_t result = wasm_u8x16_shr(merged, 1);
-    #else
+#else
                 vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, FtMax), Zero), shift);
                 vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, FtMax), Zero), shift);
                 vec_t sum1a = vec_min_16(acc1a, FtMax);
@@ -365,7 +398,7 @@ class FeatureTransformer {
                 vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
                 vec_t result = vec_packus_16(pa, pb);
-    #endif
+#endif
 
                 packed[k] = out[j + k] = result;
             }
@@ -388,8 +421,8 @@ class FeatureTransformer {
         {
             vl = __riscv_vsetvl_e16m2(HalfDimensions / 2 - j);
 
-            vint16m2_t acc0 = __riscv_vle16_v_i16m2(&accumulation[j], vl);
-            vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accumulation[j + HalfDimensions / 2], vl);
+            vint16m2_t acc0 = __riscv_vle16_v_i16m2(&in0[j], vl);
+            vint16m2_t acc1 = __riscv_vle16_v_i16m2(&in1[j], vl);
 
             acc0 = __riscv_vmax(acc0, 0, vl);
             acc1 = __riscv_vmax(acc1, 0, vl);
@@ -417,13 +450,13 @@ class FeatureTransformer {
 
         for (IndexType j = 0; j < HalfDimensions / 2; ++j)
         {
-            BiasType sum0 = accumulation[j];
-            BiasType sum1 = accumulation[j + HalfDimensions / 2];
+            BiasType sum0 = in0[j];
+            BiasType sum1 = in1[j];
 
             sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
             sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
 
-            output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
+            output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) >> InferenceL0Shift);
         }
 
 #endif

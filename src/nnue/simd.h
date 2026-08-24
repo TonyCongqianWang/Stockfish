@@ -51,9 +51,7 @@
 
 namespace Stockfish::Eval::NNUE::SIMD {
 
-#if defined(USE_AVX2)
-    #define USE_PAIR_ACTIVATIONS
-#endif
+#undef USE_PAIR_ACTIVATIONS
 
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's

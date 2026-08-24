@@ -148,9 +148,10 @@ NetworkOutput Network::evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    NNZInfo<L1> nnzInfo;
+        NNZInfo<L1> nnzInfo{};
 
-    const int  bucket     = (pos.count<ALL_PIECES>() - 1) / 4;
+    constexpr int PiecesPerBucket = 32 / LayerStacks;
+    const int  bucket     = (pos.count<ALL_PIECES>() - 1) / PiecesPerBucket;
     const auto psqt       = featureTransformer.transform(pos, accumulatorStack, cache,
                                                          transformedFeatures, bucket, nnzInfo);
     const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
@@ -212,10 +213,11 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
     NnueEvalTrace t{};
-    t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    constexpr int PiecesPerBucket = 32 / LayerStacks;
+    t.correctBucket = (pos.count<ALL_PIECES>() - 1) / PiecesPerBucket;
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
-        NNZInfo<L1> nnzInfo;
+            NNZInfo<L1> nnzInfo{};
         const auto  materialist = featureTransformer.transform(pos, accumulatorStack, cache,
                                                                transformedFeatures, bucket, nnzInfo);
         const auto  positional  = network[bucket].propagate(transformedFeatures, nnzInfo);
@@ -337,17 +339,46 @@ bool Network::write_header(std::ostream& stream, u32 hashValue, const std::strin
 bool Network::read_parameters(std::istream& stream, std::string& netDescription) {
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
+    {
+        // std::cerr << "[NNUE Load Error] read_header failed.\n";
         return false;
+    }
     if (hashValue != Network::hash)
+    {
+        // std::cerr << "[NNUE Load Error] Overall network hash mismatch!\n"
+        //           << "  File Header Hash : 0x" << std::hex << hashValue << "\n"
+        //           << "  Expected Hash    : 0x" << Network::hash << std::dec << "\n"
+        //           << "  (FT Hash: 0x" << std::hex << FeatureTransformer::get_hash_value()
+        //           << ", Arch Hash: 0x" << NetworkArchitecture::get_hash_value() << std::dec << ")\n";
         return false;
+    }
     if (!Detail::read_parameters(stream, featureTransformer))
+    {
+        // std::cerr << "[NNUE Load Error] FeatureTransformer read_parameters failed.\n";
         return false;
+    }
     for (usize i = 0; i < LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
+        {
+            // std::cerr << "[NNUE Load Error] Layer stack bucket [" << i << "] read_parameters failed.\n";
             return false;
+        }
     }
-    return stream && stream.peek() == std::ios::traits_type::eof();
+    if (!stream || stream.peek() != std::ios::traits_type::eof())
+    {
+        // std::streamoff trailing = 0;
+        // if (stream)
+        // {
+        //     std::streamoff pos = stream.tellg();
+        //     stream.seekg(0, std::ios::end);
+        //     trailing = stream.tellg() - pos;
+        // }
+        //std::cerr << "[NNUE Load Error] Trailing unread bytes at end of network file! Unread bytes: "
+        //          << trailing << "\n";
+        return false;
+    }
+    return true;
 }
 
 
