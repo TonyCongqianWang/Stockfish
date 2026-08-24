@@ -70,6 +70,7 @@ constexpr int OutputScale = 16;
 
 // Quantization scales (in log2 bits, assuming power-of-two weight scales)
 constexpr int WeightScaleL1Bits        = 8;   // scale = 256
+constexpr int WeightScalePsqtBits      = 8;   // scale = 256
 constexpr int WeightScaleBlockUpBits   = 8;   // scale = 256
 constexpr int WeightScaleBlockDownBits = 7;   // scale = 128
 constexpr int WeightScaleOutResBits    = 10;  // scale = 1024
@@ -80,22 +81,34 @@ constexpr int WeightScaleBits          = WeightScaleL1Bits;
 constexpr int FtQuantizedMax           = 255;
 constexpr int FtMaxVal                 = FtQuantizedMax;
 
+constexpr int PsqtQuantizedOneBits     = 10;  // scale = 1024
 constexpr int ResQuantizedOneBits      = 7;   // scale = 128
 constexpr int ResQuantizedMax          = 32767;
 constexpr int HiddenOneVal             = 1 << ResQuantizedOneBits;
 
 constexpr int ExpandedQuantizedOneBits = 7;   // scale = 128
-constexpr int ExpandedQuantizedMax     = 127;
+constexpr int ExpandedQuantizedMax     = 127; // i8 max
 
 // Inference division shifts (log2)
 constexpr int InferenceL0Shift          = 9;  // >> 9 (division by 512)
-constexpr int InferenceL1Shift          = 8;  // >> 8 (division by 256)
+constexpr int InferenceL1Shift          = WeightScaleL1Bits;  // >> 8 (division by weight scale)
 constexpr int InferenceSqrCReLUClipShift = 7;  // >> 7 (division by 128)
+
+// Dynamically derived PSQT shift to align PSQT dot-product with L1 output scale (scale 32768)
+constexpr int L1OutScaleBits           = ResQuantizedOneBits + WeightScaleL1Bits;
+constexpr int PsqtProductScaleBits     = PsqtQuantizedOneBits + WeightScalePsqtBits;
+constexpr int PsqtShift                = PsqtProductScaleBits - L1OutScaleBits;
 
 static_assert(ResQuantizedMax > 0 && ResQuantizedMax <= 32767,
               "ResQuantizedMax must fit within a signed 16-bit integer");
 static_assert(ExpandedQuantizedMax > 0 && ExpandedQuantizedMax <= 127,
               "ExpandedQuantizedMax must fit within signed 8-bit positive range");
+static_assert(PsqtShift >= 0 && PsqtShift <= 16,
+              "PsqtShift must be in [0, 16] to align PSQT dot-product with L1 output");
+static_assert(WeightScalePsqtBits >= 5 && WeightScalePsqtBits <= 10,
+              "WeightScalePsqtBits must be in [5, 10] (scale 32..1024)");
+static_assert(WeightScaleL1Bits >= 5 && WeightScaleL1Bits <= 10,
+              "WeightScaleL1Bits must be in [5, 10] (scale 32..1024)");
 static_assert(InferenceL0Shift >= 9 && InferenceL0Shift <= 16,
               "InferenceL0Shift must be in [9, 16] for SIMD pairwise feature multiplication");
 static_assert(InferenceL1Shift >= 0 && InferenceL1Shift < 32,

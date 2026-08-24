@@ -55,6 +55,7 @@ constexpr int L2 = ResDim;
 constexpr int L3 = ExpandedDim / 2;
 
 constexpr IndexType PSQTBuckets = 8;
+constexpr IndexType PsqtInputs  = PSQTBuckets * 2;
 constexpr IndexType LayerStacks = 8;
 
 // If vector instructions are enabled, we update and refresh the
@@ -72,6 +73,7 @@ struct NetworkArchitecture {
     static constexpr int       FC_1_OUTPUTS                 = ExpandedDim / 2;
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, ResDim> l1;
+    alignas(CacheLineSize) i8 psqt_weights[ResDim * PsqtInputs];
     Layers::InvertedBottleneckBlock<ResDim, ExpandedDim, false> blocks[NumIntermediateBlocks];
     Layers::InvertedBottleneckBlock<ResDim, ExpandedDim, true>  final_block;
 
@@ -86,7 +88,14 @@ struct NetworkArchitecture {
         h_l1 += 0x538D24C7u;
         hashValue = h_l1;
 
-        // 2. Intermediate blocks
+        // 2. psqt projection layer
+        u32 h_psqt = 0xCC03DAE4u + ResDim;
+        h_psqt ^= hashValue >> 1;
+        h_psqt ^= hashValue << 31;
+        h_psqt += 0x538D24C7u;
+        hashValue = h_psqt;
+
+        // 3. Intermediate blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)
         {
             u32 h_up = 0xCC03DAE4u + ExpandedDim;
@@ -102,14 +111,14 @@ struct NetworkArchitecture {
             hashValue = h_down;
         }
 
-        // 3. Final block up layer
+        // 4. Final block up layer
         u32 h_fup = 0xCC03DAE4u + ExpandedDim;
         h_fup ^= hashValue >> 1;
         h_fup ^= hashValue << 31;
         h_fup += 0x538D24C7u;
         hashValue = h_fup;
 
-        // 4. Final block output layer (out_features = 1)
+        // 5. Final block output layer (out_features = 1)
         u32 h_out = 0xCC03DAE4u + 1;
         h_out ^= hashValue >> 1;
         h_out ^= hashValue << 31;
@@ -122,6 +131,7 @@ struct NetworkArchitecture {
     bool read_parameters(std::istream& stream) {
         if (!l1.read_parameters(stream))
             return false;
+        read_little_endian<i8>(stream, psqt_weights, ResDim * PsqtInputs);
         for (int i = 0; i < NumIntermediateBlocks; ++i)
             if (!blocks[i].read_parameters(stream))
                 return false;
@@ -132,6 +142,7 @@ struct NetworkArchitecture {
     bool write_parameters(std::ostream& stream) const {
         if (!l1.write_parameters(stream))
             return false;
+        write_little_endian<i8>(stream, psqt_weights, ResDim * PsqtInputs);
         for (int i = 0; i < NumIntermediateBlocks; ++i)
             if (!blocks[i].write_parameters(stream))
                 return false;
@@ -139,15 +150,23 @@ struct NetworkArchitecture {
     }
 
     i32 propagate(const TransformedFeatureType* transformedFeatures,
-                  const NNZInfo<L1>&            nnzInfo) const {
+                  const NNZInfo<L1>&            nnzInfo,
+                  const i32*                    psqt_features) const {
         // 1. Initial linear projection l1 -> l1_out preactivations
         typename decltype(l1)::OutputBuffer l1_out;
         l1.propagate(transformedFeatures, l1_out, nnzInfo);
 
         // 2. Initial Residual Stream R in int32_t (scale 1 << ResQuantizedOneBits)
+        // Add psqt projection (PsqtInputs -> ResDim) at scale 32768 before dividing by 256
         alignas(CacheLineSize) i32 res_stream[ResDim];
         for (int i = 0; i < ResDim; ++i)
-            res_stream[i] = l1_out[i] >> InferenceL1Shift;
+        {
+            i32 psqt_proj = 0;
+            for (IndexType j = 0; j < PsqtInputs; ++j)
+                psqt_proj += psqt_features[j] * static_cast<i32>(psqt_weights[i * PsqtInputs + j]);
+
+            res_stream[i] = (l1_out[i] + psqt_proj) >> InferenceL1Shift;
+        }
 
         // 3. Intermediate bottleneck residual blocks
         for (int i = 0; i < NumIntermediateBlocks; ++i)
@@ -168,6 +187,7 @@ struct NetworkArchitecture {
     usize get_content_hash() const {
         usize h = 0;
         hash_combine(h, l1.get_content_hash());
+        hash_combine(h, get_raw_data_hash(psqt_weights));
         for (int i = 0; i < NumIntermediateBlocks; ++i)
             hash_combine(h, blocks[i].get_content_hash());
         hash_combine(h, final_block.get_content_hash());

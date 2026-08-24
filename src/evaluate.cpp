@@ -54,8 +54,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
                      Eval::NNUE::AccumulatorCaches& caches) {
 
     assert(!pos.checkers());
-    auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
-    return psqt + positional;
+    return network.evaluate(pos, accumulators, caches);
 }
 
 namespace ScaleParams {

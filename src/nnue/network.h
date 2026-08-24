@@ -43,8 +43,6 @@ namespace Stockfish::Eval::NNUE {
 class AccumulatorStack;
 struct AccumulatorCaches;
 
-using NetworkOutput = std::tuple<Value, Value>;
-
 // The network must be a trivial type, i.e. the memory must be in-line.
 // This is required to allow sharing the network via shared memory, as
 // there is no way to run destructors.
@@ -65,9 +63,9 @@ class Network {
 
     usize get_content_hash() const;
 
-    NetworkOutput evaluate(const Position&    pos,
-                           AccumulatorStack&  accumulatorStack,
-                           AccumulatorCaches& cache) const;
+    Value evaluate(const Position&    pos,
+                   AccumulatorStack&  accumulatorStack,
+                   AccumulatorCaches& cache) const;
 
 
     void verify(const std::function<void(std::string_view)>& f,

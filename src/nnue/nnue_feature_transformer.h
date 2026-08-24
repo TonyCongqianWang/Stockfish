@@ -220,20 +220,25 @@ class FeatureTransformer {
     }
 
     // Convert input features
-    i32 transform(const Position&                             pos,
-                  AccumulatorStack&                           accumulatorStack,
-                  AccumulatorCaches&                          cache,
-                  OutputType*                                 output,
-                  int                                         bucket,
-                  [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) const {
+    void transform(const Position&                             pos,
+                   AccumulatorStack&                           accumulatorStack,
+                   AccumulatorCaches&                          cache,
+                   OutputType*                                 output,
+                   i32*                                        psqt_features,
+                   [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) const {
         accumulatorStack.evaluate(pos, *this, cache);
         const auto& accumulatorState = accumulatorStack.latest();
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
         const auto& psqtAccumulation = accumulatorState.psqtAccumulation;
-        const auto  psqt =
-          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket])
-          / 2;
+        for (IndexType p = 0; p < 2; ++p)
+        {
+            for (IndexType b = 0; b < PSQTBuckets; ++b)
+            {
+                i32 raw_val = psqtAccumulation[perspectives[p]][b] >> PsqtShift;
+                psqt_features[p * PSQTBuckets + b] = std::clamp(raw_val, -32767, 32767);
+            }
+        }
 
         const auto& accumulation = accumulatorState.accumulation;
         const auto& us_acc       = accumulation[perspectives[0]];
@@ -263,8 +268,6 @@ class FeatureTransformer {
             const IndexType offset = (HalfDimensions / 2) * p;
             transform_perspective(&swizzled_in0[offset], &swizzled_in1[offset], output, p, nnzInfo);
         }
-
-        return psqt;
     }
 
    private:
