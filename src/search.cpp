@@ -1128,6 +1128,7 @@ moves_loop:  // When in check, search starts here
     value = bestValue;
 
     int moveCount = 0;
+    int futilitySkips = 0;
 
     // Step 13. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -1235,6 +1236,11 @@ moves_loop:  // When in check, search starts here
                     if (bestValue <= futilityValue && !is_decisive(bestValue)
                         && !is_win(futilityValue))
                         bestValue = futilityValue;
+
+                    constexpr int MaxSkips[] = { 2, 2, 2, 3, 4 };
+                    if (depth <= 4 && ++futilitySkips >= MaxSkips[depth])
+                        mp.skip_quiet_moves();
+
                     continue;
                 }
 
@@ -1520,6 +1526,7 @@ moves_loop:  // When in check, search starts here
         if (value + inc > bestValue)
         {
             bestValue = value;
+            futilitySkips = 0;
 
             if (value + inc > alpha)
             {
