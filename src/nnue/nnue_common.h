@@ -71,9 +71,9 @@ constexpr int OutputScale = 16;
 // Quantization scales (in log2 bits, assuming power-of-two weight scales)
 constexpr int WeightScaleL1Bits        = 8;   // scale = 256
 constexpr int WeightScaleBlockUpBits   = 8;   // scale = 256
-constexpr int WeightScaleBlockDownBits = 6;   // scale = 64
-constexpr int WeightScaleOutResBits    = 8;   // scale = 256
-constexpr int WeightScaleOutActBits    = 7;   // scale = 128
+constexpr int WeightScaleBlockDownBits = 7;   // scale = 128
+constexpr int WeightScaleOutResBits    = 10;  // scale = 1024
+constexpr int WeightScaleOutActBits    = 9;   // scale = 512
 constexpr int WeightScaleBits          = WeightScaleL1Bits;
 
 // Activation representation scales and limits
