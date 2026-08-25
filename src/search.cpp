@@ -573,6 +573,10 @@ bool Search::Worker::iterative_deepening() {
             double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
                                   + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
                                / 100.0;
+
+            if (bestValue < VALUE_DRAW)
+                fallingEval = std::max(1.0, fallingEval);
+
             fallingEval = std::clamp(fallingEval, 0.576, 1.728);
 
             // If the bestMove is stable over several iterations, reduce time accordingly
