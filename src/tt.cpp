@@ -66,7 +66,7 @@ struct TTEntry {
         return TTData{Move(move16),
                       Value(value16),
                       Value(eval16),
-                      Depth(DEPTH_NONE + depth8),
+                      Depth::from_int(DEPTH_NONE.to_int() + depth8),
                       Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT),
                       bool(genBound8 & PV_MASK)};
     }
@@ -96,16 +96,19 @@ void TTEntry::save(
     if (m || u16(k) != key16)
         move16 = m;
 
+    int dInt = d.to_int();
+    int depthNoneInt = DEPTH_NONE.to_int();
+
     // Overwrite less valuable entries (cheapest checks first)
-    if (b == BOUND_EXACT || u16(k) != key16 || d - DEPTH_NONE + 2 * pv > depth8 - 4
+    if (b == BOUND_EXACT || u16(k) != key16 || dInt - depthNoneInt + 2 * pv > depth8 - 4
         || relative_age(curr_generation))
     {
-        assert(d > DEPTH_NONE);
-        assert(d - DEPTH_NONE < 256);
+        assert(dInt > depthNoneInt);
+        assert(dInt - depthNoneInt < 256);
         assert(curr_generation <= GENERATION_MASK);  // TT::new_search() plays nice
 
         key16     = u16(k);
-        depth8    = u8(d - DEPTH_NONE);
+        depth8    = u8(dInt - depthNoneInt);
         genBound8 = u8(curr_generation | b << BOUND_SHIFT | u8(pv) << PV_SHIFT);
         value16   = i16(v);
         eval16    = i16(ev);
@@ -113,7 +116,7 @@ void TTEntry::save(
     // Secondary aging. Important for elementary mate finding.
     // (*Scaler) Secondary aging on entries relevant to singular extensions
     // generally scales poorly and requires VVLTC verification.
-    else if (depth8 + DEPTH_NONE >= 5
+    else if (depth8 + depthNoneInt >= 5
              && Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT) != BOUND_EXACT)
     {
         auto v16 = value16;

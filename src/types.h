@@ -222,7 +222,59 @@ constexpr Value PieceValue[PIECE_NB] = {
   VALUE_ZERO, PawnValue, KnightValue, BishopValue, RookValue, QueenValue, VALUE_ZERO, VALUE_ZERO,
   VALUE_ZERO, PawnValue, KnightValue, BishopValue, RookValue, QueenValue, VALUE_ZERO, VALUE_ZERO};
 
-using Depth = int;
+// Fixed-point Depth representation with sub-ply precision (16 sub-ply units per nominal ply).
+constexpr int DEPTH_GRANULARITY = 16;
+
+class Depth {
+    int v;
+
+   public:
+    constexpr Depth() : v(0) {}
+    constexpr explicit Depth(int raw) : v(raw) {}
+
+    static constexpr Depth from_raw(int raw) { return Depth(raw); }
+    static constexpr Depth from_int(int plies) { return Depth(plies * DEPTH_GRANULARITY); }
+
+    constexpr int raw_value() const { return v; }
+    constexpr int to_int() const { return v / DEPTH_GRANULARITY; }
+    constexpr explicit operator int() const { return to_int(); }
+
+    constexpr int sub_ply() const { return v & (DEPTH_GRANULARITY - 1); }
+    constexpr int phase_1024() const { return (sub_ply() * 1024) / DEPTH_GRANULARITY; }
+
+    constexpr Depth& operator+=(Depth d) { v += d.v; return *this; }
+    constexpr Depth& operator-=(Depth d) { v -= d.v; return *this; }
+    constexpr Depth& operator*=(int n) { v *= n; return *this; }
+    constexpr Depth& operator/=(int n) { v /= n; return *this; }
+    constexpr Depth& operator*=(Depth d) { v = (v * d.v) / DEPTH_GRANULARITY; return *this; }
+
+    constexpr Depth operator++() { v += DEPTH_GRANULARITY; return *this; }
+    constexpr Depth operator++(int) { Depth tmp = *this; v += DEPTH_GRANULARITY; return tmp; }
+    constexpr Depth operator--() { v -= DEPTH_GRANULARITY; return *this; }
+    constexpr Depth operator--(int) { Depth tmp = *this; v -= DEPTH_GRANULARITY; return tmp; }
+
+    constexpr Depth operator+(Depth d) const { return Depth(v + d.v); }
+    constexpr Depth operator-(Depth d) const { return Depth(v - d.v); }
+    constexpr Depth operator-() const { return Depth(-v); }
+    constexpr Depth operator*(int n) const { return Depth(v * n); }
+    constexpr Depth operator/(int n) const { return Depth(v / n); }
+    constexpr Depth operator*(Depth d) const { return Depth((v * d.v) / DEPTH_GRANULARITY); }
+    friend constexpr Depth operator*(int n, Depth d) { return Depth(n * d.v); }
+
+    constexpr bool operator==(Depth d) const { return v == d.v; }
+    constexpr bool operator!=(Depth d) const { return v != d.v; }
+    constexpr bool operator<(Depth d) const { return v < d.v; }
+    constexpr bool operator<=(Depth d) const { return v <= d.v; }
+    constexpr bool operator>(Depth d) const { return v > d.v; }
+    constexpr bool operator>=(Depth d) const { return v >= d.v; }
+};
+
+// Sub-ply constants
+constexpr Depth ONE_PLY         = Depth::from_raw(DEPTH_GRANULARITY);
+constexpr Depth HALF_PLY        = Depth::from_raw(DEPTH_GRANULARITY / 2);
+constexpr Depth QUARTER_PLY     = Depth::from_raw(DEPTH_GRANULARITY / 4);
+constexpr Depth EIGHTH_PLY      = Depth::from_raw(DEPTH_GRANULARITY / 8);
+constexpr Depth DEPTH_ZERO      = Depth::from_raw(0);
 
 // The following DEPTH_ constants are used for transposition table entries
 // and quiescence search move generation stages. In regular search, the
@@ -231,14 +283,23 @@ using Depth = int;
 // quiescence search, however, the transposition table entries only store
 // the current quiescence move generation stage (which should thus compare
 // lower than any regular search depth).
-constexpr Depth DEPTH_QS = 0;
+//
+// DEPTH_QS is set to (DEPTH_GRANULARITY / 4 - 1) = 3 raw units. This acts
+// as the physical depth jump threshold: reaching x.25 plies (+4 raw units)
+// evaluates depth > DEPTH_QS and executes an additional physical search ply
+// before diving into qsearch.
+constexpr Depth DEPTH_QS        = Depth::from_raw(DEPTH_GRANULARITY / 4 - 1);
+
 // For transposition table entries where no searching at all was done
 // (whether regular or qsearch) we use DEPTH_UNSEARCHED, which should thus
 // compare lower than any quiescence or regular depth. DEPTH_NONE is used
 // for the transposition table entry occupancy check (see tt.cpp), and
 // should thus be lower than DEPTH_UNSEARCHED.
-constexpr Depth DEPTH_UNSEARCHED = -2;
-constexpr Depth DEPTH_NONE       = -3;
+constexpr Depth DEPTH_UNSEARCHED = Depth::from_int(-2);
+constexpr Depth DEPTH_NONE       = Depth::from_int(-3);
+
+template<int Divisor>
+constexpr Depth fractional_depth = ONE_PLY / Divisor;
 
 // clang-format off
 enum Square : u8 {

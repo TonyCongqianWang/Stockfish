@@ -28,8 +28,6 @@ namespace Stockfish {
 class Position;
 class OptionsMap;
 
-using Depth = int;
-
 namespace Search {
 struct RootMove;
 using RootMoves = std::vector<RootMove>;
@@ -42,7 +40,7 @@ struct Config {
     int   cardinality = 0;
     bool  rootInTB    = false;
     bool  useRule50   = false;
-    Depth probeDepth  = 0;
+    int   probeDepth  = 0;
 };
 
 enum WDLScore {
