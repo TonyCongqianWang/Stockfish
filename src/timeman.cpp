@@ -39,6 +39,14 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
     availableNodes = std::max(i64(0), availableNodes - nodes);
 }
 
+// Implied game ply based on piece count [0..32]
+constexpr int16_t ImpliedPly[33] = {
+    160, 160, 160, 145, 135, 125, 115, 105,  // 0 - 7 pcs
+     95,  90,  85,  80,  75,  70,  65,  60,  // 8 - 15 pcs
+     55,  50,  45,  40,  35,  30,  25,  20,  // 16 - 23 pcs
+     16,  12,   9,   6,   4,   2,   1,   0, 0 // 24 - 32 pcs
+};
+
 // Called at the beginning of the search and calculates
 // the bounds of time allowed for the current game ply. We currently support:
 //      1) x basetime (+ z increment)
@@ -46,6 +54,7 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
+                          int                 pieceCount,
                           const OptionsMap&   options,
                           double&             originalTimeAdjust) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
@@ -102,6 +111,9 @@ void TimeManagement::init(Search::LimitsType& limits,
     TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
                                                   - moveOverhead * (2 + mtg));
 
+    double impliedPly   = ImpliedPly[std::clamp(pieceCount, 0, 32)];
+    double effectivePly = std::max(0.0, 0.75 * ply + 0.25 * impliedPly);
+
     // x basetime (+ z increment)
     // If there is a healthy increment, timeLeft can exceed the actual available
     // game time for the current move, so also cap to a percentage of available game time.
@@ -116,17 +128,17 @@ void TimeManagement::init(Search::LimitsType& limits,
         double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
         double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
 
-        optScale = std::min(0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant,
+        optScale = std::min(0.012112 + std::pow(effectivePly + 3.22713, 0.46866) * optConstant,
                             0.19404 * limits.time[us] / timeLeft)
                  * originalTimeAdjust;
 
-        maxScale = std::min(6.873, maxConstant + ply / 12.352);
+        maxScale = std::min(6.873, maxConstant + effectivePly / 12.352);
     }
 
     // x moves in y seconds (+ z increment)
     else
     {
-        optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
+        optScale = std::min((0.88 + effectivePly / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
         maxScale = 1.3 + 0.11 * mtg;
     }
 
