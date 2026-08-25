@@ -611,16 +611,25 @@ bool Search::Worker::iterative_deepening() {
             }
             else if (!mainThread->ponder)
             {
-                // Bucketed step reduction taking into account previous iterations (Variant C: 1.0 -> 0.5 -> 0.25 -> 0.125 at 50%/70%/88%)
-                int stepReduction = 0;
-                if (elapsedTime > totalTime * 0.88)
-                    stepReduction = 14;  // 0.125 ply step (reduction = 14/16)
-                else if (elapsedTime > totalTime * 0.70)
-                    stepReduction = 12;  // 0.250 ply step (reduction = 12/16)
-                else if (elapsedTime > totalTime * 0.50)
-                    stepReduction = 8;   // 0.500 ply step (reduction = 8/16)
+                int prevReduction = threads.iterationReduction.load(std::memory_order_relaxed);
+                double discount = 1.0;
+                if (prevReduction >= 14)      discount = 0.501;  // 1/8 ply
+                else if (prevReduction >= 12) discount = 0.553;  // 1/4 ply
+                else if (prevReduction >= 8)  discount = 0.674;  // 1/2 ply
 
-                threads.iterationReduction += stepReduction;
+                double timeLeft             = std::max(0.0, totalTime - elapsedTime);
+                double effectiveElapsedTime = totalTime - timeLeft * discount;
+
+                // Bucketed reduction based on effectiveElapsedTime (Variant C: 1.0 -> 0.5 -> 0.25 -> 0.125 at 50%/70%/88%)
+                int reduction = 0;
+                if (effectiveElapsedTime > totalTime * 0.88)
+                    reduction = 14;  // 0.125 ply step
+                else if (effectiveElapsedTime > totalTime * 0.70)
+                    reduction = 12;  // 0.250 ply step
+                else if (effectiveElapsedTime > totalTime * 0.50)
+                    reduction = 8;   // 0.500 ply step
+
+                threads.iterationReduction = reduction;
             }
         }
 
