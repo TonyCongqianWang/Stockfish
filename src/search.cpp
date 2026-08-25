@@ -609,20 +609,16 @@ bool Search::Worker::iterative_deepening() {
                 else
                     threads.stop = true;
             }
-            else if (mainThread->ponder || elapsedTime <= totalTime * 0.50)
-                threads.iterationReduction = 0;
-            else
+            else if (!mainThread->ponder)
             {
-                // Time thresholds (fraction of totalTime in [0.50, 1.00]) to trigger reduction level R in [1..15].
-                // Derived from exponential branching cost (B = 2.2) over the [0.50, 1.00] window.
-                constexpr double TimeReductionThresholds[15] = {
-                    0.544, 0.586, 0.626, 0.664, 0.700, 0.734, 0.767, 0.799,
-                    0.828, 0.857, 0.883, 0.909, 0.933, 0.956, 0.978};
+                // Bucketed step reduction taking into account previous iterations (Variant B: 1.0 -> 0.5 -> 0.25 at 40%/70%)
+                int stepReduction = 0;
+                if (elapsedTime > totalTime * 0.70)
+                    stepReduction = 12;  // 0.25 ply step (reduction = 12/16)
+                else if (elapsedTime > totalTime * 0.40)
+                    stepReduction = 8;   // 0.50 ply step (reduction = 8/16)
 
-                int r = 0;
-                while (r < 15 && elapsedTime > totalTime * TimeReductionThresholds[r])
-                    ++r;
-                threads.iterationReduction = r;
+                threads.iterationReduction += stepReduction;
             }
         }
 
