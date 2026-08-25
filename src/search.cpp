@@ -618,7 +618,8 @@ bool Search::Worker::iterative_deepening() {
                 else if (elapsedTime > totalTime * 0.40)
                     stepReduction = 8;   // 0.50 ply step (reduction = 8/16)
 
-                threads.iterationReduction += stepReduction;
+                threads.iterationReduction =
+                  std::min(threads.iterationReduction.load(std::memory_order_relaxed) + stepReduction, rootDepth.raw_value());
             }
         }
 
