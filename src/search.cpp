@@ -611,17 +611,28 @@ bool Search::Worker::iterative_deepening() {
             }
             else if (!mainThread->ponder)
             {
-                // Bucketed step reduction taking into account previous iterations (Variant D: 1.0 -> 0.5 -> 0.25 -> 0.0625 at 40%/65%/85%)
-                int stepReduction = 0;
-                if (elapsedTime > totalTime * 0.85)
-                    stepReduction = 15;  // 0.0625 ply step (reduction = 15/16 - crawl)
-                else if (elapsedTime > totalTime * 0.65)
-                    stepReduction = 12;  // 0.2500 ply step (reduction = 12/16)
-                else if (elapsedTime > totalTime * 0.40)
-                    stepReduction = 8;   // 0.5000 ply step (reduction = 8/16)
+                int prevReduction = threads.iterationReduction.load(std::memory_order_relaxed);
+                double discount = 1.0;
+                if (prevReduction >= 15)      discount = 0.477;  // 1/16 ply
+                else if (prevReduction >= 14) discount = 0.501;  // 1/8 ply
+                else if (prevReduction >= 12) discount = 0.553;  // 1/4 ply
+                else if (prevReduction >= 8)  discount = 0.674;  // 1/2 ply
 
-                threads.iterationReduction =
-                  std::min(threads.iterationReduction.load(std::memory_order_relaxed) + stepReduction, rootDepth.raw_value());
+                double timeLeft             = std::max(0.0, totalTime - elapsedTime);
+                double effectiveElapsedTime = totalTime - timeLeft * discount;
+
+                // Bucketed reduction based on effectiveElapsedTime (Variant D: 1.0 -> 0.5 -> 0.25 -> 0.125 -> 0.0625 at 40%/65%/82%/94%)
+                int reduction = 0;
+                if (effectiveElapsedTime > totalTime * 0.94)
+                    reduction = 15;  // 0.0625 ply step (crawl)
+                else if (effectiveElapsedTime > totalTime * 0.82)
+                    reduction = 14;  // 0.1250 ply step
+                else if (effectiveElapsedTime > totalTime * 0.65)
+                    reduction = 12;  // 0.2500 ply step
+                else if (effectiveElapsedTime > totalTime * 0.40)
+                    reduction = 8;   // 0.5000 ply step
+
+                threads.iterationReduction = reduction;
             }
         }
 
