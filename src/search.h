@@ -265,7 +265,7 @@ struct Skill {
             level = double(skill_level);
     }
     bool enabled() const { return level < 20.0; }
-    bool time_to_pick(Depth depth) const { return depth == 1 + int(level); }
+    bool time_to_pick(Depth depth) const { return depth == Depth::from_int(1 + int(level)); }
     Move pick_best(const RootMoves&, usize multiPV);
 
     double level;
