@@ -129,6 +129,10 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
+    int8_t                      miniNN_w_quiet[16];
+    int8_t                      miniNN_z_latents[8];
+    int                         miniNN_inv_tau_mp;
+    int                         miniNN_inv_tau_lmr;
 };
 
 

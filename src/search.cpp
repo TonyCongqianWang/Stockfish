@@ -26,9 +26,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <initializer_list>
 #include <iostream>
 #include <list>
+#include <mutex>
 #include <ratio>
 #include <string>
 #include <utility>
@@ -37,6 +39,7 @@
 #include "evaluate.h"
 #include "history.h"
 #include "misc.h"
+#include "mininn/mininn.h"
 #include "movegen.h"
 #include "movepick.h"
 #include "nnue/network.h"
@@ -67,6 +70,72 @@ void syzygy_extend_pv(const OptionsMap&            options,
 using namespace Search;
 
 namespace {
+
+static std::mutex telMutex;
+
+static u64 get_sample_interval() {
+    static const u64 interval = []() {
+        const char* p = std::getenv("SF_LMR_SAMPLE_INTERVAL");
+        return p ? std::max(u64(100), u64(std::strtoull(p, nullptr, 10))) : u64(50000);
+    }();
+    return interval;
+}
+
+void dump_lmr_telemetry(const Position& pos, Stack* ss, Depth depth, bool improving,
+                        bool cutNode, bool pvNode,
+                        const PieceToHistory** contHist,
+                        const ButterflyHistory& mainHistory,
+                        const CapturePieceToHistory& captureHistory)
+{
+    const char* envPath = std::getenv("SF_LMR_TELEMETRY");
+    if (!envPath)
+        return;
+
+    std::lock_guard<std::mutex> lock(telMutex);
+    static std::ofstream out(envPath, std::ios::app);
+    if (!out.is_open())
+        return;
+
+    Color us = pos.side_to_move();
+    out << "{\"fen\":\"" << pos.fen() << "\","
+        << "\"depth\":" << int(depth) << ","
+        << "\"ply\":" << ss->ply << ","
+        << "\"improving\":" << (improving ? "true" : "false") << ","
+        << "\"cut_node\":" << (cutNode ? "true" : "false") << ","
+        << "\"pv_node\":" << (pvNode ? "true" : "false") << ","
+        << "\"static_eval\":" << int(ss->staticEval) << ","
+        << "\"moves\":[";
+
+    bool first = true;
+    for (const auto& move : MoveList<LEGAL>(pos))
+    {
+        if (!first)
+            out << ",";
+        first = false;
+
+        bool capture = pos.capture_stage(move);
+        Piece movedPiece = pos.moved_piece(move);
+        int statScore = 0;
+        if (capture)
+        {
+            Piece capturedPiece = pos.piece_on(move.to_sq());
+            statScore = 873 * int(PieceValue[capturedPiece]) / 128
+                      + captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+        }
+        else
+        {
+            statScore = (2252 * mainHistory[us][move.raw()]
+                       + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
+                       + 1093 * (*contHist[1])[movedPiece][move.to_sq()]) / 1024;
+        }
+
+        out << "{\"move\":\"" << UCIEngine::move(move, pos.is_chess960()) << "\","
+            << "\"is_capture\":" << (capture ? "true" : "false") << ","
+            << "\"stat_score\":" << statScore << "}";
+    }
+    out << "]}\n";
+    out.flush();
+}
 
 constexpr u64 NODES_LIMIT_OUTPUT = 10'000'000;
 
@@ -1110,8 +1179,20 @@ moves_loop:  // When in check, search starts here
       (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
 
 
+    globalMiniNN.evaluate_node(pos, ss, improving, cutNode, PvNode);
+
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
-                  &sharedHistory, ss->ply);
+                  &sharedHistory, ss->ply, ss);
+
+    if (depth >= 4 && depth <= 16 && ss->ply >= 1 && !pos.checkers())
+    {
+        static thread_local u64 lastSampleNode = 0;
+        if (nodes - lastSampleNode >= get_sample_interval())
+        {
+            lastSampleNode = nodes;
+            dump_lmr_telemetry(pos, ss, depth, improving, cutNode, PvNode, contHist, mainHistory, captureHistory);
+        }
+    }
 
     value = bestValue;
 
@@ -1314,50 +1395,56 @@ moves_loop:  // When in check, search starts here
         newDepth += extension;
 
         // Step 18. Compute and apply late moves reduction (LMR) (or possibly extension)
-
-        // Decrease reduction for PvNodes (*Scaler)
-        if (ss->ttPv)
-            r -= 3023 + PvNode * 1004 + (ttData.value > alpha) * 885
-               + (ttData.depth >= depth) * (816 + cutNode * 940);
-
-        r += 697;  // Base reduction offset to compensate for other tweaks
-        r -= moveCount * 65;
-        r -= std::abs(correctionValue) / 26310;
-
-        // Increase reduction for cut nodes
-        if (cutNode)
-            r += 4026 + 933 * !ttData.move;
-
-        // Increase reduction if ttMove is a capture
-        if (ttCapture)
-            r += 1079;
-
-        // Increase reduction if next ply has a lot of fail high
-        if ((ss + 1)->cutoffCnt > 1)
-            r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
-
-        // For first picked move (ttMove) reduce reduction
-        else if (move == ttData.move)
-            r -= 2179;
-
-        if (capture)
-            ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
-                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+        if (globalMiniNN.is_loaded())
+        {
+            r += globalMiniNN.evaluate_lmr(pos, move, moveCount, ss);
+        }
         else
-            ss->statScore =
-              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
-              / 1024;
+        {
+            // Decrease reduction for PvNodes (*Scaler)
+            if (ss->ttPv)
+                r -= 3023 + PvNode * 1004 + (ttData.value > alpha) * 885
+                   + (ttData.depth >= depth) * (816 + cutNode * 940);
 
-        // Decrease/increase reduction for moves with a good/bad history
-        r -= ss->statScore * 439 / 4096;
+            r += 697;  // Base reduction offset to compensate for other tweaks
+            r -= moveCount * 65;
+            r -= std::abs(correctionValue) / 26310;
 
-        if (!capture && !is_decisive(alpha))
-            r += 3 * std::clamp(alpha - eval, -64, 96);
+            // Increase reduction for cut nodes
+            if (cutNode)
+                r += 4026 + 933 * !ttData.move;
 
-        // Scale up reductions for expected ALL nodes
-        if (allNode)
-            r += r * 276 / (256 * depth + 268);
+            // Increase reduction if ttMove is a capture
+            if (ttCapture)
+                r += 1079;
+
+            // Increase reduction if next ply has a lot of fail high
+            if ((ss + 1)->cutoffCnt > 1)
+                r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
+
+            // For first picked move (ttMove) reduce reduction
+            else if (move == ttData.move)
+                r -= 2179;
+
+            if (capture)
+                ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
+                              + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+            else
+                ss->statScore =
+                  (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
+                   + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
+                  / 1024;
+
+            // Decrease/increase reduction for moves with a good/bad history
+            r -= ss->statScore * 439 / 4096;
+
+            if (!capture && !is_decisive(alpha))
+                r += 3 * std::clamp(alpha - eval, -64, 96);
+
+            // Scale up reductions for expected ALL nodes
+            if (allNode)
+                r += r * 276 / (256 * depth + 268);
+        }
 
         // Apply the computed LMR
         if (depth >= 2 && moveCount > 1)

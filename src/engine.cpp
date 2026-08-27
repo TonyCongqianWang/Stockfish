@@ -38,6 +38,7 @@
 #include "perft.h"
 #include "position.h"
 #include "search.h"
+#include "mininn/mininn.h"
 #include "shm.h"
 #include "syzygy/tbprobe.h"
 #include "types.h"
@@ -137,6 +138,17 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
           load_network(path_from_utf8(std::string(o)));
           return std::nullopt;
       }));
+
+    options.add("Use_MiniNN_LMR", Option(true));
+    options.add("MiniNN_Path", Option("trained_lmr.miniNN", [](const Option& o) {
+        if (globalMiniNN.load(std::string(o)))
+            return std::optional<std::string>{"Loaded MiniNN weights from " + std::string(o)};
+        return std::optional<std::string>{"Failed to load MiniNN weights from " + std::string(o)};
+    }));
+
+    const char* envNN = std::getenv("SF_MININN_PATH");
+    if (envNN)
+        globalMiniNN.load(envNN);
 
     threads.clear();
     threads.ensure_network_replicated();
