@@ -443,6 +443,7 @@ bool Search::Worker::iterative_deepening() {
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
 
+            // Gradually increase depth after reduced depth search
             if (failedHighCnt > 0)
                 failHighRecovery = (failedHighCnt + 1) / 2;
             else
