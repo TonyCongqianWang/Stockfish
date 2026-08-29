@@ -991,8 +991,8 @@ Value Search::Worker::search(
     if (!seekMate && eval < alpha - 482 * depth * depth - 20 * PvNode)
     {
         Value v = qsearch<NonPV>(pos, ss, alpha, beta);
-        if (v < beta)
-            return v;
+        if (v <= alpha && !((seekMate || PvNode) && is_decisive(v)))
+            return std::max(v, beta - 600);
     }
 
     // Step 9. Futility pruning: child node
