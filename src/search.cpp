@@ -991,7 +991,7 @@ Value Search::Worker::search(
     if (!seekMate && eval < alpha - 482 * depth * depth - 20 * PvNode)
     {
         NodeType childNodeType = nodeType == NonPV ? NonPV : PV;
-        Value v = qsearch<nodeType>(pos, ss, alpha, beta);
+        Value v = qsearch<childNodeType>(pos, ss, alpha, beta);
         if (v <= alpha && !((seekMate || PvNode) && is_decisive(v)))
             return std::max(v, beta - 600);
     }
