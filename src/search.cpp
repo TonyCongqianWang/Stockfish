@@ -990,7 +990,7 @@ Value Search::Worker::search(
     // If eval is really low, skip search entirely and return the qsearch value
     if (!seekMate && eval < alpha - 482 * depth * depth - 20 * PvNode)
     {
-        Value v = qsearch<NonPV>(pos, ss, alpha, beta);
+        Value v = qsearch<nodeType>(pos, ss, alpha, beta);
         if (v <= alpha && !((seekMate || PvNode) && is_decisive(v)))
             return std::max(v, beta - 600);
     }
