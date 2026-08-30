@@ -86,16 +86,14 @@ bool MiniNNModel::load(const std::string& filepath) {
     return true;
 }
 
-void MiniNNModel::evaluate_node(
+void MiniNNModel::extract_node_features(
     const Position& pos,
-    Search::Stack* ss,
+    const Search::Stack* ss,
     bool improving,
     bool cutNode,
-    bool pvNode
-) const {
-    if (!loaded.load(std::memory_order_relaxed) || !ss)
-        return;
-
+    bool pvNode,
+    int8_t out_u[MiniNN::NODE_IN_DIM]
+) {
     Color us = pos.side_to_move();
     Color them = ~us;
 
@@ -106,24 +104,130 @@ void MiniNNModel::evaluate_node(
 
     int num_pinned = popcount(pos.blockers_for_king(us));
 
+    out_u[0]  = int8_t(std::clamp((npm_us - 2000) * 64 / 1000, -127, 127));
+    out_u[1]  = int8_t(std::clamp((npm_them - 2000) * 64 / 1000, -127, 127));
+    out_u[2]  = int8_t(std::clamp((pawns_us - 4) * 64 / 2, -127, 127));
+    out_u[3]  = int8_t(std::clamp((pawns_them - 4) * 64 / 2, -127, 127));
+    out_u[4]  = cutNode ? 64 : -64;
+    out_u[5]  = int8_t(std::clamp(num_pinned * 64 / 4, -127, 127));
+    out_u[6]  = pvNode ? 64 : -64;
+    out_u[7]  = ss ? (ss->ttPv ? 64 : -64) : -64;
+    out_u[8]  = ss ? int8_t(std::clamp((int(ss->ply) - 24) * 64 / 16, -127, 127)) : 0;
+    out_u[9]  = improving ? 64 : -64;
+    out_u[10] = ss ? (ss->ttHit ? 64 : -64) : -64;
+    out_u[11] = ss ? (ss->ttPv ? 64 : -64) : -64;
+    out_u[12] = ss ? int8_t(std::clamp(int(ss->staticEval) * 64 / 500, -127, 127)) : 0;
+    out_u[13] = ss ? int8_t(std::clamp(int((ss - 1)->statScore) * 64 / 2000, -127, 127)) : 0;
+    out_u[14] = ss ? int8_t(std::clamp((ss->cutoffCnt - 1) * 64 / 2, -127, 127)) : 0;
+    out_u[15] = (npm_us + npm_them < 3000) ? 64 : -64;
+}
+
+void MiniNNModel::extract_quiet_features(
+    const Position& pos,
+    Move m,
+    const Search::Stack* ss,
+    const ButterflyHistory* mainHistory,
+    const LowPlyHistory* lowPlyHistory,
+    const PieceToHistory** continuationHistory,
+    const SharedHistories* sharedHistory,
+    const Bitboard* threatByLesser,
+    int ply,
+    int8_t out_x[MiniNN::QUIET_IN_DIM]
+) {
+    (void)ss;
+    Color us = pos.side_to_move();
+    Square from = m.from_sq();
+    Square to = m.to_sq();
+    Piece pc = pos.moved_piece(m);
+    PieceType pt = type_of(pc);
+
+    out_x[0]  = mainHistory ? int8_t(std::clamp(int((*mainHistory)[us][m.raw()]) * 64 / 16384, -127, 127)) : 0;
+    out_x[1]  = sharedHistory ? int8_t(std::clamp(int(sharedHistory->pawn_entry(pos)[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[2]  = continuationHistory && continuationHistory[0] ? int8_t(std::clamp(int((*continuationHistory[0])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[3]  = continuationHistory && continuationHistory[1] ? int8_t(std::clamp(int((*continuationHistory[1])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[4]  = continuationHistory && continuationHistory[2] ? int8_t(std::clamp(int((*continuationHistory[2])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[5]  = continuationHistory && continuationHistory[3] ? int8_t(std::clamp(int((*continuationHistory[3])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[6]  = continuationHistory && continuationHistory[5] ? int8_t(std::clamp(int((*continuationHistory[5])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[7]  = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 64 : -64;
+    out_x[8]  = threatByLesser && (threatByLesser[pt] & from) ? 64 : -64;
+    out_x[9]  = threatByLesser && (threatByLesser[pt] & to) ? 64 : -64;
+    out_x[10] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
+    out_x[11] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? int8_t(std::clamp(int((*lowPlyHistory)[ply][m.raw()] / (1 + ply)) * 64 / 16384, -127, 127)) : 0;
+}
+
+void MiniNNModel::extract_capture_features(
+    const Position& pos,
+    Move m,
+    const Search::Stack* ss,
+    const CapturePieceToHistory* captureHistory,
+    int8_t out_x[MiniNN::CAPTURE_IN_DIM]
+) {
+    Piece pc = pos.moved_piece(m);
+    Piece capturedPiece = pos.piece_on(m.to_sq());
+
+    out_x[0] = captureHistory ? int8_t(std::clamp(int((*captureHistory)[pc][m.to_sq()][type_of(capturedPiece)]) * 64 / 16384, -127, 127)) : 0;
+    out_x[1] = int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127));
+    out_x[2] = int8_t(std::clamp((int(PieceValue[capturedPiece]) - int(PieceValue[pc])) * 64 / 500, -127, 127));
+    out_x[3] = pos.gives_check(m) ? 64 : -64;
+
+    if (ss)
+    {
+        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
+            out_x[4 + k] = ss->miniNN_z_latents[k];
+    }
+    else
+    {
+        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
+            out_x[4 + k] = 0;
+    }
+}
+
+void MiniNNModel::extract_lmr_features(
+    Move m,
+    Piece movedPiece,
+    bool is_capture,
+    Piece capturedPiece,
+    bool givesCheck,
+    int moveCount,
+    const Search::Stack* ss,
+    int8_t out_x[MiniNN::LMR_IN_DIM]
+) {
+    PieceType pt = type_of(movedPiece);
+
+    out_x[0] = ss ? int8_t(std::clamp(int(ss->statScore) * 64 / 2000, -127, 127)) : 0;
+    out_x[1] = int8_t(std::clamp((moveCount - 4) * 64 / 8, -127, 127));
+    out_x[2] = is_capture ? 64 : -64;
+    out_x[3] = is_capture ? int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127)) : 0;
+    out_x[4] = givesCheck ? 64 : -64;
+    out_x[5] = (m.type_of() == PROMOTION) ? 64 : -64;
+    out_x[6] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
+    out_x[7] = ss ? (ss->ttPv ? 64 : -64) : -64;
+
+    if (ss)
+    {
+        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
+            out_x[8 + k] = ss->miniNN_z_latents[k];
+    }
+    else
+    {
+        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
+            out_x[8 + k] = 0;
+    }
+}
+
+void MiniNNModel::evaluate_node(
+    const Position& pos,
+    Search::Stack* ss,
+    bool improving,
+    bool cutNode,
+    bool pvNode
+) const {
+    if (!loaded.load(std::memory_order_relaxed) || !ss)
+        return;
+
     // 16 node inputs in [-127, 127]
     int8_t u[MiniNN::NODE_IN_DIM];
-    u[0]  = int8_t(std::clamp((npm_us - 2000) * 64 / 1000, -127, 127));
-    u[1]  = int8_t(std::clamp((npm_them - 2000) * 64 / 1000, -127, 127));
-    u[2]  = int8_t(std::clamp((pawns_us - 4) * 64 / 2, -127, 127));
-    u[3]  = int8_t(std::clamp((pawns_them - 4) * 64 / 2, -127, 127));
-    u[4]  = cutNode ? 64 : -64;
-    u[5]  = int8_t(std::clamp(num_pinned * 64 / 4, -127, 127));
-    u[6]  = pvNode ? 64 : -64;
-    u[7]  = ss->ttPv ? 64 : -64;
-    u[8]  = int8_t(std::clamp((int(ss->ply) - 24) * 64 / 16, -127, 127));
-    u[9]  = improving ? 64 : -64;
-    u[10] = ss->ttHit ? 64 : -64;
-    u[11] = ss->ttPv ? 64 : -64;
-    u[12] = int8_t(std::clamp(int(ss->staticEval) * 64 / 500, -127, 127));
-    u[13] = int8_t(std::clamp(int((ss - 1)->statScore) * 64 / 2000, -127, 127));
-    u[14] = int8_t(std::clamp((ss->cutoffCnt - 1) * 64 / 2, -127, 127));
-    u[15] = (npm_us + npm_them < 3000) ? 64 : -64;
+    extract_node_features(pos, ss, improving, cutNode, pvNode, u);
 
     // Layer 0 (16 -> 32)
     alignas(32) int32_t h0[MiniNN::NODE_H_DIM];
@@ -193,26 +297,8 @@ int MiniNNModel::score_quiet(
     if (!loaded.load(std::memory_order_relaxed) || !ss)
         return 0;
 
-    Color us = pos.side_to_move();
-    Square from = m.from_sq();
-    Square to = m.to_sq();
-    Piece pc = pos.moved_piece(m);
-    PieceType pt = type_of(pc);
-
-    // 12 raw signals normalized to symmetric int8 [-127, 127]
     int8_t x[MiniNN::QUIET_IN_DIM];
-    x[0]  = int8_t(std::clamp(int((*mainHistory)[us][m.raw()]) * 64 / 16384, -127, 127));
-    x[1]  = sharedHistory ? int8_t(std::clamp(int(sharedHistory->pawn_entry(pos)[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[2]  = continuationHistory && continuationHistory[0] ? int8_t(std::clamp(int((*continuationHistory[0])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[3]  = continuationHistory && continuationHistory[1] ? int8_t(std::clamp(int((*continuationHistory[1])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[4]  = continuationHistory && continuationHistory[2] ? int8_t(std::clamp(int((*continuationHistory[2])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[5]  = continuationHistory && continuationHistory[3] ? int8_t(std::clamp(int((*continuationHistory[3])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[6]  = continuationHistory && continuationHistory[5] ? int8_t(std::clamp(int((*continuationHistory[5])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    x[7]  = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 64 : -64;
-    x[8]  = threatByLesser && (threatByLesser[pt] & from) ? 64 : -64;
-    x[9]  = threatByLesser && (threatByLesser[pt] & to) ? 64 : -64;
-    x[10] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
-    x[11] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? int8_t(std::clamp(int((*lowPlyHistory)[ply][m.raw()] / (1 + ply)) * 64 / 16384, -127, 127)) : 0;
+    extract_quiet_features(pos, m, ss, mainHistory, lowPlyHistory, continuationHistory, sharedHistory, threatByLesser, ply, x);
 
     // Layer 0 (12 -> 16)
     alignas(32) int32_t h[MiniNN::QUIET_H_DIM];
@@ -243,19 +329,8 @@ int MiniNNModel::score_capture(
     if (!loaded.load(std::memory_order_relaxed) || !ss)
         return 0;
 
-    Piece pc = pos.moved_piece(m);
-    Piece capturedPiece = pos.piece_on(m.to_sq());
-
-    // 4 raw capture signals + 8 position latents = 12 inputs (all at scale 64)
     int8_t x[MiniNN::CAPTURE_IN_DIM];
-    x[0] = captureHistory ? int8_t(std::clamp(int((*captureHistory)[pc][m.to_sq()][type_of(capturedPiece)]) * 64 / 16384, -127, 127)) : 0;
-    x[1] = int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127));
-    x[2] = int8_t(std::clamp((int(PieceValue[capturedPiece]) - int(PieceValue[pc])) * 64 / 500, -127, 127));
-    x[3] = pos.gives_check(m) ? 64 : -64;
-
-    // 8 Position Latents (scale 64)
-    for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
-        x[4 + k] = ss->miniNN_z_latents[k];
+    extract_capture_features(pos, m, ss, captureHistory, x);
 
     // Layer 0 (12 -> 16)
     alignas(32) int32_t h[MiniNN::CAPTURE_H_DIM];
@@ -289,22 +364,8 @@ int MiniNNModel::evaluate_lmr(
     if (!loaded.load(std::memory_order_relaxed) || !ss)
         return 0;
 
-    PieceType pt = type_of(movedPiece);
-
-    // 8 move features + 8 position latents = 16 inputs (all at scale 64)
     int8_t x[MiniNN::LMR_IN_DIM];
-    x[0] = int8_t(std::clamp(int(ss->statScore) * 64 / 2000, -127, 127));
-    x[1] = int8_t(std::clamp((moveCount - 4) * 64 / 8, -127, 127));
-    x[2] = is_capture ? 64 : -64;
-    x[3] = is_capture ? int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127)) : 0;
-    x[4] = givesCheck ? 64 : -64;
-    x[5] = (m.type_of() == PROMOTION) ? 64 : -64;
-    x[6] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
-    x[7] = ss->ttPv ? 64 : -64;
-
-    // Append 8 position latents (scale 64)
-    for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
-        x[8 + k] = ss->miniNN_z_latents[k];
+    extract_lmr_features(m, movedPiece, is_capture, capturedPiece, givesCheck, moveCount, ss, x);
 
     // Layer 0 (16 -> 16)
     alignas(32) int32_t m0[MiniNN::LMR_H_DIM];

@@ -28,6 +28,48 @@ public:
     bool load(const std::string& filepath);
     bool is_loaded() const { return loaded.load(std::memory_order_acquire); }
 
+    // Feature extraction helpers (Shared between inference and telemetry serialization)
+    static void extract_node_features(
+        const Position& pos,
+        const Search::Stack* ss,
+        bool improving,
+        bool cutNode,
+        bool pvNode,
+        int8_t out_u[MiniNN::NODE_IN_DIM]
+    );
+
+    static void extract_quiet_features(
+        const Position& pos,
+        Move m,
+        const Search::Stack* ss,
+        const ButterflyHistory* mainHistory,
+        const LowPlyHistory* lowPlyHistory,
+        const PieceToHistory** continuationHistory,
+        const SharedHistories* sharedHistory,
+        const Bitboard* threatByLesser,
+        int ply,
+        int8_t out_x[MiniNN::QUIET_IN_DIM]
+    );
+
+    static void extract_capture_features(
+        const Position& pos,
+        Move m,
+        const Search::Stack* ss,
+        const CapturePieceToHistory* captureHistory,
+        int8_t out_x[MiniNN::CAPTURE_IN_DIM]
+    );
+
+    static void extract_lmr_features(
+        Move m,
+        Piece movedPiece,
+        bool is_capture,
+        Piece capturedPiece,
+        bool givesCheck,
+        int moveCount,
+        const Search::Stack* ss,
+        int8_t out_x[MiniNN::LMR_IN_DIM]
+    );
+
     // Evaluated ONCE per search node: populates ss->miniNN_w_quiet, ss->miniNN_z_latents, and temperatures
     void evaluate_node(const Position& pos, Search::Stack* ss, bool improving, bool cutNode, bool pvNode) const;
 
