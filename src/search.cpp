@@ -373,10 +373,31 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
             Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            if (avg <= -VALUE_INFINITE || avg >= VALUE_INFINITE)
+                avg = VALUE_ZERO;
+
+            i64 mss = rootMoves[pvIdx].meanSquaredScore;
+            i64 var = std::max(i64(0), mss - i64(avg) * avg);
+
+            // Bitwise integer square root approximation for standard deviation
+            u32 temp_var = var;
+            u32 res      = 0;
+            for (u32 bit = 1U << 30; bit != 0; bit >>= 2)
+            {
+                if (temp_var >= res + bit)
+                {
+                    temp_var -= res + bit;
+                    res = (res >> 1) + bit;
+                }
+                else
+                    res >>= 1;
+            }
+            int std_dev = res;
+
+            delta = std::max(1, (1024 + 3684 * rootDepth + 890 * std_dev) / 1024);
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
@@ -1450,22 +1471,22 @@ moves_loop:  // When in check, search starts here
             constexpr u64 MinWeight      = 12;  // 37.5% minimum weight
             constexpr u64 MaxWeight      = 24;  // 75% maximum weight
 
-            u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+            int clamped_value = std::clamp(value, -6000, 6000);
+            u64 w             = std::clamp((Scale * N * ChiDenominator)
+                                             / (N * ChiDenominator + ChiNumerator * E_prev),
+                                           MinWeight, MaxWeight);
+            u64 v_sqr         = i64(clamped_value) * i64(clamped_value);
 
             if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
+                rm.averageScore = clamped_value;
             else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+                rm.averageScore = Value((clamped_value * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
+                rm.meanSquaredScore = v_sqr;
             else
                 rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
+                  Value((v_sqr * w + u64(rm.meanSquaredScore) * (Scale - w)) / Scale);
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
