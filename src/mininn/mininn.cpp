@@ -229,9 +229,9 @@ int MiniNNModel::score_quiet(
     for (int k = 0; k < MiniNN::QUIET_H_DIM; ++k)
         score_sum += h[k] * ss->miniNN_w_quiet[k];
 
-    // Scale to score units: (score_sum * 1200 + 4064) / (64 * 127) and clamp to [-1200, 1200]
-    int score = (score_sum * 1200 + 4064) / (64 * 127);
-    return std::clamp(score, -1200, 1200);
+    // Scale to native 16-bit score units [-32768, 32767]: (score_sum * 512 + 63) / 127
+    int score = (score_sum * 512 + 63) / 127;
+    return std::clamp(score, -32768, 32767);
 }
 
 int MiniNNModel::score_capture(
@@ -272,9 +272,9 @@ int MiniNNModel::score_capture(
     for (int i = 0; i < MiniNN::CAPTURE_H_DIM; ++i)
         sum += cap_w1[0][i] * h[i];
 
-    // Convert scale 4096 to score units [-1200, 1200]
-    int score = (sum * 1200 + 2048) >> 12;
-    return std::clamp(score, -1200, 1200);
+    // Scale to native 16-bit score units [-32768, 32767]: sum * 8 (scale 4096 -> 32768)
+    int score = sum * 8;
+    return std::clamp(score, -32768, 32767);
 }
 
 int MiniNNModel::evaluate_lmr(

@@ -85,7 +85,10 @@ void dump_lmr_telemetry(const Position& pos, Stack* ss, Depth depth, bool improv
                         bool cutNode, bool pvNode,
                         const PieceToHistory** contHist,
                         const ButterflyHistory& mainHistory,
-                        const CapturePieceToHistory& captureHistory)
+                        const CapturePieceToHistory& captureHistory,
+                        const SharedHistories* sharedHistory,
+                        const LowPlyHistory* lowPlyHistory,
+                        Move ttMove)
 {
     const char* envPath = std::getenv("SF_LMR_TELEMETRY");
     if (!envPath)
@@ -97,6 +100,118 @@ void dump_lmr_telemetry(const Position& pos, Stack* ss, Depth depth, bool improv
         return;
 
     Color us = pos.side_to_move();
+
+    Bitboard threatByLesser[PIECE_TYPE_NB];
+    threatByLesser[PAWN]   = 0;
+    threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+    threatByLesser[ROOK] =
+      pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+    threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+    threatByLesser[KING]  = 0;
+
+    struct MoveInfo {
+        Move move;
+        int stage_prio;
+        int picker_score;
+        bool is_capture;
+        int stat_score;
+        bool gives_check;
+        PieceType moved_pt;
+        PieceType captured_pt;
+        bool threat_from;
+        bool threat_to;
+        int main_hist;
+        int pawn_hist;
+        int cont_hist[5];
+        int capt_hist;
+        int low_ply_hist;
+    };
+
+    std::vector<MoveInfo> list;
+    for (const auto& move : MoveList<LEGAL>(pos))
+    {
+        MoveInfo info;
+        info.move = move;
+        Square from = move.from_sq();
+        Square to = move.to_sq();
+        Piece movedPiece = pos.moved_piece(move);
+        info.moved_pt = type_of(movedPiece);
+        info.is_capture = pos.capture_stage(move);
+        info.gives_check = pos.gives_check(move);
+        info.threat_from = (threatByLesser[info.moved_pt] & from) != 0;
+        info.threat_to = (threatByLesser[info.moved_pt] & to) != 0;
+
+        info.main_hist = mainHistory[us][move.raw()];
+        info.pawn_hist = sharedHistory ? sharedHistory->pawn_entry(pos)[movedPiece][to] : 0;
+        info.cont_hist[0] = contHist && contHist[0] ? (*contHist[0])[movedPiece][to] : 0;
+        info.cont_hist[1] = contHist && contHist[1] ? (*contHist[1])[movedPiece][to] : 0;
+        info.cont_hist[2] = contHist && contHist[2] ? (*contHist[2])[movedPiece][to] : 0;
+        info.cont_hist[3] = contHist && contHist[3] ? (*contHist[3])[movedPiece][to] : 0;
+        info.cont_hist[4] = contHist && contHist[5] ? (*contHist[5])[movedPiece][to] : 0;
+
+        info.low_ply_hist = (ss->ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? (*lowPlyHistory)[ss->ply][move.raw()] : 0;
+
+        if (info.is_capture)
+        {
+            Piece capturedPiece = pos.piece_on(to);
+            info.captured_pt = type_of(capturedPiece);
+            info.capt_hist = captureHistory[movedPiece][to][info.captured_pt];
+            info.stat_score = 873 * int(PieceValue[capturedPiece]) / 128 + info.capt_hist;
+
+            if (move == ttMove)
+            {
+                info.stage_prio = 0;
+                info.picker_score = 1000000;
+            }
+            else
+            {
+                int val = info.capt_hist + 7 * int(PieceValue[capturedPiece]);
+                if (pos.see_ge(move, -val / 18))
+                {
+                    info.stage_prio = 1;
+                    info.picker_score = val;
+                }
+                else
+                {
+                    info.stage_prio = 3;
+                    info.picker_score = val;
+                }
+            }
+        }
+        else
+        {
+            info.captured_pt = NO_PIECE_TYPE;
+            info.capt_hist = 0;
+            info.stat_score = (2252 * info.main_hist + 1126 * info.cont_hist[0] + 1093 * info.cont_hist[1]) / 1024;
+
+            if (move == ttMove)
+            {
+                info.stage_prio = 0;
+                info.picker_score = 1000000;
+            }
+            else
+            {
+                info.stage_prio = 2;
+                int val = 2 * info.main_hist + 2 * info.pawn_hist
+                        + info.cont_hist[0] + info.cont_hist[1] + info.cont_hist[2] + info.cont_hist[3] + info.cont_hist[4];
+                val += ((pos.check_squares(info.moved_pt) & to) && pos.see_ge(move, -75)) * 16384;
+                int v = 20 * (int(info.threat_from) - int(info.threat_to));
+                val += PieceValue[info.moved_pt] * v;
+                if (ss->ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory)
+                    val += 8 * (*lowPlyHistory)[ss->ply][move.raw()] / (1 + ss->ply);
+                info.picker_score = val;
+            }
+        }
+        list.push_back(info);
+    }
+
+    // Sort by MovePicker priority
+    std::stable_sort(list.begin(), list.end(), [](const MoveInfo& a, const MoveInfo& b) {
+        if (a.stage_prio != b.stage_prio)
+            return a.stage_prio < b.stage_prio;
+        return a.picker_score > b.picker_score;
+    });
+
     out << "{\"fen\":\"" << pos.fen() << "\","
         << "\"depth\":" << int(depth) << ","
         << "\"ply\":" << ss->ply << ","
@@ -104,34 +219,29 @@ void dump_lmr_telemetry(const Position& pos, Stack* ss, Depth depth, bool improv
         << "\"cut_node\":" << (cutNode ? "true" : "false") << ","
         << "\"pv_node\":" << (pvNode ? "true" : "false") << ","
         << "\"static_eval\":" << int(ss->staticEval) << ","
+        << "\"prev_stat_score\":" << int((ss - 1)->statScore) << ","
+        << "\"cutoff_cnt\":" << int(ss->cutoffCnt) << ","
         << "\"moves\":[";
 
-    bool first = true;
-    for (const auto& move : MoveList<LEGAL>(pos))
+    for (size_t i = 0; i < list.size(); ++i)
     {
-        if (!first)
+        if (i > 0)
             out << ",";
-        first = false;
-
-        bool capture = pos.capture_stage(move);
-        Piece movedPiece = pos.moved_piece(move);
-        int statScore = 0;
-        if (capture)
-        {
-            Piece capturedPiece = pos.piece_on(move.to_sq());
-            statScore = 873 * int(PieceValue[capturedPiece]) / 128
-                      + captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
-        }
-        else
-        {
-            statScore = (2252 * mainHistory[us][move.raw()]
-                       + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-                       + 1093 * (*contHist[1])[movedPiece][move.to_sq()]) / 1024;
-        }
-
-        out << "{\"move\":\"" << UCIEngine::move(move, pos.is_chess960()) << "\","
-            << "\"is_capture\":" << (capture ? "true" : "false") << ","
-            << "\"stat_score\":" << statScore << "}";
+        const auto& m = list[i];
+        out << "{\"move\":\"" << UCIEngine::move(m.move, pos.is_chess960()) << "\","
+            << "\"picker_rank\":" << (i + 1) << ","
+            << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
+            << "\"stat_score\":" << m.stat_score << ","
+            << "\"gives_check\":" << (m.gives_check ? "true" : "false") << ","
+            << "\"moved_pt\":" << int(m.moved_pt) << ","
+            << "\"captured_pt\":" << int(m.captured_pt) << ","
+            << "\"threat_from\":" << (m.threat_from ? "true" : "false") << ","
+            << "\"threat_to\":" << (m.threat_to ? "true" : "false") << ","
+            << "\"main_hist\":" << m.main_hist << ","
+            << "\"pawn_hist\":" << m.pawn_hist << ","
+            << "\"cont_hist\":[" << m.cont_hist[0] << "," << m.cont_hist[1] << "," << m.cont_hist[2] << "," << m.cont_hist[3] << "," << m.cont_hist[4] << "],"
+            << "\"capt_hist\":" << m.capt_hist << ","
+            << "\"low_ply_hist\":" << m.low_ply_hist << "}";
     }
     out << "]}\n";
     out.flush();
@@ -1190,7 +1300,7 @@ moves_loop:  // When in check, search starts here
         if (nodes - lastSampleNode >= get_sample_interval())
         {
             lastSampleNode = nodes;
-            dump_lmr_telemetry(pos, ss, depth, improving, cutNode, PvNode, contHist, mainHistory, captureHistory);
+            dump_lmr_telemetry(pos, ss, depth, improving, cutNode, PvNode, contHist, mainHistory, captureHistory, &sharedHistory, &lowPlyHistory, ttData.move);
         }
     }
 
