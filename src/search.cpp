@@ -53,23 +53,23 @@
 namespace Stockfish {
 
 // Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
-int c_base_0            = 327680;
-int c_base_1            = 1310720;
-int c_std_0             = 8192;
-int c_std_1             = 1024;
-int c_avg_0             = 1024;
-int c_avg_1             = 1024;
-int c_cap_base_0        = 3276800;
-int c_cap_base_1        = 1638400;
-int c_cap_score         = 10000;
-int c_delta_growth_rate = 47;
+int c_base_0            = 329176;
+int c_base_1            = 1303089;
+int c_std_0             = 8358;
+int c_std_1             = 1145;
+int c_avg_0             = 1290;
+int c_avg_1             = 679;
+int c_cap_base_0        = 3418557;
+int c_cap_base_1        = 1506496;
+int c_cap_score         = 9589;
+int c_delta_growth_rate = 357;
 
 // Dynamic EMA parameters for aspiration window
-int c_ema_chi            = 1536;  // Chi = 1.5 * 1024
-int c_ema_min_weight_avg = 384;   // 37.5% * 1024
-int c_ema_max_weight_avg = 768;   // 75.0% * 1024
-int c_ema_min_weight_mss = 384;   // 37.5% * 1024
-int c_ema_max_weight_mss = 512;   // 50.0% * 1024
+int c_ema_chi            = 1668;
+int c_ema_min_weight_avg = 391;
+int c_ema_max_weight_avg = 795;
+int c_ema_min_weight_mss = 372;
+int c_ema_max_weight_mss = 547;
 
 SetRange r_c_base_0(65536, 1310720);
 SetRange r_c_base_1(65536, 3932160);
@@ -80,7 +80,7 @@ SetRange r_c_avg_1(0, 16384);
 SetRange r_c_cap_base_0(655360, 6553600);
 SetRange r_c_cap_base_1(327680, 6553600);
 SetRange r_c_cap_score(2000, 30000);
-SetRange r_c_delta_growth_rate(10, 128);
+SetRange r_c_delta_growth_rate(80, 1024);
 SetRange r_c_ema_chi(256, 4096);
 SetRange r_c_ema_min_weight_avg(64, 768);
 SetRange r_c_ema_max_weight_avg(256, 1024);
@@ -528,7 +528,7 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                int deltaInc = std::max(c_delta_growth_rate * deltaGrowth / 128, 1);
+                int deltaInc = std::max(c_delta_growth_rate * deltaGrowth / 1024, 1);
                 delta       += deltaInc;
                 deltaGrowth += deltaInc;
 
