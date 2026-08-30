@@ -1,0 +1,104 @@
+/*
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Stockfish is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#ifndef MININN_H_INCLUDED
+#define MININN_H_INCLUDED
+
+#include <cstdint>
+#include <string>
+#include <atomic>
+
+#include "../types.h"
+#include "../bitboard.h"
+#include "../history.h"
+#include "mininn_types.h"
+
+namespace Stockfish {
+
+class Position;
+namespace Search { struct Stack; }
+
+class MiniNNModel {
+public:
+    MiniNNModel();
+    ~MiniNNModel() = default;
+
+    bool load(const std::string& filepath);
+    bool is_loaded() const { return loaded.load(std::memory_order_acquire); }
+    bool is_mp_enabled() const { return is_loaded() && use_mp.load(std::memory_order_relaxed); }
+    bool is_lmr_enabled() const { return is_loaded() && use_lmr.load(std::memory_order_relaxed); }
+    void set_use_mp(bool val) { use_mp.store(val, std::memory_order_relaxed); }
+    void set_use_lmr(bool val) { use_lmr.store(val, std::memory_order_relaxed); }
+
+    static void extract_node_features(
+        const Position& pos,
+        const Search::Stack* ss,
+        bool improving,
+        bool cutNode,
+        bool pvNode,
+        int8_t out_u[MiniNN::NODE_IN_DIM]
+    );
+
+    static void extract_quiet_features(
+        const Position& pos,
+        Move m,
+        const Search::Stack* ss,
+        const ButterflyHistory* mainHistory,
+        const LowPlyHistory* lowPlyHistory,
+        const PieceToHistory** continuationHistory,
+        const SharedHistories* sharedHistory,
+        const Bitboard* threatByLesser,
+        int ply,
+        int32_t out_t[MiniNN::QUIET_TERMS]
+    );
+
+    static void extract_lmr_features(
+        bool improving,
+        Depth depth,
+        int moveCount,
+        int delta,
+        int rootDelta,
+        Value alpha,
+        Value eval,
+        bool capture,
+        const Search::Stack* ss,
+        int32_t out_x[MiniNN::LMR_IN_DIM]
+    );
+
+    // Evaluated ONCE per search node: populates ss->miniNN_w_mp and ss->miniNN_w_lmr
+    void evaluate_node(const Position& pos, Search::Stack* ss, bool improving, bool cutNode, bool pvNode) const;
+
+private:
+    std::atomic<bool> loaded{true};
+    std::atomic<bool> use_mp{true};
+    std::atomic<bool> use_lmr{true};
+
+    // Node Network: fc0 (16 -> 32), fc1 (32 -> 32), fc2 (32 -> 16)
+    alignas(32) int32_t node_b0[MiniNN::NODE_H_DIM];
+    alignas(32) int8_t  node_w0[MiniNN::NODE_H_DIM][MiniNN::NODE_IN_DIM];
+    alignas(32) int32_t node_b1[MiniNN::NODE_H_DIM];
+    alignas(32) int8_t  node_w1[MiniNN::NODE_H_DIM][MiniNN::NODE_H_DIM];
+    alignas(32) int32_t node_b2[MiniNN::NODE_OUT_DIM];
+    alignas(32) int8_t  node_w2[MiniNN::NODE_OUT_DIM][MiniNN::NODE_H_DIM];
+};
+
+extern MiniNNModel globalMiniNN;
+
+} // namespace Stockfish
+
+#endif // #ifndef MININN_H_INCLUDED

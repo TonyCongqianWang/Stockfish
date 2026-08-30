@@ -37,6 +37,7 @@
 #include "evaluate.h"
 #include "history.h"
 #include "misc.h"
+#include "mininn/mininn.h"
 #include "movegen.h"
 #include "movepick.h"
 #include "nnue/network.h"
@@ -1108,8 +1109,10 @@ moves_loop:  // When in check, search starts here
       (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
 
 
+    globalMiniNN.evaluate_node(pos, ss, improving, cutNode, PvNode);
+
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
-                  &sharedHistory, ss->ply);
+                  &sharedHistory, ss->ply, ss);
 
     value = bestValue;
 
@@ -1154,7 +1157,7 @@ moves_loop:  // When in check, search starts here
 
         int delta = beta - alpha;
 
-        int r = reduction(improving, depth, moveCount, delta);
+        int r = reduction(improving, depth, moveCount, delta, ss);
 
         // Increase reduction for ttPv nodes
         // (*Scaler) Larger values scale well.
@@ -1304,23 +1307,35 @@ moves_loop:  // When in check, search starts here
 
         u64 nodeCount = rootNode ? u64(nodes) : 0;
 
+        int stat_score_calc;
+        if (capture)
+            stat_score_calc = 873 * int(PieceValue[pos.captured_piece()]) / 128
+                            + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+        else
+            stat_score_calc =
+              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
+               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
+              / 1024;
+
         // Step 17. Make the move
         do_move(pos, move, st, givesCheck, ss);
 
         // Add extension to new depth
         newDepth += extension;
 
+        ss->statScore = stat_score_calc;
+
         // Step 18. Compute and apply late moves reductions/extensions (LMR)
 
         // Decrease reduction for PvNodes (*Scaler)
         if (ss->ttPv)
-            r -= 3023 + PvNode * 1004 + (ttData.value > alpha) * 885
+            r -= (3023 + (ss ? ss->miniNN_w_lmr[3] : 0)) + PvNode * 1004 + (ttData.value > alpha) * 885
                + (ttData.depth >= depth) * (816 + cutNode * 940);
 
-        // Base reduction offset to compensate for other tweaks
-        r += 697;
+        int w_base_step18 = ss ? (int(ss->miniNN_w_lmr[2]) * 697) / 1679 : 0;
+        r += 697 + w_base_step18;
 
-        r -= moveCount * 65;
+        r -= moveCount * (65 + (ss ? ss->miniNN_w_lmr[4] : 0));
         r -= std::abs(correctionValue) / 26310;
 
         // Increase reduction for cut nodes
@@ -1333,26 +1348,17 @@ moves_loop:  // When in check, search starts here
 
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 1)
-            r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
+            r += 264 + (ss ? ss->miniNN_w_lmr[5] : 0) + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
 
         // For first picked move (ttMove) reduce reduction
         else if (move == ttData.move)
             r -= 2179;
 
-        if (capture)
-            ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
-                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
-        else
-            ss->statScore =
-              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
-              / 1024;
-
         // Decrease/increase reduction for moves with a good/bad history
-        r -= ss->statScore * 439 / 4096;
+        r -= ss->statScore * (439 + (ss ? ss->miniNN_w_lmr[6] : 0)) / 4096;
 
         if (!capture && !is_decisive(alpha))
-            r += 3 * std::clamp(alpha - eval, -64, 96);
+            r += (3 * 1024 + (ss ? ss->miniNN_w_lmr[7] : 0)) * std::clamp(alpha - eval, -64, 96) / 1024;
 
         // Scale up reductions for expected ALL nodes
         if (allNode)
@@ -1882,9 +1888,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     return bestValue;
 }
 
-int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
+int Search::Worker::reduction(bool i, Depth d, int mn, int delta, const Stack* ss) const {
     int reductionScale = reductions[d] * reductions[mn];
-    return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
+    int w_delta = ss ? ss->miniNN_w_lmr[0] : 0;
+    int w_imp   = ss ? ss->miniNN_w_lmr[1] : 0;
+    int w_base_reduction = ss ? (int(ss->miniNN_w_lmr[2]) * 982) / 1679 : 0;
+
+    return reductionScale - delta * (577 + w_delta) / rootDelta + !i * reductionScale * (197 + w_imp) / 512 + (982 + w_base_reduction);
 }
 
 // elapsed() returns the time elapsed since the search started. If the

@@ -32,6 +32,7 @@
 
 #include "evaluate.h"
 #include "misc.h"
+#include "mininn/mininn.h"
 #include "nnue/network.h"
 #include "nnue/nnue_common.h"
 #include "numa.h"

@@ -40,6 +40,7 @@
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
+#include "mininn/mininn_types.h"
 
 namespace Stockfish {
 
@@ -129,6 +130,8 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
+    int16_t                     miniNN_w_mp[MiniNN::QUIET_TERMS];
+    int16_t                     miniNN_w_lmr[MiniNN::LMR_TERMS];
 };
 
 
@@ -374,7 +377,7 @@ class Worker {
     template<NodeType nodeType>
     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
 
-    int reduction(bool i, Depth d, int mn, int delta) const;
+    int reduction(bool i, Depth d, int mn, int delta, const Stack* ss = nullptr) const;
 
     // Pointer to the search manager, only allowed to be called by the main thread
     SearchManager* main_manager() const {
