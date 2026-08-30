@@ -52,56 +52,24 @@
 
 namespace Stockfish {
 
-// Tuning Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
-int c_base_0            = 329176;
-int c_base_1            = 1303089;
-int c_std_0             = 8358;
-int c_std_1             = 1145;
-int c_avg_0             = 1290;
-int c_avg_1             = 679;
-int c_cap_base_0        = 3418557;
-int c_cap_base_1        = 1506496;
-int c_cap_score         = 9589;
-int c_delta_growth_rate = 357;
+// Parameters for aspiration window (Scaled by 65536 fixed-point integer math)
+constexpr int c_base_0            = 329176;
+constexpr int c_base_1            = 1303089;
+constexpr int c_std_0             = 8358;
+constexpr int c_std_1             = 1145;
+constexpr int c_avg_0             = 1290;
+constexpr int c_avg_1             = 679;
+constexpr int c_cap_base_0        = 3418557;
+constexpr int c_cap_base_1        = 1506496;
+constexpr int c_cap_score         = 9589;
+constexpr int c_delta_growth_rate = 357;
 
 // Dynamic EMA parameters for aspiration window
-int c_ema_chi            = 1668;
-int c_ema_min_weight_avg = 391;
-int c_ema_max_weight_avg = 795;
-int c_ema_min_weight_mss = 372;
-int c_ema_max_weight_mss = 547;
-
-SetRange r_c_base_0(65536, 1310720);
-SetRange r_c_base_1(65536, 3932160);
-SetRange r_c_std_0(0, 32768);
-SetRange r_c_std_1(0, 16384);
-SetRange r_c_avg_0(0, 16384);
-SetRange r_c_avg_1(0, 16384);
-SetRange r_c_cap_base_0(655360, 6553600);
-SetRange r_c_cap_base_1(327680, 6553600);
-SetRange r_c_cap_score(2000, 30000);
-SetRange r_c_delta_growth_rate(80, 1024);
-SetRange r_c_ema_chi(256, 4096);
-SetRange r_c_ema_min_weight_avg(64, 768);
-SetRange r_c_ema_max_weight_avg(256, 1024);
-SetRange r_c_ema_min_weight_mss(64, 768);
-SetRange r_c_ema_max_weight_mss(128, 1024);
-
-TUNE(r_c_base_0, c_base_0,
-     r_c_base_1, c_base_1,
-     r_c_std_0, c_std_0,
-     r_c_std_1, c_std_1,
-     r_c_avg_0, c_avg_0,
-     r_c_avg_1, c_avg_1,
-     r_c_cap_base_0, c_cap_base_0,
-     r_c_cap_base_1, c_cap_base_1,
-     r_c_cap_score, c_cap_score,
-     r_c_delta_growth_rate, c_delta_growth_rate,
-     r_c_ema_chi, c_ema_chi,
-     r_c_ema_min_weight_avg, c_ema_min_weight_avg,
-     r_c_ema_max_weight_avg, c_ema_max_weight_avg,
-     r_c_ema_min_weight_mss, c_ema_min_weight_mss,
-     r_c_ema_max_weight_mss, c_ema_max_weight_mss);
+constexpr int c_ema_chi            = 1668;
+constexpr int c_ema_min_weight_avg = 391;
+constexpr int c_ema_max_weight_avg = 795;
+constexpr int c_ema_min_weight_mss = 372;
+constexpr int c_ema_max_weight_mss = 547;
 
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
@@ -1554,7 +1522,7 @@ moves_loop:  // When in check, search starts here
             else
                 rm.averageScore = Value((value * w_opt + rm.averageScore * (OptScale - w_opt)) / OptScale);
 
-            // Dynamic EMA parameters for aspiration window (tunable)
+            // Dynamic EMA parameters for aspiration window
             constexpr u64 EmaScale  = 1024;
             u64           chi_eff   = std::max(u64(1), u64(c_ema_chi));
             u64           raw_w     = (EmaScale * N * 1024) / (N * 1024 + chi_eff * E_prev);
