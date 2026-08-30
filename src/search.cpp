@@ -992,7 +992,7 @@ Value Search::Worker::search(
     {
         constexpr NodeType childNodeType = nodeType == NonPV ? NonPV : PV;
         Value v = qsearch<childNodeType>(pos, ss, alpha, beta);
-        // Prevent corruption of mate analysis
+        // Prevent corruption of mate analysis and ensuring score is fail low
         if (v <= alpha && !((seekMate || PvNode) && is_decisive(v)))
             return std::max(v, alpha - 600);
     }
