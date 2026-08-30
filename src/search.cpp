@@ -81,184 +81,142 @@ static u64 get_sample_interval() {
     return interval;
 }
 
-void dump_lmr_telemetry(const Position& pos, Stack* ss, Depth depth, bool improving,
-                        bool cutNode, bool pvNode,
-                        const PieceToHistory** contHist,
-                        const ButterflyHistory& mainHistory,
-                        const CapturePieceToHistory& captureHistory,
-                        const SharedHistories* sharedHistory,
-                        const LowPlyHistory* lowPlyHistory,
-                        Move ttMove)
-{
-    const char* envPath = std::getenv("SF_LMR_TELEMETRY");
-    if (!envPath)
-        return;
-
-    std::lock_guard<std::mutex> lock(telMutex);
-    static std::ofstream out(envPath, std::ios::app);
-    if (!out.is_open())
-        return;
-
-    Color us = pos.side_to_move();
-
-    Bitboard threatByLesser[PIECE_TYPE_NB];
-    threatByLesser[PAWN]   = 0;
-    threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
-    threatByLesser[ROOK] =
-      pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
-    threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-    threatByLesser[KING]  = 0;
-
+struct NodeTelemetryCollector {
+    bool active = false;
+    std::string fen;
+    int depth = 0;
+    int ply = 0;
+    bool improving = false;
+    bool cut_node = false;
+    bool pv_node = false;
+    int static_eval = 0;
+    int prev_stat_score = 0;
+    int cutoff_cnt = 0;
     int8_t u_node[MiniNN::NODE_IN_DIM];
-    MiniNNModel::extract_node_features(pos, ss, improving, cutNode, pvNode, u_node);
 
-    struct MoveInfo {
-        Move move;
-        int stage_prio;
-        int picker_score;
+    struct MoveRecord {
+        std::string move_uci;
+        int picker_rank;
         bool is_capture;
         int stat_score;
         int8_t x_quiet[MiniNN::QUIET_IN_DIM];
-        int8_t x_cap[MiniNN::CAPTURE_IN_DIM];
+        int8_t x_cap[4];
         int8_t x_lmr[MiniNN::LMR_IN_DIM];
     };
+    std::vector<MoveRecord> moves;
 
-    std::vector<MoveInfo> list;
-    for (const auto& move : MoveList<LEGAL>(pos))
-    {
-        MoveInfo info;
-        info.move = move;
-        Square to = move.to_sq();
-        Piece movedPiece = pos.moved_piece(move);
-        Piece capturedPiece = pos.piece_on(to);
-        info.is_capture = pos.capture_stage(move);
+    void init(const Position& pos, Stack* ss, Depth d, bool imp, bool cut, bool pv) {
+        const char* envPath = std::getenv("SF_LMR_TELEMETRY");
+        if (!envPath) return;
 
-        MiniNNModel::extract_quiet_features(pos, move, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, info.x_quiet);
-        MiniNNModel::extract_capture_features(pos, move, ss, &captureHistory, info.x_cap);
-
-        if (info.is_capture)
-        {
-            PieceType captured_pt = type_of(capturedPiece);
-            int capt_hist = captureHistory[movedPiece][to][captured_pt];
-            info.stat_score = 873 * int(PieceValue[capturedPiece]) / 128 + capt_hist;
-
-            if (move == ttMove)
-            {
-                info.stage_prio = 0;
-                info.picker_score = 1000000;
-            }
-            else
-            {
-                int val = capt_hist + 7 * int(PieceValue[capturedPiece]);
-                if (pos.see_ge(move, -val / 18))
-                {
-                    info.stage_prio = 1;
-                    info.picker_score = val;
-                }
-                else
-                {
-                    info.stage_prio = 3;
-                    info.picker_score = val;
-                }
-            }
-        }
-        else
-        {
-            int main_hist = mainHistory[us][move.raw()];
-            int ch0 = contHist && contHist[0] ? (*contHist[0])[movedPiece][to] : 0;
-            int ch1 = contHist && contHist[1] ? (*contHist[1])[movedPiece][to] : 0;
-            info.stat_score = (2252 * main_hist + 1126 * ch0 + 1093 * ch1) / 1024;
-
-            if (move == ttMove)
-            {
-                info.stage_prio = 0;
-                info.picker_score = 1000000;
-            }
-            else
-            {
-                info.stage_prio = 2;
-                int pawn_hist = sharedHistory ? sharedHistory->pawn_entry(pos)[movedPiece][to] : 0;
-                int ch2 = contHist && contHist[2] ? (*contHist[2])[movedPiece][to] : 0;
-                int ch3 = contHist && contHist[3] ? (*contHist[3])[movedPiece][to] : 0;
-                int ch5 = contHist && contHist[5] ? (*contHist[5])[movedPiece][to] : 0;
-
-                int val = 2 * main_hist + 2 * pawn_hist + ch0 + ch1 + ch2 + ch3 + ch5;
-                val += ((pos.check_squares(type_of(movedPiece)) & to) && pos.see_ge(move, -75)) * 16384;
-                int v = 20 * (int((threatByLesser[type_of(movedPiece)] & move.from_sq()) != 0) - int((threatByLesser[type_of(movedPiece)] & to) != 0));
-                val += PieceValue[type_of(movedPiece)] * v;
-                if (ss->ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory)
-                    val += 8 * (*lowPlyHistory)[ss->ply][move.raw()] / (1 + ss->ply);
-                info.picker_score = val;
-            }
-        }
-        list.push_back(info);
+        active = true;
+        fen = pos.fen();
+        depth = int(d);
+        ply = ss->ply;
+        improving = imp;
+        cut_node = cut;
+        pv_node = pv;
+        static_eval = int(ss->staticEval);
+        prev_stat_score = int((ss - 1)->statScore);
+        cutoff_cnt = int(ss->cutoffCnt);
+        MiniNNModel::extract_node_features(pos, ss, imp, cut, pv, u_node);
+        moves.reserve(32);
     }
 
-    // Sort by MovePicker priority
-    std::stable_sort(list.begin(), list.end(), [](const MoveInfo& a, const MoveInfo& b) {
-        if (a.stage_prio != b.stage_prio)
-            return a.stage_prio < b.stage_prio;
-        return a.picker_score > b.picker_score;
-    });
+    void add_move(const Position& pos, Move m, int rank, bool is_capture, int stat_score,
+                  const Search::Stack* ss,
+                  const ButterflyHistory& mainHistory,
+                  const LowPlyHistory* lowPlyHistory,
+                  const PieceToHistory** contHist,
+                  const SharedHistories* sharedHistory,
+                  const CapturePieceToHistory& captureHistory) {
+        if (!active) return;
+        MoveRecord rec;
+        rec.move_uci = UCIEngine::move(m, pos.is_chess960());
+        rec.picker_rank = rank;
+        rec.is_capture = is_capture;
+        rec.stat_score = stat_score;
 
-    // Populate x_lmr with exact picker rank
-    for (size_t i = 0; i < list.size(); ++i)
-    {
-        Move m = list[i].move;
+        Color us = pos.side_to_move();
+        Bitboard threatByLesser[PIECE_TYPE_NB];
+        threatByLesser[PAWN]   = 0;
+        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[ROOK] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+        threatByLesser[KING]  = 0;
+
+        MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.x_quiet);
+        MiniNNModel::extract_capture_features(pos, m, ss, &captureHistory, rec.x_cap);
+
         Piece movedPiece = pos.moved_piece(m);
         Piece capturedPiece = pos.piece_on(m.to_sq());
-        bool is_capture = list[i].is_capture;
         bool givesCheck = pos.gives_check(m);
-        int rank = int(i + 1);
-        MiniNNModel::extract_lmr_features(m, movedPiece, is_capture, capturedPiece, givesCheck, rank, ss, list[i].x_lmr);
+        MiniNNModel::extract_lmr_features(m, movedPiece, is_capture, capturedPiece, givesCheck, rank, ss, rec.x_lmr);
+
+        moves.push_back(rec);
     }
 
-    out << "{\"fen\":\"" << pos.fen() << "\","
-        << "\"depth\":" << int(depth) << ","
-        << "\"ply\":" << ss->ply << ","
-        << "\"improving\":" << (improving ? "true" : "false") << ","
-        << "\"cut_node\":" << (cutNode ? "true" : "false") << ","
-        << "\"pv_node\":" << (pvNode ? "true" : "false") << ","
-        << "\"static_eval\":" << int(ss->staticEval) << ","
-        << "\"prev_stat_score\":" << int((ss - 1)->statScore) << ","
-        << "\"cutoff_cnt\":" << int(ss->cutoffCnt) << ","
-        << "\"u_node\":[";
-    for (int k = 0; k < MiniNN::NODE_IN_DIM; ++k)
-    {
-        if (k > 0) out << ",";
-        out << int(u_node[k]);
+    ~NodeTelemetryCollector() {
+        if (active && !moves.empty()) {
+            dump();
+        }
     }
-    out << "],\"moves\":[";
 
-    for (size_t i = 0; i < list.size(); ++i)
-    {
-        if (i > 0)
-            out << ",";
-        const auto& m = list[i];
-        out << "{\"move\":\"" << UCIEngine::move(m.move, pos.is_chess960()) << "\","
-            << "\"picker_rank\":" << (i + 1) << ","
-            << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
-            << "\"stat_score\":" << m.stat_score << ","
-            << "\"x_quiet\":[";
-        for (int k = 0; k < MiniNN::QUIET_IN_DIM; ++k) {
+    void dump() const {
+        const char* envPath = std::getenv("SF_LMR_TELEMETRY");
+        if (!envPath) return;
+
+        std::lock_guard<std::mutex> lock(telMutex);
+        static std::ofstream out(envPath, std::ios::app);
+        if (!out.is_open()) return;
+
+        out << "{\"fen\":\"" << fen << "\","
+            << "\"depth\":" << depth << ","
+            << "\"ply\":" << ply << ","
+            << "\"improving\":" << (improving ? "true" : "false") << ","
+            << "\"cut_node\":" << (cut_node ? "true" : "false") << ","
+            << "\"pv_node\":" << (pv_node ? "true" : "false") << ","
+            << "\"static_eval\":" << static_eval << ","
+            << "\"prev_stat_score\":" << prev_stat_score << ","
+            << "\"cutoff_cnt\":" << cutoff_cnt << ","
+            << "\"u_node\":[";
+        for (int k = 0; k < MiniNN::NODE_IN_DIM; ++k)
+        {
             if (k > 0) out << ",";
-            out << int(m.x_quiet[k]);
+            out << int(u_node[k]);
         }
-        out << "],\"x_cap\":[";
-        for (int k = 0; k < 4; ++k) {
-            if (k > 0) out << ",";
-            out << int(m.x_cap[k]);
+        out << "],\"moves\":[";
+
+        for (size_t i = 0; i < moves.size(); ++i)
+        {
+            if (i > 0) out << ",";
+            const auto& m = moves[i];
+            out << "{\"move\":\"" << m.move_uci << "\","
+                << "\"picker_rank\":" << m.picker_rank << ","
+                << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
+                << "\"stat_score\":" << m.stat_score << ","
+                << "\"x_quiet\":[";
+            for (int k = 0; k < MiniNN::QUIET_IN_DIM; ++k) {
+                if (k > 0) out << ",";
+                out << int(m.x_quiet[k]);
+            }
+            out << "],\"x_cap\":[";
+            for (int k = 0; k < 4; ++k) {
+                if (k > 0) out << ",";
+                out << int(m.x_cap[k]);
+            }
+            out << "],\"x_lmr\":[";
+            for (int k = 0; k < 8; ++k) {
+                if (k > 0) out << ",";
+                out << int(m.x_lmr[k]);
+            }
+            out << "]}";
         }
-        out << "],\"x_lmr\":[";
-        for (int k = 0; k < 8; ++k) {
-            if (k > 0) out << ",";
-            out << int(m.x_lmr[k]);
-        }
-        out << "]}";
+        out << "]}\n";
+        out.flush();
     }
-    out << "]}\n";
-    out.flush();
-}
+};
 
 constexpr u64 NODES_LIMIT_OUTPUT = 10'000'000;
 
@@ -1307,13 +1265,14 @@ moves_loop:  // When in check, search starts here
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
                   &sharedHistory, ss->ply, ss);
 
+    NodeTelemetryCollector tel;
     if (depth >= 1 && depth <= 20 && ss->ply >= 1 && !pos.checkers())
     {
         static thread_local u64 lastSampleNode = 0;
         if (nodes - lastSampleNode >= get_sample_interval())
         {
             lastSampleNode = nodes;
-            dump_lmr_telemetry(pos, ss, depth, improving, cutNode, PvNode, contHist, mainHistory, captureHistory, &sharedHistory, &lowPlyHistory, ttData.move);
+            tel.init(pos, ss, depth, improving, cutNode, PvNode);
         }
     }
 
@@ -1525,6 +1484,9 @@ moves_loop:  // When in check, search starts here
               (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
                + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
               / 1024;
+
+        if (tel.active)
+            tel.add_move(pos, move, moveCount, capture, ss->statScore, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
 
         // Step 18. Compute and apply late moves reduction (LMR) (or possibly extension)
         if (globalMiniNN.is_loaded())
