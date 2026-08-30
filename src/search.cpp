@@ -994,7 +994,7 @@ Value Search::Worker::search(
         Value v = qsearch<childNodeType>(pos, ss, alpha, beta);
         // Prevent corruption of mate analysis
         if (v <= alpha && !((seekMate || PvNode) && is_decisive(v)))
-            return std::max(v, beta - 600);
+            return std::max(v, alpha - 600);
     }
 
     // Step 9. Futility pruning: child node
