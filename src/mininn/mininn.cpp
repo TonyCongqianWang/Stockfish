@@ -121,7 +121,7 @@ void MiniNNModel::evaluate_node(
     u[10] = ss->ttHit ? 64 : -64;
     u[11] = ss->ttPv ? 64 : -64;
     u[12] = int8_t(std::clamp(int(ss->staticEval) * 64 / 500, -127, 127));
-    u[13] = int8_t(std::clamp(int(ss->statScore) * 64 / 2000, -127, 127));
+    u[13] = int8_t(std::clamp(int((ss - 1)->statScore) * 64 / 2000, -127, 127));
     u[14] = int8_t(std::clamp((ss->cutoffCnt - 1) * 64 / 2, -127, 127));
     u[15] = (npm_us + npm_them < 3000) ? 64 : -64;
 
@@ -278,18 +278,18 @@ int MiniNNModel::score_capture(
 }
 
 int MiniNNModel::evaluate_lmr(
-    const Position& pos,
     Move m,
+    Piece movedPiece,
+    bool is_capture,
+    Piece capturedPiece,
+    bool givesCheck,
     int moveCount,
     const Search::Stack* ss
 ) const {
     if (!loaded.load(std::memory_order_relaxed) || !ss)
         return 0;
 
-    Piece pc = pos.moved_piece(m);
-    PieceType pt = type_of(pc);
-    bool is_capture = pos.capture_stage(m);
-    Piece capturedPiece = pos.piece_on(m.to_sq());
+    PieceType pt = type_of(movedPiece);
 
     // 8 move features + 8 position latents = 16 inputs (all at scale 64)
     int8_t x[MiniNN::LMR_IN_DIM];
@@ -297,7 +297,7 @@ int MiniNNModel::evaluate_lmr(
     x[1] = int8_t(std::clamp((moveCount - 4) * 64 / 8, -127, 127));
     x[2] = is_capture ? 64 : -64;
     x[3] = is_capture ? int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127)) : 0;
-    x[4] = pos.gives_check(m) ? 64 : -64;
+    x[4] = givesCheck ? 64 : -64;
     x[5] = (m.type_of() == PROMOTION) ? 64 : -64;
     x[6] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
     x[7] = ss->ttPv ? 64 : -64;

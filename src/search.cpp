@@ -1394,10 +1394,19 @@ moves_loop:  // When in check, search starts here
         // Add extension to new depth
         newDepth += extension;
 
+        if (capture)
+            ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
+                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+        else
+            ss->statScore =
+              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
+               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
+              / 1024;
+
         // Step 18. Compute and apply late moves reduction (LMR) (or possibly extension)
         if (globalMiniNN.is_loaded())
         {
-            r += globalMiniNN.evaluate_lmr(pos, move, moveCount, ss);
+            r += globalMiniNN.evaluate_lmr(move, movedPiece, capture, pos.captured_piece(), givesCheck, moveCount, ss);
         }
         else
         {
@@ -1425,15 +1434,6 @@ moves_loop:  // When in check, search starts here
             // For first picked move (ttMove) reduce reduction
             else if (move == ttData.move)
                 r -= 2179;
-
-            if (capture)
-                ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
-                              + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
-            else
-                ss->statScore =
-                  (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-                   + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
-                  / 1024;
 
             // Decrease/increase reduction for moves with a good/bad history
             r -= ss->statScore * 439 / 4096;

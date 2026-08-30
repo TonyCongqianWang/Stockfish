@@ -54,8 +54,11 @@ public:
 
     // Evaluated in search.cpp Step 18: outputs LMR reduction delta in 1024 fixed-point scale
     int evaluate_lmr(
-        const Position& pos,
         Move m,
+        Piece movedPiece,
+        bool is_capture,
+        Piece capturedPiece,
+        bool givesCheck,
         int moveCount,
         const Search::Stack* ss
     ) const;
