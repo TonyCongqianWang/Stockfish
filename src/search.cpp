@@ -281,7 +281,7 @@ bool Search::Worker::iterative_deepening() {
     Value  bestValue     = -VALUE_INFINITE;
     Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
-    int    delta, iterIdx                        = 0;
+    int    delta, deltaGrowth, iterIdx           = 0;
 
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
@@ -373,10 +373,11 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
-            Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            delta       = 7 + threadIdx % 8;
+            deltaGrowth = 22;
+            Value avg   = rootMoves[pvIdx].averageScore;
+            alpha       = std::max(avg - delta, -VALUE_INFINITE);
+            beta        = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
             optimism[us]  = 114 * avg / (std::abs(avg) + 85);
@@ -435,7 +436,9 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
-                delta += 47 * delta / 128;
+                int deltaInc = 47 * deltaGrowth / 128;
+                delta += deltaInc;
+                deltaGrowth += deltaInc;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
