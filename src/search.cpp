@@ -1489,7 +1489,7 @@ moves_loop:  // When in check, search starts here
             tel.add_move(pos, move, moveCount, capture, ss->statScore, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
 
         // Step 18. Compute and apply late moves reduction (LMR) (or possibly extension)
-        if (globalMiniNN.is_loaded())
+        if (globalMiniNN.is_lmr_enabled())
         {
             r += globalMiniNN.evaluate_lmr(move, movedPiece, capture, pos.captured_piece(), givesCheck, moveCount, ss);
         }

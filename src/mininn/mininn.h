@@ -27,6 +27,10 @@ public:
 
     bool load(const std::string& filepath);
     bool is_loaded() const { return loaded.load(std::memory_order_acquire); }
+    bool is_mp_enabled() const { return is_loaded() && use_mp.load(std::memory_order_relaxed); }
+    bool is_lmr_enabled() const { return is_loaded() && use_lmr.load(std::memory_order_relaxed); }
+    void set_use_mp(bool val) { use_mp.store(val, std::memory_order_relaxed); }
+    void set_use_lmr(bool val) { use_lmr.store(val, std::memory_order_relaxed); }
 
     // Feature extraction helpers (Shared between inference and telemetry serialization)
     static void extract_node_features(
@@ -107,6 +111,8 @@ public:
 
 private:
     std::atomic<bool> loaded{false};
+    std::atomic<bool> use_mp{true};
+    std::atomic<bool> use_lmr{true};
 
     // 1. Node Network: fc0 (16 -> 32), fc1 (32 -> 32), fc2 (32 -> 26)
     alignas(32) int32_t node_b0[MiniNN::NODE_H_DIM];

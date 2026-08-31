@@ -228,7 +228,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         if constexpr (Type == CAPTURES)
         {
-            if (globalMiniNN.is_loaded() && ss)
+            if (globalMiniNN.is_mp_enabled() && ss)
                 m.value = globalMiniNN.score_capture(pos, m, ss, captureHistory);
             else
                 m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
@@ -237,7 +237,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         else if constexpr (Type == QUIETS)
         {
-            if (globalMiniNN.is_loaded() && ss)
+            if (globalMiniNN.is_mp_enabled() && ss)
                 m.value = globalMiniNN.score_quiet(pos, m, ss, mainHistory, lowPlyHistory, continuationHistory, sharedHistory, threatByLesser, ply);
             else
             {

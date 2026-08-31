@@ -139,7 +139,14 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
           return std::nullopt;
       }));
 
-    options.add("Use_MiniNN_LMR", Option(true));
+    options.add("Use_MiniNN_MP", Option(true, [](const Option& o) {
+        globalMiniNN.set_use_mp(bool(o));
+        return std::nullopt;
+    }));
+    options.add("Use_MiniNN_LMR", Option(true, [](const Option& o) {
+        globalMiniNN.set_use_lmr(bool(o));
+        return std::nullopt;
+    }));
     options.add("MiniNN_Path", Option("trained_lmr.miniNN", [](const Option& o) {
         if (globalMiniNN.load(std::string(o)))
             return std::optional<std::string>{"Loaded MiniNN weights from " + std::string(o)};
@@ -149,6 +156,14 @@ Engine::Engine(std::optional<std::filesystem::path> path) :
     const char* envNN = std::getenv("SF_MININN_PATH");
     if (envNN)
         globalMiniNN.load(envNN);
+
+    const char* envMP = std::getenv("SF_MININN_USE_MP");
+    if (envMP && (std::string(envMP) == "0" || std::string(envMP) == "false"))
+        globalMiniNN.set_use_mp(false);
+
+    const char* envLMR = std::getenv("SF_MININN_USE_LMR");
+    if (envLMR && (std::string(envLMR) == "0" || std::string(envLMR) == "false"))
+        globalMiniNN.set_use_lmr(false);
 
     threads.clear();
     threads.ensure_network_replicated();
