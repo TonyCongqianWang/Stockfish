@@ -443,10 +443,10 @@ bool Search::Worker::iterative_deepening() {
 
             // Gradually increase depth after reduced depth search
             if (failedHighCnt > 0)
-                failHighRecovery = (failedHighCnt + 1) / 2;
-            else
-                failHighRecovery = std::max(0, failHighRecovery - 2);
+                failHighRecovery = failHighRecovery + failedHighCnt;
 
+            failHighRecovery = std::min(failHighRecovery - 2, 3 * failHighRecovery / 4);
+            failHighRecovery = std::max(0, failHighRecovery);
             if (threads.stop && pvIdx)
             {
                 // In multiPV analysis we do not let aborted searches spoil
