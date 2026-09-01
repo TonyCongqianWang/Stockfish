@@ -102,6 +102,7 @@ struct NodeTelemetryCollector {
         bool is_capture;
         int stat_score;
         int r_base;
+        int r_executed;
         int32_t t_quiet[MiniNN::QUIET_TERMS];
         int8_t x_lmr[MiniNN::LMR_IN_DIM];
     };
@@ -157,9 +158,18 @@ struct NodeTelemetryCollector {
         moves.push_back(rec);
     }
 
-    void set_last_move_lmr(int r) {
+    void set_last_move_lmr(int r_exec, const Stack* ss) {
         if (!active || moves.empty()) return;
-        moves.back().r_base = r;
+        auto& rec = moves.back();
+        rec.r_executed = r_exec;
+        int delta_nn = 0;
+        if (ss) {
+            for (int k = 0; k < MiniNN::LMR_IN_DIM; ++k) {
+                delta_nn += int(rec.x_lmr[k]) * int(ss->miniNN_w_lmr[k]);
+            }
+            delta_nn = (delta_nn + 32) >> 6;
+        }
+        rec.r_base = r_exec - delta_nn;
     }
 
     ~NodeTelemetryCollector() {
@@ -202,6 +212,7 @@ struct NodeTelemetryCollector {
                 << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
                 << "\"stat_score\":" << m.stat_score << ","
                 << "\"r_base\":" << m.r_base << ","
+                << "\"r_executed\":" << m.r_executed << ","
                 << "\"t_quiet\":[";
             for (int k = 0; k < MiniNN::QUIET_TERMS; ++k) {
                 if (k > 0) out << ",";
@@ -1531,7 +1542,7 @@ moves_loop:  // When in check, search starts here
             r += r * 276 / (256 * depth + 268);
 
         if (tel.active)
-            tel.set_last_move_lmr(r);
+            tel.set_last_move_lmr(r, ss);
 
         // Apply the computed LMR
         if (depth >= 2 && moveCount > 1)
