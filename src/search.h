@@ -40,6 +40,7 @@
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "types.h"
+#include "mininn/mininn_types.h"
 
 namespace Stockfish {
 
@@ -129,8 +130,8 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
-    int8_t                      miniNN_w_quiet[16];
-    int8_t                      miniNN_z_latents[8];
+    int16_t                     miniNN_w_quiet[MiniNN::QUIET_TERMS];
+    int8_t                      miniNN_z_latents[MiniNN::NODE_LATENTS];
     int                         miniNN_inv_tau_mp;
     int                         miniNN_inv_tau_lmr;
 };

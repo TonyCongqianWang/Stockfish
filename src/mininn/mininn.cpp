@@ -1,8 +1,7 @@
 /*
-  Mini-NN Engine Implementation:
-  score_quiet (Meta-Learned History Combiner)
-  score_capture (Tactical Combiner with Position Latents)
-  evaluate_lmr (Search Depth Reductions)
+  Mini-NN Engine Implementation (Version 4):
+  - Dynamic Handcrafted Quiet Terms Weighting (Scale 256, int16_t)
+  - evaluate_lmr (Search Depth Reductions)
 */
 
 #include "mininn.h"
@@ -27,14 +26,6 @@ MiniNNModel::MiniNNModel() {
     std::memset(node_b2, 0, sizeof(node_b2));
     std::memset(node_w2, 0, sizeof(node_w2));
 
-    std::memset(quiet_b0, 0, sizeof(quiet_b0));
-    std::memset(quiet_w0, 0, sizeof(quiet_w0));
-
-    std::memset(cap_b0, 0, sizeof(cap_b0));
-    std::memset(cap_w0, 0, sizeof(cap_w0));
-    std::memset(cap_b1, 0, sizeof(cap_b1));
-    std::memset(cap_w1, 0, sizeof(cap_w1));
-
     std::memset(lmr_b0, 0, sizeof(lmr_b0));
     std::memset(lmr_w0, 0, sizeof(lmr_w0));
     std::memset(lmr_b1, 0, sizeof(lmr_b1));
@@ -51,7 +42,7 @@ bool MiniNNModel::load(const std::string& filepath) {
     if (!file || header[0] != MiniNN::MAGIC || header[1] != MiniNN::VERSION)
         return false;
 
-    // 1. Node Network: fc0 (16 -> 32), fc1 (32 -> 32), fc2 (32 -> 26)
+    // 1. Node Network: fc0 (16 -> 32), fc1 (32 -> 32), fc2 (32 -> 20)
     file.read(reinterpret_cast<char*>(node_b0), sizeof(node_b0));
     file.read(reinterpret_cast<char*>(node_w0), sizeof(node_w0));
 
@@ -61,18 +52,7 @@ bool MiniNNModel::load(const std::string& filepath) {
     file.read(reinterpret_cast<char*>(node_b2), sizeof(node_b2));
     file.read(reinterpret_cast<char*>(node_w2), sizeof(node_w2));
 
-    // 2. Quiet Network: fc0 (12 -> 16)
-    file.read(reinterpret_cast<char*>(quiet_b0), sizeof(quiet_b0));
-    file.read(reinterpret_cast<char*>(quiet_w0), sizeof(quiet_w0));
-
-    // 3. Capture Network: fc0 (12 -> 16), fc1 (16 -> 1)
-    file.read(reinterpret_cast<char*>(cap_b0), sizeof(cap_b0));
-    file.read(reinterpret_cast<char*>(cap_w0), sizeof(cap_w0));
-
-    file.read(reinterpret_cast<char*>(cap_b1), sizeof(cap_b1));
-    file.read(reinterpret_cast<char*>(cap_w1), sizeof(cap_w1));
-
-    // 4. LMR Network: fc0 (16 -> 16), fc1 (16 -> 1)
+    // 2. LMR Network: fc0 (16 -> 16), fc1 (16 -> 1)
     file.read(reinterpret_cast<char*>(lmr_b0), sizeof(lmr_b0));
     file.read(reinterpret_cast<char*>(lmr_w0), sizeof(lmr_w0));
 
@@ -141,45 +121,17 @@ void MiniNNModel::extract_quiet_features(
     Piece pc = pos.moved_piece(m);
     PieceType pt = type_of(pc);
 
-    out_x[0]  = mainHistory ? int8_t(std::clamp(int((*mainHistory)[us][m.raw()]) * 64 / 16384, -127, 127)) : 0;
-    out_x[1]  = sharedHistory ? int8_t(std::clamp(int(sharedHistory->pawn_entry(pos)[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[2]  = continuationHistory && continuationHistory[0] ? int8_t(std::clamp(int((*continuationHistory[0])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[3]  = continuationHistory && continuationHistory[1] ? int8_t(std::clamp(int((*continuationHistory[1])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[4]  = continuationHistory && continuationHistory[2] ? int8_t(std::clamp(int((*continuationHistory[2])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[5]  = continuationHistory && continuationHistory[3] ? int8_t(std::clamp(int((*continuationHistory[3])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[6]  = continuationHistory && continuationHistory[5] ? int8_t(std::clamp(int((*continuationHistory[5])[pc][to]) * 64 / 16384, -127, 127)) : 0;
-    out_x[7]  = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 64 : -64;
-    out_x[8]  = threatByLesser && (threatByLesser[pt] & from) ? 64 : -64;
-    out_x[9]  = threatByLesser && (threatByLesser[pt] & to) ? 64 : -64;
-    out_x[10] = int8_t(std::clamp((int(pt) - 2) * 64 / 2, -127, 127));
-    out_x[11] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? int8_t(std::clamp(int((*lowPlyHistory)[ply][m.raw()] / (1 + ply)) * 64 / 16384, -127, 127)) : 0;
-}
-
-void MiniNNModel::extract_capture_features(
-    const Position& pos,
-    Move m,
-    const Search::Stack* ss,
-    const CapturePieceToHistory* captureHistory,
-    int8_t out_x[MiniNN::CAPTURE_IN_DIM]
-) {
-    Piece pc = pos.moved_piece(m);
-    Piece capturedPiece = pos.piece_on(m.to_sq());
-
-    out_x[0] = captureHistory ? int8_t(std::clamp(int((*captureHistory)[pc][m.to_sq()][type_of(capturedPiece)]) * 64 / 16384, -127, 127)) : 0;
-    out_x[1] = int8_t(std::clamp(int(PieceValue[capturedPiece]) * 64 / 500, 0, 127));
-    out_x[2] = int8_t(std::clamp((int(PieceValue[capturedPiece]) - int(PieceValue[pc])) * 64 / 500, -127, 127));
-    out_x[3] = pos.gives_check(m) ? 64 : -64;
-
-    if (ss)
-    {
-        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
-            out_x[4 + k] = ss->miniNN_z_latents[k];
-    }
-    else
-    {
-        for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
-            out_x[4 + k] = 0;
-    }
+    out_x[0] = mainHistory ? int8_t(std::clamp(int((*mainHistory)[us][m.raw()]) * 64 / 16384, -127, 127)) : 0;
+    out_x[1] = sharedHistory ? int8_t(std::clamp(int(sharedHistory->pawn_entry(pos)[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[2] = continuationHistory && continuationHistory[0] ? int8_t(std::clamp(int((*continuationHistory[0])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[3] = continuationHistory && continuationHistory[1] ? int8_t(std::clamp(int((*continuationHistory[1])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[4] = continuationHistory && continuationHistory[2] ? int8_t(std::clamp(int((*continuationHistory[2])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[5] = continuationHistory && continuationHistory[3] ? int8_t(std::clamp(int((*continuationHistory[3])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[6] = continuationHistory && continuationHistory[5] ? int8_t(std::clamp(int((*continuationHistory[5])[pc][to]) * 64 / 16384, -127, 127)) : 0;
+    out_x[7] = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 64 : -64;
+    int v = threatByLesser ? 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to)) * PieceValue[pt] : 0;
+    out_x[8] = int8_t(std::clamp(v * 64 / 18000, -127, 127));
+    out_x[9] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? int8_t(std::clamp(int((*lowPlyHistory)[ply][m.raw()] / (1 + ply)) * 64 / 16384, -127, 127)) : 0;
 }
 
 void MiniNNModel::extract_lmr_features(
@@ -249,36 +201,36 @@ void MiniNNModel::evaluate_node(
         h1[j] = std::clamp((sum + 32) >> 6, 0, 127);
     }
 
-    // Layer 2 (32 -> 26)
-    // 0..15: w_quiet meta-weights for score_quiet (scale 127)
-    for (int k = 0; k < MiniNN::QUIET_META_WEIGHTS; ++k)
+    // Layer 2 (32 -> 20)
+    // 0..9: w_quiet multipliers for 10 quiet terms (Scale 256: 256 = 1.0x, range [-1024, 1024] => [-4.0x, +4.0x])
+    for (int k = 0; k < MiniNN::QUIET_TERMS; ++k)
     {
         int32_t sum = node_b2[k];
         for (int i = 0; i < MiniNN::NODE_H_DIM; ++i)
             sum += node_w2[k][i] * h1[i];
-        ss->miniNN_w_quiet[k] = int8_t(std::clamp((sum + 16) >> 5, -127, 127));
+        ss->miniNN_w_quiet[k] = int16_t(std::clamp((sum + 8) >> 4, -1024, 1024));
     }
 
-    // 16..23: z_latents for score_capture and evaluate_lmr (scale 64)
+    // 10..17: z_latents for evaluate_lmr (scale 64)
     for (int k = 0; k < MiniNN::NODE_LATENTS; ++k)
     {
-        int32_t sum = node_b2[MiniNN::QUIET_META_WEIGHTS + k];
+        int32_t sum = node_b2[MiniNN::QUIET_TERMS + k];
         for (int i = 0; i < MiniNN::NODE_H_DIM; ++i)
-            sum += node_w2[MiniNN::QUIET_META_WEIGHTS + k][i] * h1[i];
+            sum += node_w2[MiniNN::QUIET_TERMS + k][i] * h1[i];
         ss->miniNN_z_latents[k] = int8_t(std::clamp((sum + 32) >> 6, -127, 127));
     }
 
-    // 24: log_tau_mp
-    int32_t sum_tau_mp = node_b2[24];
+    // 18: log_tau_mp
+    int32_t sum_tau_mp = node_b2[18];
     for (int i = 0; i < MiniNN::NODE_H_DIM; ++i)
-        sum_tau_mp += node_w2[24][i] * h1[i];
+        sum_tau_mp += node_w2[18][i] * h1[i];
     int log_tau_mp = std::clamp(sum_tau_mp / 4096, -64, 64);
     ss->miniNN_inv_tau_mp = std::clamp(1024 - (log_tau_mp * 16), 256, 4096);
 
-    // 25: log_tau_lmr
-    int32_t sum_tau_lmr = node_b2[25];
+    // 19: log_tau_lmr
+    int32_t sum_tau_lmr = node_b2[19];
     for (int i = 0; i < MiniNN::NODE_H_DIM; ++i)
-        sum_tau_lmr += node_w2[25][i] * h1[i];
+        sum_tau_lmr += node_w2[19][i] * h1[i];
     int log_tau_lmr = std::clamp(sum_tau_lmr / 4096, -64, 64);
     ss->miniNN_inv_tau_lmr = std::clamp(1024 - (log_tau_lmr * 16), 256, 4096);
 }
@@ -297,59 +249,31 @@ int MiniNNModel::score_quiet(
     if (!loaded.load(std::memory_order_relaxed) || !ss)
         return 0;
 
-    int8_t x[MiniNN::QUIET_IN_DIM];
-    extract_quiet_features(pos, m, ss, mainHistory, lowPlyHistory, continuationHistory, sharedHistory, threatByLesser, ply, x);
+    Color us = pos.side_to_move();
+    Square from = m.from_sq();
+    Square to = m.to_sq();
+    Piece pc = pos.moved_piece(m);
+    PieceType pt = type_of(pc);
 
-    // Layer 0 (12 -> 16)
-    alignas(32) int32_t h[MiniNN::QUIET_H_DIM];
-    for (int j = 0; j < MiniNN::QUIET_H_DIM; ++j)
-    {
-        int32_t sum = quiet_b0[j];
-        for (int i = 0; i < MiniNN::QUIET_IN_DIM; ++i)
-            sum += quiet_w0[j][i] * x[i];
-        h[j] = std::clamp((sum + 32) >> 6, 0, 127);
-    }
+    int32_t t[MiniNN::QUIET_TERMS];
+    t[0] = mainHistory ? 2 * (*mainHistory)[us][m.raw()] : 0;
+    t[1] = sharedHistory ? 2 * sharedHistory->pawn_entry(pos)[pc][to] : 0;
+    t[2] = continuationHistory && continuationHistory[0] ? (*continuationHistory[0])[pc][to] : 0;
+    t[3] = continuationHistory && continuationHistory[1] ? (*continuationHistory[1])[pc][to] : 0;
+    t[4] = continuationHistory && continuationHistory[2] ? (*continuationHistory[2])[pc][to] : 0;
+    t[5] = continuationHistory && continuationHistory[3] ? (*continuationHistory[3])[pc][to] : 0;
+    t[6] = continuationHistory && continuationHistory[5] ? (*continuationHistory[5])[pc][to] : 0;
+    t[7] = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 16384 : 0;
+    t[8] = threatByLesser ? 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to)) * PieceValue[pt] : 0;
+    t[9] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? (8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply)) : 0;
 
-    // Dynamic inner product with ss->miniNN_w_quiet[0..15]
-    int32_t score_sum = 0;
-    for (int k = 0; k < MiniNN::QUIET_H_DIM; ++k)
-        score_sum += h[k] * ss->miniNN_w_quiet[k];
+    int32_t sum = 0;
+    for (int k = 0; k < MiniNN::QUIET_TERMS; ++k)
+        sum += t[k] * int32_t(ss->miniNN_w_quiet[k]);
 
-    // Scale to native 16-bit score units [-32768, 32767]: (score_sum * 512 + 63) / 127
-    int score = (score_sum * 512 + 63) / 127;
-    return std::clamp(score, -32768, 32767);
-}
-
-int MiniNNModel::score_capture(
-    const Position& pos,
-    Move m,
-    const Search::Stack* ss,
-    const CapturePieceToHistory* captureHistory
-) const {
-    if (!loaded.load(std::memory_order_relaxed) || !ss)
-        return 0;
-
-    int8_t x[MiniNN::CAPTURE_IN_DIM];
-    extract_capture_features(pos, m, ss, captureHistory, x);
-
-    // Layer 0 (12 -> 16)
-    alignas(32) int32_t h[MiniNN::CAPTURE_H_DIM];
-    for (int j = 0; j < MiniNN::CAPTURE_H_DIM; ++j)
-    {
-        int32_t sum = cap_b0[j];
-        for (int i = 0; i < MiniNN::CAPTURE_IN_DIM; ++i)
-            sum += cap_w0[j][i] * x[i];
-        h[j] = std::clamp((sum + 32) >> 6, 0, 127);
-    }
-
-    // Layer 1 (16 -> 1)
-    int32_t sum = cap_b1[0];
-    for (int i = 0; i < MiniNN::CAPTURE_H_DIM; ++i)
-        sum += cap_w1[0][i] * h[i];
-
-    // Scale to native 16-bit score units [-32768, 32767]: sum * 8 (scale 4096 -> 32768)
-    int score = sum * 8;
-    return std::clamp(score, -32768, 32767);
+    // Scale 256: 256 = 1.0x
+    int score = (sum + 128) >> 8;
+    return score;
 }
 
 int MiniNNModel::evaluate_lmr(

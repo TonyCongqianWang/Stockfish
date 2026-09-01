@@ -100,7 +100,6 @@ struct NodeTelemetryCollector {
         bool is_capture;
         int stat_score;
         int8_t x_quiet[MiniNN::QUIET_IN_DIM];
-        int8_t x_cap[4];
         int8_t x_lmr[MiniNN::LMR_IN_DIM];
     };
     std::vector<MoveRecord> moves;
@@ -129,7 +128,7 @@ struct NodeTelemetryCollector {
                   const LowPlyHistory* lowPlyHistory,
                   const PieceToHistory** contHist,
                   const SharedHistories* sharedHistory,
-                  const CapturePieceToHistory& captureHistory) {
+                  const CapturePieceToHistory& /*captureHistory*/) {
         if (!active) return;
         MoveRecord rec;
         rec.move_uci = UCIEngine::move(m, pos.is_chess960());
@@ -147,7 +146,6 @@ struct NodeTelemetryCollector {
         threatByLesser[KING]  = 0;
 
         MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.x_quiet);
-        MiniNNModel::extract_capture_features(pos, m, ss, &captureHistory, rec.x_cap);
 
         Piece movedPiece = pos.moved_piece(m);
         Piece capturedPiece = pos.piece_on(m.to_sq());
@@ -200,11 +198,6 @@ struct NodeTelemetryCollector {
             for (int k = 0; k < MiniNN::QUIET_IN_DIM; ++k) {
                 if (k > 0) out << ",";
                 out << int(m.x_quiet[k]);
-            }
-            out << "],\"x_cap\":[";
-            for (int k = 0; k < 4; ++k) {
-                if (k > 0) out << ",";
-                out << int(m.x_cap[k]);
             }
             out << "],\"x_lmr\":[";
             for (int k = 0; k < 8; ++k) {
