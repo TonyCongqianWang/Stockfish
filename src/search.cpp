@@ -200,7 +200,7 @@ struct NodeTelemetryCollector {
                 out << int(m.x_quiet[k]);
             }
             out << "],\"x_lmr\":[";
-            for (int k = 0; k < 8; ++k) {
+            for (int k = 0; k < MiniNN::LMR_IN_DIM; ++k) {
                 if (k > 0) out << ",";
                 out << int(m.x_lmr[k]);
             }
@@ -1312,7 +1312,7 @@ moves_loop:  // When in check, search starts here
 
         int delta = beta - alpha;
 
-        int r = reduction(improving, depth, moveCount, delta);
+        int r = reduction(improving, depth, moveCount, delta, ss);
 
         // Increase reduction for ttPv nodes (*Scaler)
         // Larger values scale well
@@ -1463,66 +1463,62 @@ moves_loop:  // When in check, search starts here
 
         u64 nodeCount = rootNode ? u64(nodes) : 0;
 
+        int stat_score_calc;
+        if (capture)
+            stat_score_calc = 873 * int(PieceValue[pos.captured_piece()]) / 128
+                            + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+        else
+            stat_score_calc =
+              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
+               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
+              / 1024;
+
+        if (tel.active)
+            tel.add_move(pos, move, moveCount, capture, stat_score_calc, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
+
         // Step 17. Make the move
         do_move(pos, move, st, givesCheck, ss);
 
         // Add extension to new depth
         newDepth += extension;
 
-        if (capture)
-            ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
-                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
-        else
-            ss->statScore =
-              (2252 * mainHistory[us][move.raw()] + 1126 * (*contHist[0])[movedPiece][move.to_sq()]
-               + 1093 * (*contHist[1])[movedPiece][move.to_sq()])
-              / 1024;
-
-        if (tel.active)
-            tel.add_move(pos, move, moveCount, capture, ss->statScore, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
+        ss->statScore = stat_score_calc;
 
         // Step 18. Compute and apply late moves reduction (LMR) (or possibly extension)
-        if (globalMiniNN.is_lmr_enabled())
-        {
-            r += globalMiniNN.evaluate_lmr(move, movedPiece, capture, pos.captured_piece(), givesCheck, moveCount, ss);
-        }
-        else
-        {
-            // Decrease reduction for PvNodes (*Scaler)
-            if (ss->ttPv)
-                r -= 3023 + PvNode * 1004 + (ttData.value > alpha) * 885
-                   + (ttData.depth >= depth) * (816 + cutNode * 940);
+        // Decrease reduction for PvNodes (*Scaler)
+        if (ss->ttPv)
+            r -= (3023 + (ss ? ss->miniNN_w_lmr[3] : 0)) + PvNode * 1004 + (ttData.value > alpha) * 885
+               + (ttData.depth >= depth) * (816 + cutNode * 940);
 
-            r += 697;  // Base reduction offset to compensate for other tweaks
-            r -= moveCount * 65;
-            r -= std::abs(correctionValue) / 26310;
+        r += 697 + (ss ? ss->miniNN_w_lmr[4] : 0);  // Base reduction offset to compensate for other tweaks
+        r -= moveCount * (65 + (ss ? ss->miniNN_w_lmr[5] : 0));
+        r -= std::abs(correctionValue) / 26310;
 
-            // Increase reduction for cut nodes
-            if (cutNode)
-                r += 4026 + 933 * !ttData.move;
+        // Increase reduction for cut nodes
+        if (cutNode)
+            r += (4026 + (ss ? ss->miniNN_w_lmr[6] : 0)) + 933 * !ttData.move;
 
-            // Increase reduction if ttMove is a capture
-            if (ttCapture)
-                r += 1079;
+        // Increase reduction if ttMove is a capture
+        if (ttCapture)
+            r += 1079 + (ss ? ss->miniNN_w_lmr[7] : 0);
 
-            // Increase reduction if next ply has a lot of fail high
-            if ((ss + 1)->cutoffCnt > 1)
-                r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
+        // Increase reduction if next ply has a lot of fail high
+        if ((ss + 1)->cutoffCnt > 1)
+            r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
 
-            // For first picked move (ttMove) reduce reduction
-            else if (move == ttData.move)
-                r -= 2179;
+        // For first picked move (ttMove) reduce reduction
+        else if (move == ttData.move)
+            r -= 2179;
 
-            // Decrease/increase reduction for moves with a good/bad history
-            r -= ss->statScore * 439 / 4096;
+        // Decrease/increase reduction for moves with a good/bad history
+        r -= ss->statScore * 439 / 4096;
 
-            if (!capture && !is_decisive(alpha))
-                r += 3 * std::clamp(alpha - eval, -64, 96);
+        if (!capture && !is_decisive(alpha))
+            r += 3 * std::clamp(alpha - eval, -64, 96);
 
-            // Scale up reductions for expected ALL nodes
-            if (allNode)
-                r += r * 276 / (256 * depth + 268);
-        }
+        // Scale up reductions for expected ALL nodes
+        if (allNode)
+            r += r * 276 / (256 * depth + 268);
 
         // Apply the computed LMR
         if (depth >= 2 && moveCount > 1)
@@ -2045,9 +2041,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     return bestValue;
 }
 
-int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
+int Search::Worker::reduction(bool i, Depth d, int mn, int delta, const Stack* ss) const {
     int reductionScale = reductions[d] * reductions[mn];
-    return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
+    int w_delta = ss ? ss->miniNN_w_lmr[0] : 0;
+    int w_imp   = ss ? ss->miniNN_w_lmr[1] : 0;
+    int w_base  = ss ? ss->miniNN_w_lmr[2] : 0;
+
+    return reductionScale - delta * (577 + w_delta) / rootDelta + !i * reductionScale * (197 + w_imp) / 512 + (982 + w_base);
 }
 
 // elapsed() returns the time elapsed since the search started. If the

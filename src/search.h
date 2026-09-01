@@ -130,8 +130,8 @@ struct Stack {
     bool                        followPV;
     int                         cutoffCnt;
     int                         reduction;
-    int16_t                     miniNN_w_quiet[MiniNN::QUIET_TERMS];
-    int8_t                      miniNN_z_latents[MiniNN::NODE_LATENTS];
+    int16_t                     miniNN_w_mp[MiniNN::QUIET_TERMS];
+    int16_t                     miniNN_w_lmr[MiniNN::LMR_TERMS];
     int                         miniNN_inv_tau_mp;
     int                         miniNN_inv_tau_lmr;
 };
@@ -379,7 +379,7 @@ class Worker {
     template<NodeType nodeType>
     Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta);
 
-    int reduction(bool i, Depth d, int mn, int delta) const;
+    int reduction(bool i, Depth d, int mn, int delta, const Stack* ss = nullptr) const;
 
     // Pointer to the search manager, only allowed to be called by the main thread
     SearchManager* main_manager() const {

@@ -25,6 +25,7 @@
 #include "bitboard.h"
 #include "misc.h"
 #include "position.h"
+#include "search.h"
 #include "mininn/mininn.h"
 
 namespace Stockfish {
@@ -234,30 +235,30 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         else if constexpr (Type == QUIETS)
         {
-            if (globalMiniNN.is_mp_enabled() && ss)
-                m.value = globalMiniNN.score_quiet(pos, m, ss, mainHistory, lowPlyHistory, continuationHistory, sharedHistory, threatByLesser, ply);
+            int32_t t[10];
+            t[0] = mainHistory ? 2 * (*mainHistory)[us][m.raw()] : 0;
+            t[1] = sharedHistory ? 2 * sharedHistory->pawn_entry(pos)[pc][to] : 0;
+            t[2] = continuationHistory && continuationHistory[0] ? (*continuationHistory[0])[pc][to] : 0;
+            t[3] = continuationHistory && continuationHistory[1] ? (*continuationHistory[1])[pc][to] : 0;
+            t[4] = continuationHistory && continuationHistory[2] ? (*continuationHistory[2])[pc][to] : 0;
+            t[5] = continuationHistory && continuationHistory[3] ? (*continuationHistory[3])[pc][to] : 0;
+            t[6] = continuationHistory && continuationHistory[5] ? (*continuationHistory[5])[pc][to] : 0;
+            t[7] = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 16384 : 0;
+            t[8] = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to)) * PieceValue[pt];
+            t[9] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? (8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply)) : 0;
+
+            int32_t base_score = t[0] + t[1] + t[2] + t[3] + t[4] + t[5] + t[6] + t[7] + t[8] + t[9];
+
+            if (ss)
+            {
+                int32_t delta_sum = 0;
+                for (int k = 0; k < 10; ++k)
+                    delta_sum += t[k] * int32_t(ss->miniNN_w_mp[k]);
+                m.value = base_score + ((delta_sum + 128) >> 8);
+            }
             else
             {
-                // histories
-                m.value = 2 * (*mainHistory)[us][m.raw()];
-                m.value += 2 * sharedHistory->pawn_entry(pos)[pc][to];
-                m.value += (*continuationHistory[0])[pc][to];
-                m.value += (*continuationHistory[1])[pc][to];
-                m.value += (*continuationHistory[2])[pc][to];
-                m.value += (*continuationHistory[3])[pc][to];
-                m.value += (*continuationHistory[5])[pc][to];
-
-                // bonus for checks
-                m.value += ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
-
-                // penalty for moving to a square threatened by a lesser piece
-                // or bonus for escaping an attack by a lesser piece.
-                int v = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to));
-                m.value += PieceValue[pt] * v;
-
-
-                if (ply < LOW_PLY_HISTORY_SIZE)
-                    m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+                m.value = base_score;
             }
         }
 
