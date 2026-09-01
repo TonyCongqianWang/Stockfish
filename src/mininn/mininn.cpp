@@ -5,6 +5,7 @@
 */
 
 #include "mininn.h"
+#include "mininn_embedded.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,12 +20,13 @@ namespace Stockfish {
 MiniNNModel globalMiniNN;
 
 MiniNNModel::MiniNNModel() {
-    std::memset(node_b0, 0, sizeof(node_b0));
-    std::memset(node_w0, 0, sizeof(node_w0));
-    std::memset(node_b1, 0, sizeof(node_b1));
-    std::memset(node_w1, 0, sizeof(node_w1));
-    std::memset(node_b2, 0, sizeof(node_b2));
-    std::memset(node_w2, 0, sizeof(node_w2));
+    std::memcpy(node_b0, MiniNN::EmbeddedWeights::node_b0, sizeof(node_b0));
+    std::memcpy(node_w0, MiniNN::EmbeddedWeights::node_w0, sizeof(node_w0));
+    std::memcpy(node_b1, MiniNN::EmbeddedWeights::node_b1, sizeof(node_b1));
+    std::memcpy(node_w1, MiniNN::EmbeddedWeights::node_w1, sizeof(node_w1));
+    std::memcpy(node_b2, MiniNN::EmbeddedWeights::node_b2, sizeof(node_b2));
+    std::memcpy(node_w2, MiniNN::EmbeddedWeights::node_w2, sizeof(node_w2));
+    loaded.store(true, std::memory_order_release);
 }
 
 bool MiniNNModel::load(const std::string& filepath) {
