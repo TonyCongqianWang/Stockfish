@@ -56,12 +56,13 @@ public:
     );
 
     static void extract_lmr_features(
-        Move m,
-        Piece movedPiece,
-        bool is_capture,
-        Piece capturedPiece,
-        bool givesCheck,
+        bool improving,
+        Depth depth,
         int moveCount,
+        int delta,
+        int rootDelta,
+        bool cutNode,
+        bool ttCapture,
         const Search::Stack* ss,
         int8_t out_x[MiniNN::LMR_IN_DIM]
     );

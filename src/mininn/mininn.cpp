@@ -123,25 +123,45 @@ void MiniNNModel::extract_quiet_features(
 }
 
 void MiniNNModel::extract_lmr_features(
-    Move m,
-    Piece movedPiece,
-    bool is_capture,
-    Piece capturedPiece,
-    bool givesCheck,
+    bool improving,
+    Depth depth,
     int moveCount,
+    int delta,
+    int rootDelta,
+    bool cutNode,
+    bool ttCapture,
     const Search::Stack* ss,
     int8_t out_x[MiniNN::LMR_IN_DIM]
 ) {
-    (void)m;
-    (void)movedPiece;
-    (void)capturedPiece;
-    // 6 LMR terms for dynamic residual computation (Scale 64)
-    out_x[0] = 64; // Constant bias term (1.0)
-    out_x[1] = int8_t(std::clamp((moveCount - 4) * 64 / 8, -127, 127)); // Rank slope
-    out_x[2] = ss ? int8_t(std::clamp(int(ss->statScore) * 64 / 2048, -127, 127)) : 0; // History/statScore
-    out_x[3] = is_capture ? 64 : 0; // Capture indicator
-    out_x[4] = givesCheck ? 64 : 0; // Check indicator
-    out_x[5] = !is_capture ? 64 : 0; // Quiet indicator
+    int rd = rootDelta > 0 ? rootDelta : 200;
+    // reductions table lookup for depth and moveCount
+    int d_idx = std::clamp(int(depth), 0, 31);
+    int mc_idx = std::clamp(moveCount, 0, 63);
+    int reductionScale = int(std::log(std::max(1, d_idx)) * std::log(std::max(1, mc_idx)) * 500.0);
+
+    // 0: -delta / rootDelta multiplier for w_0
+    out_x[0] = int8_t(std::clamp(-delta * 64 / rd, -127, 127));
+
+    // 1: !improving * reductionScale / 512 multiplier for w_1
+    out_x[1] = !improving ? int8_t(std::clamp((reductionScale * 64) / 512, -127, 127)) : 0;
+
+    // 2: base constant in reduction() (1.0 in Scale 64)
+    out_x[2] = 64;
+
+    // 3: -ttPv component in Step 18 (-1.0 in Scale 64 if ss->ttPv)
+    out_x[3] = (ss && ss->ttPv) ? -64 : 0;
+
+    // 4: base offset 697 in Step 18 (1.0 in Scale 64)
+    out_x[4] = 64;
+
+    // 5: -moveCount slope in Step 18 (-moveCount in Scale 64: -moveCount * 64 / 16)
+    out_x[5] = int8_t(std::clamp(-moveCount * 64 / 16, -127, 127));
+
+    // 6: cutNode component in Step 18 (1.0 in Scale 64 if cutNode)
+    out_x[6] = cutNode ? 64 : 0;
+
+    // 7: ttCapture component in Step 18 (1.0 in Scale 64 if ttCapture)
+    out_x[7] = ttCapture ? 64 : 0;
 }
 
 void MiniNNModel::evaluate_node(

@@ -76,7 +76,7 @@ static std::mutex telMutex;
 static u64 get_sample_interval() {
     static const u64 interval = []() {
         const char* p = std::getenv("SF_LMR_SAMPLE_INTERVAL");
-        return p ? std::max(u64(100), u64(std::strtoull(p, nullptr, 10))) : u64(50000);
+        return p ? std::max(u64(1), u64(std::strtoull(p, nullptr, 10))) : u64(50000);
     }();
     return interval;
 }
@@ -89,6 +89,8 @@ struct NodeTelemetryCollector {
     bool improving = false;
     bool cut_node = false;
     bool pv_node = false;
+    int delta = 0;
+    int rootDelta = 0;
     int static_eval = 0;
     int prev_stat_score = 0;
     int cutoff_cnt = 0;
@@ -99,12 +101,13 @@ struct NodeTelemetryCollector {
         int picker_rank;
         bool is_capture;
         int stat_score;
+        int r_base;
         int8_t x_quiet[MiniNN::QUIET_IN_DIM];
         int8_t x_lmr[MiniNN::LMR_IN_DIM];
     };
     std::vector<MoveRecord> moves;
 
-    void init(const Position& pos, Stack* ss, Depth d, bool imp, bool cut, bool pv) {
+    void init(const Position& pos, Stack* ss, Depth d, bool imp, bool cut, bool pv, int d_val, int rd_val) {
         const char* envPath = std::getenv("SF_LMR_TELEMETRY");
         if (!envPath) return;
 
@@ -115,6 +118,8 @@ struct NodeTelemetryCollector {
         improving = imp;
         cut_node = cut;
         pv_node = pv;
+        delta = d_val;
+        rootDelta = rd_val;
         static_eval = int(ss->staticEval);
         prev_stat_score = int((ss - 1)->statScore);
         cutoff_cnt = int(ss->cutoffCnt);
@@ -122,7 +127,7 @@ struct NodeTelemetryCollector {
         moves.reserve(32);
     }
 
-    void add_move(const Position& pos, Move m, int rank, bool is_capture, int stat_score,
+    void add_move(const Position& pos, Move m, int rank, bool is_capture, bool ttCapture, int stat_score,
                   const Search::Stack* ss,
                   const ButterflyHistory& mainHistory,
                   const LowPlyHistory* lowPlyHistory,
@@ -147,12 +152,14 @@ struct NodeTelemetryCollector {
 
         MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.x_quiet);
 
-        Piece movedPiece = pos.moved_piece(m);
-        Piece capturedPiece = pos.piece_on(m.to_sq());
-        bool givesCheck = pos.gives_check(m);
-        MiniNNModel::extract_lmr_features(m, movedPiece, is_capture, capturedPiece, givesCheck, rank, ss, rec.x_lmr);
+        MiniNNModel::extract_lmr_features(improving, Depth(depth), rank, delta, rootDelta, cut_node, ttCapture, ss, rec.x_lmr);
 
         moves.push_back(rec);
+    }
+
+    void set_last_move_lmr(int r) {
+        if (!active || moves.empty()) return;
+        moves.back().r_base = r;
     }
 
     ~NodeTelemetryCollector() {
@@ -166,7 +173,7 @@ struct NodeTelemetryCollector {
         if (!envPath) return;
 
         std::lock_guard<std::mutex> lock(telMutex);
-        static std::ofstream out(envPath, std::ios::app);
+        std::ofstream out(envPath, std::ios::app);
         if (!out.is_open()) return;
 
         out << "{\"fen\":\"" << fen << "\","
@@ -194,6 +201,7 @@ struct NodeTelemetryCollector {
                 << "\"picker_rank\":" << m.picker_rank << ","
                 << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
                 << "\"stat_score\":" << m.stat_score << ","
+                << "\"r_base\":" << m.r_base << ","
                 << "\"x_quiet\":[";
             for (int k = 0; k < MiniNN::QUIET_IN_DIM; ++k) {
                 if (k > 0) out << ",";
@@ -1255,6 +1263,8 @@ moves_loop:  // When in check, search starts here
 
     globalMiniNN.evaluate_node(pos, ss, improving, cutNode, PvNode);
 
+    int delta = beta - alpha;
+
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
                   &sharedHistory, ss->ply, ss);
 
@@ -1262,10 +1272,10 @@ moves_loop:  // When in check, search starts here
     if (depth >= 1 && depth <= 20 && ss->ply >= 1 && !pos.checkers())
     {
         static thread_local u64 lastSampleNode = 0;
-        if (nodes - lastSampleNode >= get_sample_interval())
+        if (nodes < lastSampleNode || nodes - lastSampleNode >= get_sample_interval())
         {
             lastSampleNode = nodes;
-            tel.init(pos, ss, depth, improving, cutNode, PvNode);
+            tel.init(pos, ss, depth, improving, cutNode, PvNode, delta, rootDelta);
         }
     }
 
@@ -1310,7 +1320,7 @@ moves_loop:  // When in check, search starts here
         // Calculate new depth for this move
         newDepth = depth - 1;
 
-        int delta = beta - alpha;
+        delta = beta - alpha;
 
         int r = reduction(improving, depth, moveCount, delta, ss);
 
@@ -1474,7 +1484,7 @@ moves_loop:  // When in check, search starts here
               / 1024;
 
         if (tel.active)
-            tel.add_move(pos, move, moveCount, capture, stat_score_calc, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
+            tel.add_move(pos, move, moveCount, capture, ttCapture, stat_score_calc, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
 
         // Step 17. Make the move
         do_move(pos, move, st, givesCheck, ss);
@@ -1519,6 +1529,9 @@ moves_loop:  // When in check, search starts here
         // Scale up reductions for expected ALL nodes
         if (allNode)
             r += r * 276 / (256 * depth + 268);
+
+        if (tel.active)
+            tel.set_last_move_lmr(r);
 
         // Apply the computed LMR
         if (depth >= 2 && moveCount > 1)
