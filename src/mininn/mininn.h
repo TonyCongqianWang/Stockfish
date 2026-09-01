@@ -61,13 +61,14 @@ public:
         int moveCount,
         int delta,
         int rootDelta,
-        bool cutNode,
-        bool ttCapture,
+        Value alpha,
+        Value eval,
+        bool capture,
         const Search::Stack* ss,
-        int8_t out_x[MiniNN::LMR_IN_DIM]
+        int32_t out_x[MiniNN::LMR_IN_DIM]
     );
 
-    // Evaluated ONCE per search node: populates ss->miniNN_w_quiet, ss->miniNN_w_lmr, and temperatures
+    // Evaluated ONCE per search node: populates ss->miniNN_w_mp and ss->miniNN_w_lmr
     void evaluate_node(const Position& pos, Search::Stack* ss, bool improving, bool cutNode, bool pvNode) const;
 
 private:

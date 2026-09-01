@@ -132,8 +132,6 @@ struct Stack {
     int                         reduction;
     int16_t                     miniNN_w_mp[MiniNN::QUIET_TERMS];
     int16_t                     miniNN_w_lmr[MiniNN::LMR_TERMS];
-    int                         miniNN_inv_tau_mp;
-    int                         miniNN_inv_tau_lmr;
 };
 
 

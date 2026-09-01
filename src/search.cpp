@@ -104,7 +104,7 @@ struct NodeTelemetryCollector {
         int r_base;
         int r_executed;
         int32_t t_quiet[MiniNN::QUIET_TERMS];
-        int8_t x_lmr[MiniNN::LMR_IN_DIM];
+        int32_t x_lmr[MiniNN::LMR_IN_DIM];
     };
     std::vector<MoveRecord> moves;
 
@@ -128,7 +128,7 @@ struct NodeTelemetryCollector {
         moves.reserve(32);
     }
 
-    void add_move(const Position& pos, Move m, int rank, bool is_capture, bool ttCapture, int stat_score,
+    void add_move(const Position& pos, Move m, int rank, bool is_capture, Value alpha, Value eval, int stat_score,
                   const Search::Stack* ss,
                   const ButterflyHistory& mainHistory,
                   const LowPlyHistory* lowPlyHistory,
@@ -153,7 +153,7 @@ struct NodeTelemetryCollector {
 
         MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.t_quiet);
 
-        MiniNNModel::extract_lmr_features(improving, Depth(depth), rank, delta, rootDelta, cut_node, ttCapture, ss, rec.x_lmr);
+        MiniNNModel::extract_lmr_features(improving, Depth(depth), rank, delta, rootDelta, alpha, eval, is_capture, ss, rec.x_lmr);
 
         moves.push_back(rec);
     }
@@ -165,9 +165,8 @@ struct NodeTelemetryCollector {
         int delta_nn = 0;
         if (ss) {
             for (int k = 0; k < MiniNN::LMR_IN_DIM; ++k) {
-                delta_nn += int(rec.x_lmr[k]) * int(ss->miniNN_w_lmr[k]);
+                delta_nn += (int64_t(rec.x_lmr[k]) * int64_t(ss->miniNN_w_lmr[k])) / 1024;
             }
-            delta_nn = (delta_nn + 32) >> 6;
         }
         rec.r_base = r_exec - delta_nn;
     }
@@ -221,7 +220,7 @@ struct NodeTelemetryCollector {
             out << "],\"x_lmr\":[";
             for (int k = 0; k < MiniNN::LMR_IN_DIM; ++k) {
                 if (k > 0) out << ",";
-                out << int(m.x_lmr[k]);
+                out << m.x_lmr[k];
             }
             out << "]}";
         }
@@ -1495,7 +1494,7 @@ moves_loop:  // When in check, search starts here
               / 1024;
 
         if (tel.active)
-            tel.add_move(pos, move, moveCount, capture, ttCapture, stat_score_calc, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
+            tel.add_move(pos, move, moveCount, capture, alpha, eval, stat_score_calc, ss, mainHistory, &lowPlyHistory, contHist, &sharedHistory, captureHistory);
 
         // Step 17. Make the move
         do_move(pos, move, st, givesCheck, ss);
@@ -1511,31 +1510,32 @@ moves_loop:  // When in check, search starts here
             r -= (3023 + (ss ? ss->miniNN_w_lmr[3] : 0)) + PvNode * 1004 + (ttData.value > alpha) * 885
                + (ttData.depth >= depth) * (816 + cutNode * 940);
 
-        r += 697 + (ss ? ss->miniNN_w_lmr[4] : 0);  // Base reduction offset to compensate for other tweaks
-        r -= moveCount * (65 + (ss ? ss->miniNN_w_lmr[5] : 0));
+        int w_base_step18 = ss ? (int(ss->miniNN_w_lmr[2]) * 697) / 1679 : 0;
+        r += 697 + w_base_step18;
+        r -= moveCount * (65 + (ss ? ss->miniNN_w_lmr[4] : 0));
         r -= std::abs(correctionValue) / 26310;
 
         // Increase reduction for cut nodes
         if (cutNode)
-            r += (4026 + (ss ? ss->miniNN_w_lmr[6] : 0)) + 933 * !ttData.move;
+            r += 4026 + 933 * !ttData.move;
 
         // Increase reduction if ttMove is a capture
         if (ttCapture)
-            r += 1079 + (ss ? ss->miniNN_w_lmr[7] : 0);
+            r += 1079;
 
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 1)
-            r += 264 + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
+            r += 264 + (ss ? ss->miniNN_w_lmr[5] : 0) + 1095 * ((ss + 1)->cutoffCnt > 2) + 1138 * allNode;
 
         // For first picked move (ttMove) reduce reduction
         else if (move == ttData.move)
             r -= 2179;
 
         // Decrease/increase reduction for moves with a good/bad history
-        r -= ss->statScore * 439 / 4096;
+        r -= ss->statScore * (439 + (ss ? ss->miniNN_w_lmr[6] : 0)) / 4096;
 
         if (!capture && !is_decisive(alpha))
-            r += 3 * std::clamp(alpha - eval, -64, 96);
+            r += (3 * 1024 + (ss ? ss->miniNN_w_lmr[7] : 0)) * std::clamp(alpha - eval, -64, 96) / 1024;
 
         // Scale up reductions for expected ALL nodes
         if (allNode)
@@ -2069,9 +2069,9 @@ int Search::Worker::reduction(bool i, Depth d, int mn, int delta, const Stack* s
     int reductionScale = reductions[d] * reductions[mn];
     int w_delta = ss ? ss->miniNN_w_lmr[0] : 0;
     int w_imp   = ss ? ss->miniNN_w_lmr[1] : 0;
-    int w_base  = ss ? ss->miniNN_w_lmr[2] : 0;
+    int w_base_reduction = ss ? (int(ss->miniNN_w_lmr[2]) * 982) / 1679 : 0;
 
-    return reductionScale - delta * (577 + w_delta) / rootDelta + !i * reductionScale * (197 + w_imp) / 512 + (982 + w_base);
+    return reductionScale - delta * (577 + w_delta) / rootDelta + !i * reductionScale * (197 + w_imp) / 512 + (982 + w_base_reduction);
 }
 
 // elapsed() returns the time elapsed since the search started. If the

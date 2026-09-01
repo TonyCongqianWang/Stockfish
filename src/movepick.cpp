@@ -221,11 +221,9 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         ExtMove& m = *it++;
         m          = move;
 
-        const Square    from          = m.from_sq();
-        const Square    to            = m.to_sq();
-        const Piece     pc            = pos.moved_piece(m);
-        const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
+        const Square to            = m.to_sq();
+        const Piece  pc            = pos.moved_piece(m);
+        const Piece  capturedPiece = pos.piece_on(to);
 
         if constexpr (Type == CAPTURES)
         {
@@ -235,24 +233,17 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         else if constexpr (Type == QUIETS)
         {
-            int32_t t[10];
-            t[0] = mainHistory ? 2 * (*mainHistory)[us][m.raw()] : 0;
-            t[1] = sharedHistory ? 2 * sharedHistory->pawn_entry(pos)[pc][to] : 0;
-            t[2] = continuationHistory && continuationHistory[0] ? (*continuationHistory[0])[pc][to] : 0;
-            t[3] = continuationHistory && continuationHistory[1] ? (*continuationHistory[1])[pc][to] : 0;
-            t[4] = continuationHistory && continuationHistory[2] ? (*continuationHistory[2])[pc][to] : 0;
-            t[5] = continuationHistory && continuationHistory[3] ? (*continuationHistory[3])[pc][to] : 0;
-            t[6] = continuationHistory && continuationHistory[5] ? (*continuationHistory[5])[pc][to] : 0;
-            t[7] = ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) ? 16384 : 0;
-            t[8] = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to)) * PieceValue[pt];
-            t[9] = (ply < LOW_PLY_HISTORY_SIZE && lowPlyHistory) ? (8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply)) : 0;
+            int32_t t[MiniNN::QUIET_TERMS];
+            MiniNNModel::extract_quiet_features(pos, m, ss, mainHistory, lowPlyHistory, continuationHistory, sharedHistory, threatByLesser, ply, t);
 
-            int32_t base_score = t[0] + t[1] + t[2] + t[3] + t[4] + t[5] + t[6] + t[7] + t[8] + t[9];
+            int32_t base_score = 0;
+            for (int k = 0; k < MiniNN::QUIET_TERMS; ++k)
+                base_score += t[k];
 
             if (ss)
             {
                 int32_t delta_sum = 0;
-                for (int k = 0; k < 10; ++k)
+                for (int k = 0; k < MiniNN::QUIET_TERMS; ++k)
                     delta_sum += t[k] * int32_t(ss->miniNN_w_mp[k]);
                 m.value = base_score + ((delta_sum + 128) >> 8);
             }

@@ -18,12 +18,12 @@ static constexpr int WEIGHT_SCALE = 64;
 // 1. Node Network
 static constexpr int NODE_IN_DIM = 16;
 static constexpr int NODE_H_DIM = 32;
-static constexpr int QUIET_TERMS = 10;        // 10 dynamic weights for handcrafted quiet move terms (Scale 256)
+static constexpr int QUIET_TERMS = 8;         // 8 dynamic weights for handcrafted quiet move terms (Scale 256)
 static constexpr int LMR_TERMS = 8;           // 8 dynamic residual coefficient tweaks for LMR (Scale 64)
-static constexpr int NODE_OUT_DIM = QUIET_TERMS + LMR_TERMS + 2; // 10 + 8 + 1 (tau_mp) + 1 (tau_lmr) = 20
+static constexpr int NODE_OUT_DIM = QUIET_TERMS + LMR_TERMS; // 8 + 8 = 16 (Power of 2, zero temperature outputs)
 
-// 2. Quiet Move Features (10 Handcrafted Terms)
-static constexpr int QUIET_IN_DIM = 10;
+// 2. Quiet Move Features & LMR Features (8 Handcrafted Terms Each)
+static constexpr int QUIET_IN_DIM = 8;
 static constexpr int LMR_IN_DIM = 8;
 
 } // namespace MiniNN
