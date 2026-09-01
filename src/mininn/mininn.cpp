@@ -85,10 +85,10 @@ void MiniNNModel::extract_node_features(
     out_u[8]  = ss ? int8_t(std::clamp((int(ss->ply) - 24) * 64 / 16, -127, 127)) : 0;
     out_u[9]  = improving ? 64 : -64;
     out_u[10] = ss ? (ss->ttHit ? 64 : -64) : -64;
-    out_u[11] = ss ? (ss->ttPv ? 64 : -64) : -64;
+    out_u[11] = (ss && ss->ply >= 2) ? int8_t(std::clamp((int(ss->staticEval) - int((ss - 2)->staticEval)) * 64 / 200, -127, 127)) : 0;
     out_u[12] = ss ? int8_t(std::clamp(int(ss->staticEval) * 64 / 500, -127, 127)) : 0;
-    out_u[13] = ss ? int8_t(std::clamp(int((ss - 1)->statScore) * 64 / 2000, -127, 127)) : 0;
-    out_u[14] = ss ? int8_t(std::clamp((ss->cutoffCnt - 1) * 64 / 2, -127, 127)) : 0;
+    out_u[13] = (ss && ss->ply >= 1) ? int8_t(std::clamp(int((ss - 1)->statScore) * 64 / 2000, -127, 127)) : 0;
+    out_u[14] = (ss && ss->ply >= 1) ? int8_t(std::clamp(((ss - 1)->cutoffCnt - 1) * 64 / 2, -127, 127)) : 0;
     out_u[15] = (npm_us + npm_them < 3000) ? 64 : -64;
 }
 
@@ -161,8 +161,8 @@ void MiniNNModel::extract_lmr_features(
     // 4: -moveCount rank slope
     out_x[4] = -moveCount * 1024;
 
-    // 5: cutNode bonus (cutoffCnt > 1)
-    out_x[5] = (ss && (ss->cutoffCnt > 1)) ? 1024 : 0;
+    // 5: cutNode bonus ((ss + 1)->cutoffCnt > 1)
+    out_x[5] = (ss && ((ss + 1)->cutoffCnt > 1)) ? 1024 : 0;
 
     // 6: Move History StatScore (-statScore / 4096)
     int stat = ss ? ss->statScore : 0;
@@ -235,6 +235,14 @@ void MiniNNModel::evaluate_node(
                 sum += node_w2[k][i] * h1[i];
             ss->miniNN_w_mp[k] = int16_t(std::clamp((sum + 8) >> 4, -512, 512));
         }
+
+        // Mean-preservation across history terms (0..4: main, pawn, cont0, cont1, deep_even)
+        int32_t hist_sum = 0;
+        for (int k = 0; k < 5; ++k)
+            hist_sum += ss->miniNN_w_mp[k];
+        int16_t hist_mean = int16_t(hist_sum / 5);
+        for (int k = 0; k < 5; ++k)
+            ss->miniNN_w_mp[k] -= hist_mean;
     }
     else
     {
