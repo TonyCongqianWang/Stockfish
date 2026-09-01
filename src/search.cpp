@@ -102,7 +102,7 @@ struct NodeTelemetryCollector {
         bool is_capture;
         int stat_score;
         int r_base;
-        int8_t x_quiet[MiniNN::QUIET_IN_DIM];
+        int32_t t_quiet[MiniNN::QUIET_TERMS];
         int8_t x_lmr[MiniNN::LMR_IN_DIM];
     };
     std::vector<MoveRecord> moves;
@@ -150,7 +150,7 @@ struct NodeTelemetryCollector {
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
 
-        MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.x_quiet);
+        MiniNNModel::extract_quiet_features(pos, m, ss, &mainHistory, lowPlyHistory, contHist, sharedHistory, threatByLesser, ss->ply, rec.t_quiet);
 
         MiniNNModel::extract_lmr_features(improving, Depth(depth), rank, delta, rootDelta, cut_node, ttCapture, ss, rec.x_lmr);
 
@@ -202,10 +202,10 @@ struct NodeTelemetryCollector {
                 << "\"is_capture\":" << (m.is_capture ? "true" : "false") << ","
                 << "\"stat_score\":" << m.stat_score << ","
                 << "\"r_base\":" << m.r_base << ","
-                << "\"x_quiet\":[";
-            for (int k = 0; k < MiniNN::QUIET_IN_DIM; ++k) {
+                << "\"t_quiet\":[";
+            for (int k = 0; k < MiniNN::QUIET_TERMS; ++k) {
                 if (k > 0) out << ",";
-                out << int(m.x_quiet[k]);
+                out << m.t_quiet[k];
             }
             out << "],\"x_lmr\":[";
             for (int k = 0; k < MiniNN::LMR_IN_DIM; ++k) {

@@ -52,7 +52,7 @@ public:
         const SharedHistories* sharedHistory,
         const Bitboard* threatByLesser,
         int ply,
-        int8_t out_x[MiniNN::QUIET_IN_DIM]
+        int32_t out_t[MiniNN::QUIET_TERMS]
     );
 
     static void extract_lmr_features(
