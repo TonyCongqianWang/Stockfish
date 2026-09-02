@@ -996,11 +996,27 @@ Value Search::Worker::search(
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
         && !is_loss(beta) && !is_win(eval))
     {
-        Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        constexpr int16_t FutilityMarginLUT[152] = {
+            0,     6,    12,    17,    24,    30,    36,    42,    49,    56,
+           62,    69,    76,    84,    91,    98,   106,   114,   122,   129,
+          138,   146,   154,   162,   171,   180,   188,   197,   206,   216,
+          225,   234,   244,   254,   264,   273,   284,   294,   304,   314,
+          325,   336,   346,   357,   368,   380,   391,   402,   414,   426,
+          438,   449,   462,   474,   486,   498,   511,   524,   536,   549,
+          562,   575,   588,   600,   613,   626,   639,   652,   665,   678,
+          691,   704,   717,   730,   743,   756,   769,   782,   794,   807,
+          820,   833,   845,   858,   871,   883,   896,   908,   920,   933,
+          945,   957,   969,   981,   993,  1004,  1016,  1028,  1039,  1050,
+         1061,  1073,  1083,  1094,  1105,  1116,  1126,  1137,  1148,  1158,
+         1169,  1179,  1190,  1201,  1211,  1222,  1232,  1243,  1254,  1264,
+         1275,  1286,  1296,  1307,  1318,  1328,  1339,  1349,  1360,  1371,
+         1381,  1392,  1402,  1413,  1424,  1434,  1445,  1456,  1466,  1477,
+         1488,  1498,  1509,  1519,  1530,  1541,  1551,  1562,  1572,  1583,
+         1594,  1604};
 
-        Value futilityMargin = futilityMult * depth
-                             - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
+        int effDepth = 8 * depth - 22 * improving - 3 * opponentWorsening - 6 * !ss->ttHit;
+
+        Value futilityMargin = Value(FutilityMarginLUT[std::clamp(effDepth, 0, 151)])
                              + std::abs(correctionValue) / 198435;
 
         if (eval - futilityMargin >= beta)
