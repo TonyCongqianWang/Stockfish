@@ -996,8 +996,10 @@ Value Search::Worker::search(
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
         && !is_loss(beta) && !is_win(eval))
     {
-        Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        constexpr Value FutilityMult[19] = {
+          0, 49, 53, 57, 61, 65, 69, 73, 77, 80, 82, 84, 85, 85, 85, 85, 85, 85, 85};
+
+        Value futilityMult = FutilityMult[depth] - 20 * !ss->ttHit;
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
