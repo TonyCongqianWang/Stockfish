@@ -996,11 +996,19 @@ Value Search::Worker::search(
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
         && !is_loss(beta) && !is_win(eval))
     {
-        Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        constexpr Value FutilityMarginLUT[76] = {
+            0,   12,   24,   36,   49,   62,   76,   91,  106,  122,
+          138,  154,  171,  188,  206,  225,  244,  264,  284,  304,
+          325,  346,  368,  391,  414,  438,  462,  486,  511,  536,
+          562,  588,  613,  639,  665,  691,  717,  743,  769,  794,
+          820,  845,  871,  896,  920,  945,  969,  993, 1016, 1039,
+         1061, 1083, 1105, 1126, 1148, 1169, 1190, 1211, 1232, 1254,
+         1275, 1296, 1318, 1339, 1360, 1381, 1402, 1424, 1445, 1466,
+         1488, 1509, 1530, 1551, 1572, 1594};
 
-        Value futilityMargin = futilityMult * depth
-                             - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
+        int effDepth = 4 * depth - 11 * improving - 2 * opponentWorsening - 3 * !ss->ttHit;
+
+        Value futilityMargin = FutilityMarginLUT[std::clamp(effDepth, 0, 75)]
                              + std::abs(correctionValue) / 198435;
 
         if (eval - futilityMargin >= beta)
