@@ -277,6 +277,7 @@ void ThreadPool::clear() {
     main_manager()->bestPreviousScore  = VALUE_INFINITE;
     main_manager()->originalTimeAdjust = -1;
     main_manager()->tm.clear();
+    reductionDiscount = 0;
 }
 
 void ThreadPool::run_on_thread(usize threadId, std::function<void()> f) {
@@ -304,7 +305,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     main_manager()->stopOnPonderhit = stop = false;
     main_manager()->ponder                 = limits.ponderMode;
 
-    increaseDepth = true;
+    increaseDepth     = true;
+    reductionDiscount = 0;
 
     Search::RootMoves rootMoves;
 

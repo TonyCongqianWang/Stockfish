@@ -281,7 +281,7 @@ bool Search::Worker::iterative_deepening() {
     Value  bestValue     = -VALUE_INFINITE;
     Color  us            = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
-    int    delta, iterIdx                        = 0;
+    int    delta, iterIdx = 0, discount = 0;
 
     // Allocate stack with extra size to allow access from (ss - 7) to (ss + 2):
     // (ss - 7) is needed for update_continuation_histories(ss - 1) which accesses (ss - 6),
@@ -387,10 +387,8 @@ bool Search::Worker::iterative_deepening() {
             int failedHighCnt = 0;
             while (true)
             {
-                // Adjust the effective depth searched, but ensure at least one
-                // effective increment for every four searchAgain steps (see issue #2717).
                 Depth adjustedDepth =
-                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
+                  std::max(1, rootDepth - failedHighCnt - 15 * (searchAgainCounter + 1) / 16);
                 rootDelta = beta - alpha;
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
@@ -608,9 +606,26 @@ bool Search::Worker::iterative_deepening() {
                     mainThread->stopOnPonderhit = true;
                 else
                     threads.stop = true;
+                discount                  = 0;
+                threads.reductionDiscount = 0;
             }
             else
+            {
                 threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
+                if (!threads.increaseDepth)
+                {
+                    if (elapsedTime <= totalTime * 0.9)
+                    {
+                        discount += int(0.1 * (256.0 - discount) * (totalTime / elapsedTime));
+                        threads.reductionDiscount = discount;
+                    }
+                }
+                else
+                {
+                    discount                  = 0;
+                    threads.reductionDiscount = 0;
+                }
+            }
         }
 
         mainThread->iterValue[iterIdx] = bestValue;
@@ -1884,7 +1899,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
 int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
-    return reductionScale - delta * 577 / rootDelta + !i * reductionScale * 197 / 512 + 982;
+    int discount       = threads.reductionDiscount.load(std::memory_order_relaxed);
+    int mult           = (512 + !i * 197) * (1024 - discount) / 1024;
+    return reductionScale * mult / 512 - delta * 577 / rootDelta + 982;
 }
 
 // elapsed() returns the time elapsed since the search started. If the
