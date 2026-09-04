@@ -41,10 +41,10 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 
 // Implied game ply based on piece count [0..32]
 constexpr int16_t ImpliedPly[33] = {
-    160, 160, 160, 145, 135, 125, 115, 105,  // 0 - 7 pcs
-     95,  90,  85,  80,  75,  70,  65,  60,  // 8 - 15 pcs
-     55,  50,  45,  40,  35,  30,  25,  20,  // 16 - 23 pcs
-     16,  12,   9,   6,   4,   2,   1,   0, 0 // 24 - 32 pcs
+    160, 160, 160, 160, 160, 157, 153, 142,  // 0 - 7 pcs
+    137, 127, 120, 112, 106, 100,  94,  88,  // 8 - 15 pcs
+     83,  77,  74,  68,  65,  59,  56,  50,  // 16 - 23 pcs
+     48,  42,  39,  32,  31,  24,  23,  18, 18 // 24 - 32 pcs
 };
 
 // Called at the beginning of the search and calculates
