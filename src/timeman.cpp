@@ -113,7 +113,7 @@ void TimeManagement::init(Search::LimitsType& limits,
                                                   - moveOverhead * (2 + mtg));
 
     double impliedPly   = ImpliedPly[std::clamp(pieceCount, 0, 32)];
-    double effectivePly = std::max(0.0, 0.75 * ply + 0.25 * impliedPly);
+    double effectivePly = std::max(0.0, 0.6 * ply + 0.4 * impliedPly);
 
     // x basetime (+ z increment)
     // If there is a healthy increment, timeLeft can exceed the actual available
