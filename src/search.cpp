@@ -997,12 +997,12 @@ Value Search::Worker::search(
         && !is_loss(beta) && !is_win(eval))
     {
         constexpr Value FutilityMult[19] = {
-          0, 49, 53, 57, 61, 65, 69, 73, 77, 80, 82, 84, 85, 85, 85, 85, 85, 85, 85};
+          0, 49, 53, 57, 61, 65, 69, 73, 77, 79, 81, 82, 83, 84, 85, 85, 85, 85, 85};
 
         Value futilityMult = FutilityMult[depth] - 20 * !ss->ttHit;
 
         Value futilityMargin = futilityMult * depth
-                             - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
+                             - (2789 * improving + 600 * (improving && opponentWorsening) - 600 * (!improving && !opponentWorsening)) * futilityMult / 1024
                              + std::abs(correctionValue) / 198435;
 
         if (eval - futilityMargin >= beta)
