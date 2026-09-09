@@ -1491,6 +1491,166 @@ bool Position::see_ge(Move m, int threshold) const {
     return bool(res);
 }
 
+// Evaluates the Static Exchange Evaluation (SEE) using dynamic PSQT inside the
+// minimax exchange tree for all participants (attackers and victims).
+// Uses alpha-beta fail-high / fail-low cutoffs in the window [alpha, beta].
+int Position::see(Move               m,
+                  int                alpha,
+                  int                beta,
+                  const DynamicPSQT* dpsqt) const {
+
+    assert(m.is_ok());
+
+    // Only deal with normal moves, assume others pass a simple SEE
+    if (m.type_of() != NORMAL)
+        return VALUE_ZERO;
+
+    Square from = m.from_sq(), to = m.to_sq();
+
+    assert(piece_on(from) != NO_PIECE);
+
+    Piece victim   = piece_on(to);
+    Piece attacker = piece_on(from);
+    Color us       = sideToMove;
+
+    int victimVal = 0;
+    if (victim != NO_PIECE)
+    {
+        victimVal = PieceValue[victim];
+        if (dpsqt && type_of(victim) != KING)
+            victimVal += (*dpsqt)[type_of(victim)][relative_square(~us, to)];
+    }
+
+    // Fail-Low (<= alpha): Even if the opponent never recaptures, if the captured
+    // piece value does not exceed alpha, we can never beat alpha.
+    if (victimVal <= alpha)
+        return victimVal;
+
+    int nextVictimVal = PieceValue[attacker];
+    if (dpsqt && type_of(attacker) != KING)
+        nextVictimVal += (*dpsqt)[type_of(attacker)][relative_square(us, from)];
+
+    // Fail-High (>= beta): If the immediate trade (victimVal - nextVictimVal) is already
+    // >= beta, then even if the opponent recaptures our attacker, our net gain meets beta
+    // (since standing pat on future turns preserves at least this net gain).
+    if (victimVal - nextVictimVal >= beta)
+        return victimVal - nextVictimVal;
+
+    int gain[32];
+    int d   = 0;
+    gain[0] = victimVal;
+
+    assert(color_of(attacker) == us);
+    Bitboard occupied  = pieces() ^ from ^ to;
+    Color    stm       = us;
+    Bitboard attackers = attackers_to(to, occupied);
+    Bitboard stmAttackers, bb;
+
+    auto pick_least_valuable = [&](Bitboard& bb_in, PieceType pt_in) {
+        Square chosen = pop_lsb(bb_in);
+        if (dpsqt && bb_in)
+        {
+            int bestVal = (*dpsqt)[pt_in][relative_square(stm, chosen)];
+            while (bb_in)
+            {
+                Square sq  = pop_lsb(bb_in);
+                int    val = (*dpsqt)[pt_in][relative_square(stm, sq)];
+                if (val < bestVal)
+                {
+                    bestVal = val;
+                    chosen  = sq;
+                }
+            }
+        }
+        return chosen;
+    };
+
+    while (true)
+    {
+        stm = ~stm;
+        attackers &= occupied;
+
+        if (!(stmAttackers = attackers & pieces(stm)))
+            break;
+
+        if (pinners(~stm) & occupied)
+        {
+            stmAttackers &= ~blockers_for_king(stm);
+
+            if (!stmAttackers)
+                break;
+        }
+
+        Square    capSq = SQ_NONE;
+        PieceType capPt = NO_PIECE_TYPE;
+
+        if ((bb = stmAttackers & pieces(PAWN)))
+        {
+            capPt = PAWN;
+            capSq = pick_least_valuable(bb, PAWN);
+            occupied ^= square_bb(capSq);
+            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
+        }
+        else if ((bb = stmAttackers & pieces(KNIGHT)))
+        {
+            capPt = KNIGHT;
+            capSq = pick_least_valuable(bb, KNIGHT);
+            occupied ^= square_bb(capSq);
+        }
+        else if ((bb = stmAttackers & pieces(BISHOP)))
+        {
+            capPt = BISHOP;
+            capSq = pick_least_valuable(bb, BISHOP);
+            occupied ^= square_bb(capSq);
+            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
+        }
+        else if ((bb = stmAttackers & pieces(ROOK)))
+        {
+            capPt = ROOK;
+            capSq = pick_least_valuable(bb, ROOK);
+            occupied ^= square_bb(capSq);
+            attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
+        }
+        else if ((bb = stmAttackers & pieces(QUEEN)))
+        {
+            capPt = QUEEN;
+            capSq = pick_least_valuable(bb, QUEEN);
+            occupied ^= square_bb(capSq);
+            const auto [bishopAttacks, rookAttacks] = both_attacks_bb(to, occupied);
+            attackers |=
+              (bishopAttacks & pieces(BISHOP, QUEEN)) | (rookAttacks & pieces(ROOK, QUEEN));
+        }
+        else  // KING
+        {
+            if (attackers & ~pieces(stm))
+                break;
+
+            capPt = KING;
+            capSq = lsb(stmAttackers & pieces(KING));
+        }
+
+        ++d;
+        assert(d < 32);
+        gain[d] = nextVictimVal - gain[d - 1];
+
+        if (capPt == KING)
+            break;
+
+        nextVictimVal = PieceValue[capPt];
+        if (dpsqt)
+            nextVictimVal += (*dpsqt)[capPt][relative_square(stm, capSq)];
+    }
+
+    // Minimax folding back to d = 0
+    while (d > 0)
+    {
+        gain[d - 1] = -std::max(-gain[d - 1], gain[d]);
+        --d;
+    }
+
+    return gain[0];
+}
+
 // Tests whether the position is drawn by 50-move rule
 // or by repetition. It does not detect stalemates.
 bool Position::is_draw(int ply) const {

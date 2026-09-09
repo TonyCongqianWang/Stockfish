@@ -38,6 +38,10 @@ namespace Stockfish {
 class TranspositionTable;
 struct SharedHistories;
 
+// DynamicPSQT stores residual piece-on-square values indexed by [piece_type][relative_square]
+// where relative_square is relative to the piece's own color.
+using DynamicPSQT = MultiArray<i16, PIECE_TYPE_NB, SQUARE_NB>;
+
 // StateInfo struct stores information needed to restore a Position object to
 // its previous state when we retract a move. Whenever a move is made on the
 // board (by calling Position::do_move), a StateInfo object must be passed.
@@ -156,6 +160,7 @@ class Position {
 
     // Static Exchange Evaluation
     bool see_ge(Move m, int threshold = 0) const;
+    int  see(Move m, int alpha, int beta, const DynamicPSQT* dpsqt = nullptr) const;
 
     // Accessing hash keys
     Key key() const;

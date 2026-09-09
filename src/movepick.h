@@ -66,7 +66,8 @@ class MovePicker {
     const SharedHistories*       sharedHistory;
     const DynamicPSQT*           dynamicPsqt;
     Move                         ttMove;
-    ExtMove *                    cur, *endCur, *endBadCaptures, *endCaptures, *endGenerated;
+    ExtMove *                    cur, *endCur, *endExceptional, *endGoodCaptures, *endCaptures,
+      *                          endGenerated;
     int                          stage;
     int                          threshold;
     Depth                        depth;

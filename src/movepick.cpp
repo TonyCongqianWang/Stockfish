@@ -18,6 +18,7 @@
 
 #include "movepick.h"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 #include <utility>
@@ -34,6 +35,7 @@ enum Stages {
     // generate main search moves
     MAIN_TT,
     CAPTURE_INIT,
+    EXCEPTIONAL_CAPTURE,
     GOOD_CAPTURE,
     QUIET_INIT,
     GOOD_QUIET,
@@ -230,17 +232,8 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
         if constexpr (Type == CAPTURES)
         {
-            int value = (*captureHistory)[pc][to][type_of(capturedPiece)]
-                      + 7 * int(PieceValue[capturedPiece]);
-
-            int deltaE = (*dynamicPsqt)[pt][relative_square(us, to)]
-                       - (*dynamicPsqt)[pt][relative_square(us, from)];
             PieceType capPt = (m.type_of() == EN_PASSANT) ? PAWN : type_of(capturedPiece);
-            if (capPt != NO_PIECE_TYPE)
-                deltaE += (*dynamicPsqt)[capPt][relative_square(~us, to)];
-            value += 8 * deltaE;
-
-            m.value = value;
+            m.value = (*captureHistory)[pc][to][capPt] + 7 * int(PieceValue[capturedPiece]);
         }
 
         else if constexpr (Type == QUIETS)
@@ -315,12 +308,67 @@ top:
         ++stage;
         return ttMove;
 
-    case CAPTURE_INIT :
+    case CAPTURE_INIT : {
+        MoveList<CAPTURES> ml(pos);
+
+        cur         = moves;
+        endCaptures = score<CAPTURES>(ml);
+
+        constexpr int beta = PawnValue / 2;
+        ExtMove       exceptional[MAX_MOVES], good[MAX_MOVES], bad[MAX_MOVES];
+        int           numEx = 0, numGood = 0, numBad = 0;
+
+        for (ExtMove* p = moves; p < endCaptures; ++p)
+        {
+            const int alpha    = -p->value / 18;
+            const int seeScore = pos.see(*p, alpha, beta, dynamicPsqt);
+
+            // Augment the move's score using the dynamic SEE score (replaces deltaE)
+            p->value += 8 * seeScore;
+
+            if (seeScore >= beta)
+                exceptional[numEx++] = *p;
+            else if (seeScore >= alpha)
+                good[numGood++] = *p;
+            else
+                bad[numBad++] = *p;
+        }
+
+        // Sort each tier by refined value (MVV/LVA + captureHistory + 8 * seeScore) descending
+        std::sort(exceptional, exceptional + numEx, [](const ExtMove& a, const ExtMove& b) {
+            return a.value > b.value;
+        });
+        std::sort(good, good + numGood, [](const ExtMove& a, const ExtMove& b) {
+            return a.value > b.value;
+        });
+        std::sort(bad, bad + numBad, [](const ExtMove& a, const ExtMove& b) {
+            return a.value > b.value;
+        });
+
+        ExtMove* p = moves;
+        for (int i = 0; i < numEx; ++i)
+            *p++ = exceptional[i];
+        endExceptional = p;
+
+        for (int i = 0; i < numGood; ++i)
+            *p++ = good[i];
+        endGoodCaptures = p;
+
+        for (int i = 0; i < numBad; ++i)
+            *p++ = bad[i];
+        endCaptures = p;
+
+        cur    = moves;
+        endCur = endExceptional;
+        ++stage;
+        goto top;
+    }
+
     case PROBCUT_INIT :
     case QCAPTURE_INIT : {
         MoveList<CAPTURES> ml(pos);
 
-        cur = endBadCaptures = moves;
+        cur    = moves;
         endCur = endCaptures = score<CAPTURES>(ml);
 
         partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
@@ -328,15 +376,20 @@ top:
         goto top;
     }
 
-    case GOOD_CAPTURE :
-        if (select([&]() {
-                if (pos.see_ge(*cur, -cur->value / 18))
-                    return true;
-                std::swap(*endBadCaptures++, *cur);
-                return false;
-            }))
+    case EXCEPTIONAL_CAPTURE :
+        if (select([]() { return true; }))
             return *(cur - 1);
 
+        cur    = endExceptional;
+        endCur = endGoodCaptures;
+        ++stage;
+        [[fallthrough]];
+
+    case GOOD_CAPTURE :
+        if (select([]() { return true; }))
+            return *(cur - 1);
+
+        cur = endCaptures;
         ++stage;
         [[fallthrough]];
 
@@ -358,8 +411,8 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over the bad captures
-        cur    = moves;
-        endCur = endBadCaptures;
+        cur    = endGoodCaptures;
+        endCur = endCaptures;
 
         ++stage;
         [[fallthrough]];
