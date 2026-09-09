@@ -145,6 +145,10 @@ using ContinuationHistory = MultiArray<PieceToHistory, PIECE_NB, SQUARE_NB>;
 // PawnHistory is addressed by the pawn structure and a move's [piece][to]
 using PawnHistory = DynStats<AtomicStats<i16, 8192, PIECE_NB, SQUARE_NB>, PAWN_HISTORY_BASE_SIZE>;
 
+// DynamicPSQT stores residual piece-on-square values indexed by [piece_type][relative_square]
+// where relative_square is relative to the piece's own color.
+using DynamicPSQT = MultiArray<i16, PIECE_TYPE_NB, SQUARE_NB>;
+
 // Correction histories record differences between the static evaluation of
 // positions and their search score. It is used to improve the static evaluation
 // used by some search heuristics.
