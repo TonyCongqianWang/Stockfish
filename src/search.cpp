@@ -989,12 +989,12 @@ Value Search::Worker::search(
 
     // Step 8. Razoring
     // If eval is really low, skip search entirely and return the qsearch value
-    if (!seekMate && eval < alpha - 350 - 132 * depth - 30 * PvNode)
+    if (!seekMate && eval <= alpha - 381 - 100 * depth)
     {
         constexpr NodeType childNodeType = nodeType == NonPV ? NonPV : PV;
         Value v = qsearch<childNodeType>(pos, ss, alpha, beta);
         // Prevent corruption of mate analysis and ensuring score is fail low for PvNodes
-        if (v <= alpha || depth <= 1 || (!PvNode && depth <= 3))
+        if (v <= alpha - 50 * depth|| (!PvNode && depth <= 3))
         {
             v = std::max(v, VALUE_TB_LOSS_IN_MAX_PLY + 1);
             v = std::max(v, alpha - 1000);
