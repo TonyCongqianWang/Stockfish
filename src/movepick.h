@@ -58,7 +58,7 @@ class MovePicker {
     template<GenType T>
     ExtMove* score(const MoveList<T>&);
 
-    const Position&              pos;
+    const Position& pos;
     const ButterflyHistory*      mainHistory;
     const LowPlyHistory*         lowPlyHistory;
     const CapturePieceToHistory* captureHistory;
@@ -66,7 +66,7 @@ class MovePicker {
     const SharedHistories*       sharedHistory;
     const DynamicPSQT*           dynamicPsqt;
     Move                         ttMove;
-    ExtMove *                    cur, *endCur, *endExceptional, *endGoodCaptures, *endCaptures,
+    ExtMove *                    cur, *endCur, *endGoodCaptures, *endCaptures,
       *                          endGenerated;
     int                          stage;
     int                          threshold;

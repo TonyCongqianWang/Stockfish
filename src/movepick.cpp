@@ -35,7 +35,6 @@ enum Stages {
     // generate main search moves
     MAIN_TT,
     CAPTURE_INIT,
-    EXCEPTIONAL_CAPTURE,
     GOOD_CAPTURE,
     QUIET_INIT,
     GOOD_QUIET,
@@ -314,30 +313,25 @@ top:
         cur         = moves;
         endCaptures = score<CAPTURES>(ml);
 
-        constexpr int beta = PawnValue / 2;
-        ExtMove       exceptional[MAX_MOVES], good[MAX_MOVES], bad[MAX_MOVES];
-        int           numEx = 0, numGood = 0, numBad = 0;
+        ExtMove good[MAX_MOVES], bad[MAX_MOVES];
+        int     numGood = 0, numBad = 0;
 
         for (ExtMove* p = moves; p < endCaptures; ++p)
         {
             const int alpha    = -p->value / 18;
+            const int beta     = alpha + PawnValue / 2;
             const int seeScore = pos.see(*p, alpha, beta, dynamicPsqt);
 
-            // Augment the move's score using the dynamic SEE score (replaces deltaE)
-            p->value += 8 * seeScore;
+            constexpr int cap = 64;
+            p->value += std::clamp(seeScore / 8, -cap, cap);
 
-            if (seeScore >= beta)
-                exceptional[numEx++] = *p;
-            else if (seeScore >= alpha)
+            if (seeScore >= alpha)
                 good[numGood++] = *p;
             else
                 bad[numBad++] = *p;
         }
 
-        // Sort each tier by refined value (MVV/LVA + captureHistory + 8 * seeScore) descending
-        std::sort(exceptional, exceptional + numEx, [](const ExtMove& a, const ExtMove& b) {
-            return a.value > b.value;
-        });
+        // Sort each tier independently
         std::sort(good, good + numGood, [](const ExtMove& a, const ExtMove& b) {
             return a.value > b.value;
         });
@@ -346,10 +340,6 @@ top:
         });
 
         ExtMove* p = moves;
-        for (int i = 0; i < numEx; ++i)
-            *p++ = exceptional[i];
-        endExceptional = p;
-
         for (int i = 0; i < numGood; ++i)
             *p++ = good[i];
         endGoodCaptures = p;
@@ -359,7 +349,7 @@ top:
         endCaptures = p;
 
         cur    = moves;
-        endCur = endExceptional;
+        endCur = endGoodCaptures;
         ++stage;
         goto top;
     }
@@ -375,15 +365,6 @@ top:
         ++stage;
         goto top;
     }
-
-    case EXCEPTIONAL_CAPTURE :
-        if (select([]() { return true; }))
-            return *(cur - 1);
-
-        cur    = endExceptional;
-        endCur = endGoodCaptures;
-        ++stage;
-        [[fallthrough]];
 
     case GOOD_CAPTURE :
         if (select([]() { return true; }))
@@ -429,8 +410,8 @@ top:
         [[fallthrough]];
 
     case BAD_QUIET :
-        if (!skipQuiets)
-            return select([&]() { return cur->value <= goodQuietThreshold; });
+        if (!skipQuiets && select([&]() { return cur->value <= goodQuietThreshold; }))
+            return *(cur - 1);
 
         return Move::none();
 
