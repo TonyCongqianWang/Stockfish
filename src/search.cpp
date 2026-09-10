@@ -998,6 +998,8 @@ Value Search::Worker::search(
             v = std::max(v, alpha - 1000);
             return v;
         }
+        // Evidence that eval is unstable, increase depth
+        depth++;
     }
 
     // Step 9. Futility pruning: child node
