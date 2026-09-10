@@ -41,10 +41,10 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 
 // Implied game ply based on piece count [0..32]
 constexpr int16_t ImpliedPly[33] = {
-    160, 160, 160, 160, 160, 157, 153, 142,  // 0 - 7 pcs
-    137, 127, 120, 112, 106, 100,  94,  88,  // 8 - 15 pcs
-     83,  77,  74,  68,  65,  59,  56,  50,  // 16 - 23 pcs
-     48,  42,  39,  32,  31,  24,  23,  18, 18 // 24 - 32 pcs
+    155, 155, 155, 145, 145, 135, 135, 135,  // 0 - 7 pcs
+    135, 127, 120, 112, 106, 100,  94,  88,  // 8 - 15 pcs
+     83,  77,  74,  67,  64,  57,  54,  47,  // 16 - 23 pcs
+     47,  35,  35,  25,  25,  15,  15,  10, 10 // 24 - 32 pcs
 };
 
 // Called at the beginning of the search and calculates
@@ -112,8 +112,14 @@ void TimeManagement::init(Search::LimitsType& limits,
     TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
                                                   - moveOverhead * (2 + mtg));
 
-    double impliedPly   = ImpliedPly[std::clamp(pieceCount, 0, 32)];
-    double effectivePly = std::max(0.0, 0.85 * ply + 0.15 * impliedPly);
+    double effectivePly;
+    if (ply >= ImpliedPly[32])
+    {
+        double impliedPly   = ImpliedPly[std::clamp(pieceCount, 0, 32)];
+        effectivePly = std::max(0.0, 0.75 * ply + 0.25 * impliedPly);
+    }
+    else
+        effectivePly = ply;
 
     // x basetime (+ z increment)
     // If there is a healthy increment, timeLeft can exceed the actual available
