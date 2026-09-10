@@ -714,7 +714,7 @@ void Search::Worker::update_dynamic_psqt(const Position& pos, Value staticEval) 
     if (step == 0)
         return;
 
-    // Update weights via LMS
+    // Update weights via LMS with slight weight decay
     for (Color c : {us, them})
     {
         const int sign  = (c == us ? 1 : -1);
@@ -725,8 +725,10 @@ void Search::Worker::update_dynamic_psqt(const Position& pos, Value staticEval) 
             Square    s     = pop_lsb(b);
             PieceType pt    = type_of(pos.piece_on(s));
             Square    relSq = relative_square(c, s);
+            int       current = dynamicPsqt[pt][relSq];
+            current -= (current / 64) + (current > 0) - (current < 0);
             dynamicPsqt[pt][relSq] =
-              std::clamp(int(dynamicPsqt[pt][relSq]) + delta, -2048, 2048);
+              std::clamp(current + delta, -2048, 2048);
         }
     }
 }
@@ -1033,7 +1035,8 @@ Value Search::Worker::search(
             sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << evalDiff * 13;
     }
 
-    if (depth >= 3 && (pos.key() & 0x7) == 0 && std::abs(ss->staticEval) < VALUE_TB_WIN_IN_MAX_PLY)
+    if (depth >= 2 && (pos.key() & 0x3) == 0 && std::abs(ss->staticEval) < VALUE_TB_WIN_IN_MAX_PLY
+        && std::abs(correctionValue) < 131072 * 32)
         update_dynamic_psqt(pos, ss->staticEval);
 
 

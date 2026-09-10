@@ -257,12 +257,9 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            if (dynamicPsqt)
-            {
-                int deltaE = (*dynamicPsqt)[pt][relative_square(us, to)]
-                           - (*dynamicPsqt)[pt][relative_square(us, from)];
-                value += 16 * deltaE;
-            }
+            int deltaE = (*dynamicPsqt)[pt][relative_square(us, to)]
+                       - (*dynamicPsqt)[pt][relative_square(us, from)];
+            value += 16 * deltaE;
 
             m.value = value;
         }
