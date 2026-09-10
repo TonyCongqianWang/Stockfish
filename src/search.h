@@ -338,6 +338,7 @@ class Worker {
     TTMoveHistory    ttMoveHistory;
     SharedHistories& sharedHistory;
     ContinuationHistory (&continuationHistory)[2][2];
+    DynamicPSQT dynamicPsqt;
 
    private:
     bool iterative_deepening();
@@ -370,6 +371,7 @@ class Worker {
     TimePoint elapsed() const;
 
     Value evaluate(const Position&);
+    void  update_dynamic_psqt(const Position& pos, Value staticEval);
 
     LimitsType limits;
 

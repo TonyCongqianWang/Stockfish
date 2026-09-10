@@ -686,10 +686,57 @@ void Search::Worker::undo_move(Position& pos, const Move move) {
 void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 
+void Search::Worker::update_dynamic_psqt(const Position& pos, Value staticEval) {
+    const Color us   = pos.side_to_move();
+    const Color them = ~us;
+
+    // Nominal material balance from the perspective of side to move
+    const int nominalEval = (pos.non_pawn_material(us) + pos.count<PAWN>(us) * PawnValue)
+                          - (pos.non_pawn_material(them) + pos.count<PAWN>(them) * PawnValue);
+
+    // Compute current dynamic linear estimate
+    int predictedEval = nominalEval;
+    for (Color c : {us, them})
+    {
+        const int sign = (c == us ? 1 : -1);
+        Bitboard  b    = pos.pieces(c);
+        while (b)
+        {
+            Square    s     = pop_lsb(b);
+            PieceType pt    = type_of(pos.piece_on(s));
+            Square    relSq = relative_square(c, s);
+            predictedEval += sign * dynamicPsqt[pt][relSq];
+        }
+    }
+
+    const int error = int(staticEval) - predictedEval;
+    const int step  = std::clamp(error / 32, -128, 128);
+    if (step == 0)
+        return;
+
+    // Update weights via LMS
+    for (Color c : {us, them})
+    {
+        const int sign  = (c == us ? 1 : -1);
+        const int delta = sign * step;
+        Bitboard  b     = pos.pieces(c);
+        while (b)
+        {
+            Square    s     = pop_lsb(b);
+            PieceType pt    = type_of(pos.piece_on(s));
+            Square    relSq = relative_square(c, s);
+            dynamicPsqt[pt][relSq] =
+              std::clamp(int(dynamicPsqt[pt][relSq]) + delta, -2048, 2048);
+        }
+    }
+}
+
+
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
     mainHistory.fill(-5);
     captureHistory.fill(-742);
+    dynamicPsqt.fill(i16(0));
 
     // Each thread clears its part of the dynamically-sized shared histories.
     // The constant-size continuation history is initialized by thread 0 of each NUMA node.
@@ -986,6 +1033,9 @@ Value Search::Worker::search(
             sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << evalDiff * 13;
     }
 
+    if (depth >= 3 && (pos.key() & 0x7) == 0 && std::abs(ss->staticEval) < VALUE_TB_WIN_IN_MAX_PLY)
+        update_dynamic_psqt(pos, ss->staticEval);
+
 
     // Step 8. Razoring
     // If eval is really low, skip search entirely and return the qsearch value
@@ -1067,7 +1117,7 @@ Value Search::Worker::search(
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
+        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory, &dynamicPsqt);
         Depth      probCutDepth = depth - (improving ? 5 : 3);
 
         while ((move = mp.next_move()) != Move::none())
@@ -1117,7 +1167,7 @@ moves_loop:  // When in check, search starts here
 
 
     MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
-                  &sharedHistory, ss->ply);
+                  &sharedHistory, &dynamicPsqt, ss->ply);
 
     value = bestValue;
 
@@ -1775,7 +1825,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // to search the moves. We presently use two stages of move generator in
     // quiescence search: captures, or evasions only when in check.
     MovePicker mp(pos, ttData.move, DEPTH_QS, &mainHistory, &lowPlyHistory, &captureHistory,
-                  contHist, &sharedHistory, ss->ply);
+                  contHist, &sharedHistory, &dynamicPsqt, ss->ply);
 
     // Step 5. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.

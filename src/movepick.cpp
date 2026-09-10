@@ -158,6 +158,7 @@ MovePicker::MovePicker(const Position&              p,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
                        const SharedHistories*       sh,
+                       const DynamicPSQT*           dpsqt,
                        int                          pl) :
     pos(p),
     mainHistory(mh),
@@ -165,6 +166,7 @@ MovePicker::MovePicker(const Position&              p,
     captureHistory(cph),
     continuationHistory(ch),
     sharedHistory(sh),
+    dynamicPsqt(dpsqt),
     ttMove(ttm),
     depth(d),
     ply(pl) {
@@ -178,9 +180,14 @@ MovePicker::MovePicker(const Position&              p,
 
 // MovePicker constructor for ProbCut: we generate captures with Static Exchange
 // Evaluation (SEE) greater than or equal to the given threshold.
-MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
+MovePicker::MovePicker(const Position&              p,
+                       Move                         ttm,
+                       int                          th,
+                       const CapturePieceToHistory* cph,
+                       const DynamicPSQT*           dpsqt) :
     pos(p),
     captureHistory(cph),
+    dynamicPsqt(dpsqt),
     ttMove(ttm),
     threshold(th) {
     assert(!pos.checkers());
@@ -249,6 +256,13 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+
+            if (dynamicPsqt)
+            {
+                int deltaE = (*dynamicPsqt)[pt][relative_square(us, to)]
+                           - (*dynamicPsqt)[pt][relative_square(us, from)];
+                value += 16 * deltaE;
+            }
 
             m.value = value;
         }
