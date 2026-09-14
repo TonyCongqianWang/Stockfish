@@ -990,7 +990,14 @@ Value Search::Worker::search(
         mainHistory[~us][((ss - 1)->currentMove).raw()] << evalDiff * 11;
         if (!ttHit && type_of(pos.piece_on(prevSq)) != PAWN
             && ((ss - 1)->currentMove).type_of() != PROMOTION)
-            sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << evalDiff * 13;
+        {
+            Square fromSq = ((ss - 1)->currentMove).from_sq();
+            Piece  pc     = pos.piece_on(prevSq);
+            auto&  pe     = sharedHistory.pawn_entry(pos)[pc];
+
+            pe[prevSq] <<  evalDiff * 10;
+            pe[fromSq] << -evalDiff * 5;
+        }
     }
 
 
