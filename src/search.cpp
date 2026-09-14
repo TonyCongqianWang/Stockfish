@@ -55,6 +55,9 @@ namespace Stockfish {
 static constexpr std::array<int, 16> lmrDivisor = {3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762,
                                                    2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542};
 
+static constexpr std::array<int, 17> quietBonusLUT = {
+  0, 52, 195, 290, 375, 450, 520, 585, 645, 700, 750, 795, 835, 870, 900, 925, 945};
+
 namespace TB = Tablebases;
 
 void syzygy_extend_pv(const OptionsMap&            options,
@@ -1985,7 +1988,7 @@ void update_all_stats(const Position& pos,
     PieceType              capturedPiece;
 
     int bonus =
-      std::min(133 * depth - 81, 1487) + 364 * (bestMove == ttMove) + (ss - 1)->statScore / 28;
+      quietBonusLUT[std::min(depth, 16)] + 364 * (bestMove == ttMove) + (ss - 1)->statScore / 28;
     int malus = std::min(968 * depth - 235, 2244);
 
     if (!PvNode)
