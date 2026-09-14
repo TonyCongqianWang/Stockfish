@@ -232,7 +232,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             // histories
             int value = 2 * (*mainHistory)[us][m.raw()];
             const auto& pe = sharedHistory->pawn_entry(pos)[pc];
-            value += (13 * pe[to] - 3 * pe[from]) / 16;
+            value += (18 * pe[to] - 3 * pe[from]) / 16;
             value += (*continuationHistory[0])[pc][to];
             value += (*continuationHistory[1])[pc][to];
             value += (*continuationHistory[2])[pc][to];
