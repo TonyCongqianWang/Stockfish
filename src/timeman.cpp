@@ -49,7 +49,9 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 void TimeManagement::init(Search::LimitsType& limits,
                           const Position&     pos,
                           const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          double&             initialGameSec,
+                          u64                 totalGameNodes,
+                          TimePoint           totalGameTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     Color us  = pos.side_to_move();
@@ -103,15 +105,24 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
-        // Characteristic total game duration scale: tau = log10(totalGameSec)
-        // Based on empirical average game length of 65 moves
-        if (originalTimeAdjust < 0)
-        {
-            double totalGameSec =
+        // Characteristic total game duration scale: tau = log10(effectiveGameSec)
+        // Scaled by effective compute effort across threads and hardware speed
+        if (initialGameSec <= 0.0)
+            initialGameSec =
               (scaledTime + (limits.inc[us] / scaleFactor) * 65) / 1000.0;
-            originalTimeAdjust = std::log10(std::max(1.0, totalGameSec));
-        }
-        double tau = originalTimeAdjust;
+
+        int    threadsCount = std::max(1, int(options["Threads"]));
+        double effectiveNPS = 2'000'000.0 * std::pow(threadsCount, 0.85);
+
+        if (useNodesTime)
+            effectiveNPS = double(npmsec) * 1000.0;
+        else if (totalGameTimeMs >= 100)
+            effectiveNPS = (double(totalGameNodes) * 1000.0) / double(totalGameTimeMs);
+
+        // Reference baseline: 1.0 Mnps (Fishtest single-thread reference)
+        const double referenceNPS     = 1'000'000.0;
+        double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
+        double       tau              = std::log10(std::max(1.0, effectiveGameSec));
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -124,7 +135,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
         double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
         double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double maxOverdraft = std::clamp(0.60 + 0.60 * (tau - 1.22), 0.20, 1.20);
+        double maxOverdraft = std::max(0.20, 0.70 + 0.48 * (tau - 1.22));
         double f_bank       = 1.0 + maxOverdraft * matFrac;
         double bankDraw     = nominalBankDraw * f_bank;
 
