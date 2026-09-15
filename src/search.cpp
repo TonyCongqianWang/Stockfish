@@ -199,8 +199,7 @@ void Search::Worker::start_searching() {
         return;
     }
 
-    main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(),
-                            rootPos.count<ALL_PIECES>(), options,
+    main_manager()->tm.init(limits, rootPos, options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
     main_manager()->updates.onStart();
