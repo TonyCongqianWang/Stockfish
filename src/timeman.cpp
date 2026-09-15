@@ -107,8 +107,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Based on empirical average game length of 65 moves
         if (originalTimeAdjust < 0)
         {
-            double totalGameSec = (limits.time[us] + limits.inc[us] * 65) / 1000.0;
-            originalTimeAdjust  = std::log10(std::max(1.0, totalGameSec));
+            double totalGameSec =
+              (scaledTime + (limits.inc[us] / scaleFactor) * 65) / 1000.0;
+            originalTimeAdjust = std::log10(std::max(1.0, totalGameSec));
         }
         double tau = originalTimeAdjust;
 
@@ -120,12 +121,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - limits.inc[us] - safetyReserve);
         double    nominalBankDraw = double(timeBank) / M;
 
-        // 3. Bank draw with baseline offset and complexity overdraft
+        // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
         double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
         double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double baseDraw     = std::clamp(0.80 + 1.60 * (tau - 1.0), 0.8, 3.5);
-        double maxOverdraft = std::clamp(1.50 + 3.50 * (tau - 1.0), 0.0, 4.0);
-        double f_bank       = baseDraw + maxOverdraft * matFrac;
+        double maxOverdraft = std::clamp(0.60 + 0.60 * (tau - 1.22), 0.20, 1.20);
+        double f_bank       = 1.0 + maxOverdraft * matFrac;
         double bankDraw     = nominalBankDraw * f_bank;
 
         // 4. Base move budget combining overdrafted bank draw and increment
@@ -133,8 +133,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (enables banking increment early)
-        double w_ply = 1.0 - 0.705 * (45.0 / (45.0 + ply));
-        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - moveOverhead));
+        double w_ply    = 1.0 - 0.25 * (24.0 / (24.0 + ply));
+        double ohDeduct = std::min(double(moveOverhead), effectiveInc);
+        optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - ohDeduct));
 
         // 6. Decrease time usage if behind in time
         if (!useNodesTime)
