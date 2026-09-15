@@ -22,6 +22,7 @@
 #include <cassert>
 #include <cmath>
 
+#include "position.h"
 #include "search.h"
 #include "types.h"
 #include "ucioption.h"
@@ -41,25 +42,18 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
     availableNodes = std::max(i64(0), availableNodes - nodes);
 }
 
-// Implied game ply based on piece count [0..32]
-constexpr int16_t ImpliedPly[33] = {
-    155, 155, 155, 145, 145, 135, 135, 135,  // 0 - 7 pcs
-    135, 127, 120, 112, 106, 100,  94,  88,  // 8 - 15 pcs
-     83,  77,  74,  67,  64,  57,  54,  47,  // 16 - 23 pcs
-     47,  35,  35,  25,  25,  15,  15,  10, 10 // 24 - 32 pcs
-};
-
 // Called at the beginning of the search and calculates
 // the bounds of time allowed for the current game ply. We currently support:
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
 void TimeManagement::init(Search::LimitsType& limits,
-                          Color               us,
-                          int                 ply,
-                          int                 pieceCount,
+                          const Position&     pos,
                           const OptionsMap&   options,
                           double&             originalTimeAdjust) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
+
+    Color us  = pos.side_to_move();
+    int   ply = pos.game_ply();
 
     // If we have no time, we don't need to fully initialize TM.
     // startTime is used by movetime and useNodesTime is used in elapsed calls.
@@ -76,10 +70,6 @@ void TimeManagement::init(Search::LimitsType& limits,
     }
 
     TimePoint moveOverhead = TimePoint(options["Move Overhead"]);
-
-    // optScale is a percentage of available time to use for the current move.
-    // maxScale is a multiplier applied to optimumTime.
-    double optScale, maxScale;
 
     // If we have to play in 'nodes as time' mode, then convert from time
     // to nodes, and use resulting values in time management formulas.
@@ -110,74 +100,85 @@ void TimeManagement::init(Search::LimitsType& limits,
     const i64       scaleFactor = useNodesTime ? npmsec : 1;
     const TimePoint scaledTime  = std::max(TimePoint(1), limits.time[us] / scaleFactor);
 
-    // Maximum move horizon
-    int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
-
-    // If less than one second, gradually reduce mtg.
-    // In cyclic time controls we keep the actual movestogo as horizon.
-    if (scaledTime < 1000 && limits.movestogo == 0)
-        mtg = int(scaledTime * 0.05);
-
-    // Make sure timeLeft is > 0 since we may use it as a divisor
-    TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
-                                                  - moveOverhead * (2 + mtg));
-
-    double effectivePly;
-    if (ply >= ImpliedPly[32])
-    {
-        double impliedPly   = ImpliedPly[std::clamp(pieceCount, 0, 32)];
-        effectivePly = std::max(0.0, 0.75 * ply + 0.25 * impliedPly);
-    }
-    else
-        effectivePly = ply;
-
-    // x basetime (+ z increment)
-    // If there is a healthy increment, timeLeft can exceed the actual available
-    // game time for the current move, so also cap to a percentage of available game time.
+    // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
-        // Extra time according to timeLeft
+        // Characteristic total game duration scale: tau = log10(totalGameSec)
+        // Based on empirical average game length of 65 moves
         if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3272 * std::log10(timeLeft) - 0.4141;
+        {
+            double totalGameSec = (limits.time[us] + limits.inc[us] * 65) / 1000.0;
+            originalTimeAdjust  = std::log10(std::max(1.0, totalGameSec));
+        }
+        double tau = originalTimeAdjust;
 
-        // Calculate time constants based on current time left.
+        // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
+        double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
+
+        // 2. Time Bank & Nominal Draw
+        TimePoint safetyReserve   = moveOverhead * 2;
+        TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - limits.inc[us] - safetyReserve);
+        double    nominalBankDraw = double(timeBank) / M;
+
+        // 3. Bank draw with baseline offset and complexity overdraft
+        double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
+        double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
+        double baseDraw     = std::clamp(0.80 + 1.60 * (tau - 1.0), 0.8, 3.5);
+        double maxOverdraft = std::clamp(1.50 + 3.50 * (tau - 1.0), 0.0, 4.0);
+        double f_bank       = baseDraw + maxOverdraft * matFrac;
+        double bankDraw     = nominalBankDraw * f_bank;
+
+        // 4. Base move budget combining overdrafted bank draw and increment
+        double effectiveInc   = std::min(double(limits.inc[us]), double(limits.time[us]));
+        double baseMoveBudget = bankDraw + effectiveInc;
+
+        // 5. Early ply discount applied to base budget (enables banking increment early)
+        double w_ply = 1.0 - 0.705 * (45.0 / (45.0 + ply));
+        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - moveOverhead));
+
+        // 6. Decrease time usage if behind in time
+        if (!useNodesTime)
+        {
+            double timeAdvantage =
+              (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
+            optimumTime =
+              std::max(TimePoint(1), TimePoint(optimumTime * (1.0 + 0.9 * std::min(timeAdvantage, 0.0))));
+        }
+
+        // 7. Dynamic maxScale ceiling and hard safety caps
         double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
         double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
+        double maxScale     = std::min(6.873, maxConstant + ply / 12.352);
 
-        optScale = std::min(0.012112 + std::pow(effectivePly + 3.22713, 0.46866) * optConstant,
-                            0.19404 * limits.time[us] / timeLeft)
-                 * originalTimeAdjust;
-
-        maxScale = std::min(6.873, maxConstant + effectivePly / 12.352);
+        TimePoint maxClockCap = TimePoint(0.8097 * limits.time[us] - moveOverhead);
+        optimumTime           = std::min(optimumTime, maxClockCap);
+        maximumTime           = std::max(optimumTime, std::min(maxClockCap, TimePoint(optimumTime * maxScale)));
     }
 
-    // x moves in y seconds (+ z increment)
+    // Cyclic time controls (x moves in y seconds + z increment)
     else
     {
-        optScale = std::min((0.88 + effectivePly / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
-        maxScale = 1.3 + 0.11 * mtg;
-    }
+        int mtg = std::min(limits.movestogo, 50);
 
-    // Decrease time usage if behind in time.
-    // This is skipped in two cases:
-    // - if the nodestime option is used we can't calculate the opponent nodes budget in a deterministic way.
-    // - if we use a cyclic time management (like 40/10) calculating time advantage for the last move (movestogo = 1)
-    //   can be vastly off, because if the opponent had done his last move before us his time budget includes already
-    //   the next cycle time increment but our not. This leads to a unnecessary big decrease in time usage which favors blunders.
-    // Warning: don't remove this conditions.
-    if (!useNodesTime && limits.movestogo != 1)
-    {
-        double timeAdvantage =
-          (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
-        optScale *= 1 + 0.9 * std::min(timeAdvantage, 0.0);
-    }
+        // Make sure timeLeft is > 0 since we may use it as a divisor
+        TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
+                                                      - moveOverhead * (2 + mtg));
 
-    // Limit the maximum possible time for this move
-    optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
-    maximumTime =
-      TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
-                                                       maxScale * optimumTime)));
+        double optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
+        double maxScale = 1.3 + 0.11 * mtg;
+
+        if (!useNodesTime && limits.movestogo != 1)
+        {
+            double timeAdvantage =
+              (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
+            optScale *= 1 + 0.9 * std::min(timeAdvantage, 0.0);
+        }
+
+        optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
+        maximumTime =
+          TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
+                                                           maxScale * optimumTime)));
+    }
 
     if (options["Ponder"])
         optimumTime += optimumTime / 4;

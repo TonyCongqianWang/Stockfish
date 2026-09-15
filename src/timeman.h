@@ -27,6 +27,7 @@
 namespace Stockfish {
 
 class OptionsMap;
+class Position;
 enum Color : u8;
 
 namespace Search {
@@ -38,9 +39,7 @@ struct LimitsType;
 class TimeManagement {
    public:
     void init(Search::LimitsType& limits,
-              Color               us,
-              int                 ply,
-              int                 pieceCount,
+              const Position&     pos,
               const OptionsMap&   options,
               double&             originalTimeAdjust);
 
