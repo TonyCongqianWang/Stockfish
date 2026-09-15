@@ -200,7 +200,9 @@ void Search::Worker::start_searching() {
     }
 
     main_manager()->tm.init(limits, rootPos, options,
-                            main_manager()->originalTimeAdjust);
+                            main_manager()->initialGameSec,
+                            main_manager()->totalGameNodes,
+                            main_manager()->totalGameTimeMs);
     tt.new_search();
     main_manager()->updates.onStart();
 
@@ -236,6 +238,12 @@ void Search::Worker::start_searching() {
     if (limits.npmsec)
         main_manager()->tm.advance_nodes_time(threads.nodes_searched()
                                               - limits.inc[rootPos.side_to_move()]);
+
+    if (!limits.depth && limits.time[rootPos.side_to_move()] > 0)
+    {
+        main_manager()->totalGameNodes  += threads.nodes_searched();
+        main_manager()->totalGameTimeMs += main_manager()->tm.elapsed_time();
+    }
 
     Worker* bestThread = this;
     Skill   skill =
