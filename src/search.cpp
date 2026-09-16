@@ -1061,10 +1061,7 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Step 11. Internal iterative reductions
-    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
-        depth--;
+    // Handled in Step 18 LMR to avoid node depth corruption
 
     // Step 12. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
@@ -1339,7 +1336,7 @@ moves_loop:  // When in check, search starts here
         r -= std::abs(correctionValue) / 26310;
 
         // Increase reduction for cut nodes
-        if (cutNode)
+        if (cutNode && moveCount > 1)
             r += 4026 + 933 * !ttData.move;
 
         // Increase reduction if ttMove is a capture
@@ -1353,6 +1350,14 @@ moves_loop:  // When in check, search starts here
         // For first picked move (ttMove) reduce reduction
         else if (move == ttData.move)
             r -= 2179;
+
+        // Increase reduction if ttMove is not present
+        if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
+            r += 1300;
+
+        // Increase reductions for completely unsearched non-PV side branches
+        if (ttData.bound == BOUND_NONE && !PvNode)
+            r = r * 5 / 4;
 
         if (capture)
             ss->statScore = 873 * int(PieceValue[pos.captured_piece()]) / 128
@@ -1373,18 +1378,18 @@ moves_loop:  // When in check, search starts here
         if (allNode)
             r += r * 276 / (256 * depth + 268);
 
-        // Apply the computed LMR
-        if (depth >= 2 && moveCount > 1)
+        // Step 18. Apply the computed LMR for all non-PV moves and late PV moves
+        if (!PvNode || moveCount > 1)
         {
-            // In general we want to cap the LMR depth search at newDepth, but when
-            // reduction is negative, we allow this move a limited search extension
-            // beyond the first move depth.
-            // To prevent problems when the max value is less than the min value,
-            // std::clamp has been replaced by a more robust implementation.
-            Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+            const bool  canExtend = depth > 2 && moveCount > 1;
+            const Depth minDepth  = newDepth > 0 ? 1 : 0;
+            Depth       moveDepth =
+              std::max(minDepth, std::min(newDepth - r / 1024, newDepth + 2 * canExtend))
+              + PvNode * canExtend;
 
-            ss->reduction = newDepth - d;
-            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
+            ss->reduction = newDepth - moveDepth;
+            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, moveDepth,
+                                           moveCount > 1 || !cutNode);
             ss->reduction = 0;
 
             // Do a full-depth search when reduced LMR search fails high
@@ -1393,29 +1398,17 @@ moves_loop:  // When in check, search starts here
             {
                 // Adjust full-depth search based on LMR results - if the result was
                 // good enough search deeper, if it was bad enough search shallower.
-                const bool doDeeperSearch    = d < newDepth && value > bestValue + 53;
+                const bool doDeeperSearch    = moveDepth < newDepth && value > bestValue + 53;
                 const bool doShallowerSearch = value < bestValue + 8;
 
                 newDepth += doDeeperSearch - doShallowerSearch;
 
-                if (newDepth > d)
+                if (newDepth > moveDepth)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
                 // Post LMR continuation history updates
                 update_continuation_histories(ss, movedPiece, move.to_sq(), 1334);
             }
-        }
-
-        // Step 19. Full-depth search when LMR is skipped
-        else if (!PvNode || moveCount > 1)
-        {
-            // Increase reduction if ttMove is not present
-            if (!ttData.move)
-                r += 1127;
-
-            // If expected reduction is high, we reduce search depth here
-            value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                   newDepth - (r > 5234) - (r > 5487 && newDepth > 2), !cutNode);
         }
 
         // Step 20. For PV nodes only, do a full PV search on the first move
