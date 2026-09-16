@@ -1353,7 +1353,7 @@ moves_loop:  // When in check, search starts here
 
         // Increase reduction if ttMove is not present
         if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
-            r += 1300;
+            r += 2600 + 1024 * ss->ttPv;
 
         // Increase reductions for completely unsearched non-PV side branches
         if (ttData.bound == BOUND_NONE && !PvNode)
