@@ -109,7 +109,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Scaled by effective compute effort across threads and hardware speed
         if (initialGameSec <= 0.0)
             initialGameSec =
-              (scaledTime + (limits.inc[us] / scaleFactor) * 65) / 1000.0;
+              (scaledTime + (limits.inc[us] / scaleFactor) * 100) / 1000.0;
 
         int    threadsCount = std::max(1, int(options["Threads"]));
         double effectiveNPS = 2'000'000.0 * std::pow(threadsCount, 0.85);
@@ -135,7 +135,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
         double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
         double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double maxOverdraft = std::max(0.20, 0.70 + 0.48 * (tau - 1.22));
+        double maxOverdraft = std::max(0.20, 0.60 + 0.36 * (tau - 1.15));
         double f_bank       = 1.0 + maxOverdraft * matFrac;
         double bankDraw     = nominalBankDraw * f_bank;
 
@@ -145,7 +145,8 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 5. Early ply discount applied to base budget (enables banking increment early)
         double w_ply    = 1.0 - 0.25 * (24.0 / (24.0 + ply));
-        double ohDeduct = std::min(double(moveOverhead), effectiveInc);
+        double ohMargin = (double(limits.time[us]) < M * double(moveOverhead)) ? 2.5 : 1.5;
+        double ohDeduct = ohMargin * double(moveOverhead);
         optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - ohDeduct));
 
         // 6. Decrease time usage if behind in time
@@ -162,7 +163,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
         double maxScale     = std::min(6.873, maxConstant + ply / 12.352);
 
-        TimePoint maxClockCap = TimePoint(0.8097 * limits.time[us] - moveOverhead);
+        TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
         optimumTime           = std::min(optimumTime, maxClockCap);
         maximumTime           = std::max(optimumTime, std::min(maxClockCap, TimePoint(optimumTime * maxScale)));
     }
