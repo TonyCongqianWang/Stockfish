@@ -105,11 +105,16 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
+        // Net per-move increment cash flow after accounting for communication/execution overhead.
+        // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
+        double effectiveIncMs =
+          (double(limits.inc[us]) - double(moveOverhead)) / double(scaleFactor);
+        double effectiveInc = double(limits.inc[us] - moveOverhead);
+
         // Characteristic total game duration scale: tau = log10(effectiveGameSec)
         // Scaled by effective compute effort across threads and hardware speed
         if (initialGameSec <= 0.0)
-            initialGameSec =
-              (scaledTime + (limits.inc[us] / scaleFactor) * 100) / 1000.0;
+            initialGameSec = std::max(0.1, (scaledTime + effectiveIncMs * 68.0) / 1000.0);
 
         int    threadsCount = std::max(1, int(options["Threads"]));
         double effectiveNPS = 2'000'000.0 * std::pow(threadsCount, 0.85);
@@ -128,8 +133,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
 
         // 2. Time Bank & Nominal Draw
-        TimePoint safetyReserve   = moveOverhead * 2;
-        TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - limits.inc[us] - safetyReserve);
+        TimePoint safetyReserve   = moveOverhead * 4;
+        TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - safetyReserve);
         double    nominalBankDraw = double(timeBank) / M;
 
         // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
@@ -139,23 +144,30 @@ void TimeManagement::init(Search::LimitsType& limits,
         double f_bank       = 1.0 + maxOverdraft * matFrac;
         double bankDraw     = nominalBankDraw * f_bank;
 
-        // 4. Base move budget combining overdrafted bank draw and increment
-        double effectiveInc   = std::min(double(limits.inc[us]), double(limits.time[us]));
-        double baseMoveBudget = bankDraw + effectiveInc;
-
-        // 5. Early ply discount applied to base budget (enables banking increment early)
-        double w_ply    = 1.0 - 0.25 * (24.0 / (24.0 + ply));
-        double ohMargin = (double(limits.time[us]) < M * double(moveOverhead)) ? 1.5 : 1.0;
-        double ohDeduct = ohMargin * double(moveOverhead);
-        optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - ohDeduct));
-
-        // 6. Decrease time usage if behind in time
+        // Decrease time bank draw if behind in time.
+        // This is skipped if the nodestime option is used because we can't calculate
+        // the opponent nodes budget in a deterministic way.
+        // We apply timeAdvantage strictly to bankDraw to conserve bank without
+        // starving the engine below its incoming per-move increment cash flow.
         if (!useNodesTime)
         {
             double timeAdvantage =
-              (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
-            optimumTime =
-              std::max(TimePoint(1), TimePoint(optimumTime * (1.0 + 0.9 * std::min(timeAdvantage, 0.0))));
+              (double(limits.time[us]) - double(limits.time[~us])) / (1.0 + double(limits.time[us]) + double(limits.time[~us]));
+            bankDraw *= (1.0 + 0.9 * std::min(timeAdvantage, 0.0));
+        }
+
+        // 4. Base move budget combining overdrafted bank draw and net increment cash flow
+        double baseMoveBudget = bankDraw + effectiveInc;
+
+        // 5. Early ply discount applied to base budget (enables banking increment early)
+        double w_ply = 1.0 - 0.25 * (24.0 / (24.0 + ply));
+        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+
+        // 6. Gentle discount (up to 20%) when time left is smaller than 2x optimum time to avoid paycheck-to-paycheck trap
+        if (double(limits.time[us]) < 2.0 * double(optimumTime) && optimumTime > 0)
+        {
+            double discount = 0.20 * (1.0 - double(limits.time[us]) / (2.0 * double(optimumTime)));
+            optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
         }
 
         // 7. Dynamic maxScale ceiling and hard safety caps
@@ -180,6 +192,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         double optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
         double maxScale = 1.3 + 0.11 * mtg;
 
+        // Decrease time usage if behind in time.
+        // This is skipped in two cases:
+        // - if the nodestime option is used we can't calculate the opponent nodes budget in a deterministic way.
+        // - if we use a cyclic time management (like 40/10) calculating time advantage for the last move (movestogo = 1)
+        //   can be vastly off, because if the opponent had done his last move before us his time budget includes already
+        //   the next cycle time increment but our not. This leads to an unnecessary big decrease in time usage which favors blunders.
+        // Warning: don't remove these conditions.
         if (!useNodesTime && limits.movestogo != 1)
         {
             double timeAdvantage =
