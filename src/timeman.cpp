@@ -145,7 +145,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 5. Early ply discount applied to base budget (enables banking increment early)
         double w_ply    = 1.0 - 0.25 * (24.0 / (24.0 + ply));
-        double ohMargin = (double(limits.time[us]) < M * double(moveOverhead)) ? 2.5 : 1.5;
+        double ohMargin = (double(limits.time[us]) < M * double(moveOverhead)) ? 1.5 : 1.0;
         double ohDeduct = ohMargin * double(moveOverhead);
         optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply - ohDeduct));
 
