@@ -114,7 +114,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Characteristic total game duration scale: tau = log10(effectiveGameSec)
         // Scaled by effective compute effort across threads and hardware speed
         if (initialGameSec <= 0.0)
-            initialGameSec = std::max(0.1, (scaledTime + effectiveIncMs * 50.0) / 1000.0);
+            initialGameSec = std::max(0.1, (scaledTime + effectiveIncMs * 40.0) / 1000.0);
 
         int    threadsCount = std::max(1, int(options["Threads"]));
         double effectiveNPS = 2'000'000.0 * std::pow(threadsCount, 0.85);
@@ -137,11 +137,12 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - safetyReserve);
         double    nominalBankDraw = double(timeBank) / M;
 
-        // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
+        // 3. Bank draw with flat baseline (1.0) and sublinear tau/material complexity overdraft
         double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
         double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double maxOverdraft = std::max(0.20, 0.70 + 0.44 * (tau - 1.15));
-        double f_bank       = 1.0 + maxOverdraft * matFrac;
+        double f_mat        = std::pow(matFrac, 0.60);
+        double maxOverdraft = std::max(0.20, 0.87 * std::pow(tau, 0.82));
+        double f_bank       = 1.0 + maxOverdraft * f_mat;
         double bankDraw     = nominalBankDraw * f_bank;
 
         // Decrease time bank draw if behind in time.
@@ -159,14 +160,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 4. Base move budget combining overdrafted bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
-        // 5. Early ply discount applied to base budget (enables banking increment early)
-        double w_ply = 1.0 - 0.40 * (16.0 / (16.0 + ply));
+        // 5. Early ply discount applied to base budget (accelerated recovery out of book)
+        double w_ply = 1.0 - 0.30 * std::pow(12.0 / (12.0 + ply), 1.25);
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
-        // 6. Gentle discount (up to 20%) when time left is smaller than 2x optimum time to avoid paycheck-to-paycheck trap
-        if (double(limits.time[us]) < 2.0 * double(optimumTime) && optimumTime > 0)
+        // 6. Gentle discount (up to 20%) when time left is smaller than 4x optimum time to avoid paycheck-to-paycheck trap
+        if (double(limits.time[us]) < 4.0 * double(optimumTime) && optimumTime > 0)
         {
-            double discount = 0.20 * (1.0 - double(limits.time[us]) / (2.0 * double(optimumTime)));
+            double discount = 0.20 * (1.0 - double(limits.time[us]) / (4.0 * double(optimumTime)));
             optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
         }
 
