@@ -140,7 +140,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 3. Bank draw with flat baseline (1.0) and tau-dependent complexity overdraft
         double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
         double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double maxOverdraft = std::max(0.20, 0.64 + 0.44 * (tau - 1.15));
+        double maxOverdraft = std::max(0.20, 0.70 + 0.44 * (tau - 1.15));
         double f_bank       = 1.0 + maxOverdraft * matFrac;
         double bankDraw     = nominalBankDraw * f_bank;
 
@@ -153,14 +153,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         {
             double timeAdvantage =
               (double(limits.time[us]) - double(limits.time[~us])) / (1.0 + double(limits.time[us]) + double(limits.time[~us]));
-            bankDraw *= (1.0 + 0.9 * std::min(timeAdvantage, 0.0));
+            bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
         // 4. Base move budget combining overdrafted bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (enables banking increment early)
-        double w_ply = 1.0 - 0.20 * (24.0 / (24.0 + ply));
+        double w_ply = 1.0 - 0.40 * (16.0 / (16.0 + ply));
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2x optimum time to avoid paycheck-to-paycheck trap
