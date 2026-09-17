@@ -837,6 +837,7 @@ Value Search::Worker::search(
 
     // Step 5. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
+    int   material             = 534 * pos.count<PAWN>() + pos.non_pawn_material();
 
     // Skip early pruning when in check
     if (ss->inCheck)
@@ -1020,6 +1021,8 @@ Value Search::Worker::search(
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
                              + std::abs(correctionValue) / 198435;
 
+        futilityMargin = futilityMargin * 104000 / (91000 + material);
+
         if (eval - futilityMargin >= beta)
             return (661 * beta + 363 * eval) / 1024;
     }
@@ -1032,7 +1035,7 @@ Value Search::Worker::search(
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
-        Depth R = 7 + depth / 3 + std::max((ss->staticEval - beta) / 256, 0);
+        Depth R = 7 + depth / 3 + std::max(int((ss->staticEval - beta) * i64(91000 + material) / (104000 * 256)), 0);
         do_null_move(pos, st, ss);
 
         Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
@@ -1375,7 +1378,10 @@ moves_loop:  // When in check, search starts here
         r -= ss->statScore * 439 / 4096;
 
         if (!capture && !is_decisive(alpha))
-            r += 3 * std::clamp(alpha - eval, -64, 96);
+        {
+            int delta = int((alpha - eval) * i64(91000 + material) / 104000);
+            r += 3 * std::clamp(delta, -64, 96);
+        }
 
         // Scale up reductions for expected ALL nodes
         if (allNode)
@@ -1779,7 +1785,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (bestValue > alpha)
             alpha = bestValue;
 
-        futilityBase = ss->staticEval + 306;
+        int   material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
+        Value surplus  = ss->staticEval > 0 ? Value((ss->staticEval * i64(material - 13000)) / 104000) : 0;
+        futilityBase   = ss->staticEval + 306 + surplus;
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
