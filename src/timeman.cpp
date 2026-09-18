@@ -132,7 +132,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Reference baseline: 1.0 Mnps (Fishtest single-thread reference)
         const double referenceNPS     = 1'000'000.0;
         double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
-        double       tau              = std::pow(std::log10(std::max(1.0, effectiveGameSec)), 1.40);
+        double       tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
+        double       tau              = std::min(4.20, 1.70 * std::pow(tauRaw, 0.85));
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -148,7 +149,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
         double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
-        double tbFactor = std::max(0.95, tau * matFrac);
+        double tbFactor = std::max(0.50, tau * matFrac);
         double bankDraw = nominalBankDraw * tbFactor;
 
         // Decrease time bank draw if behind in time.
@@ -167,13 +168,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (accelerated recovery out of book)
-        double w_ply = 1.0 - 0.40 * std::pow(16.0 / (16.0 + ply), 1.25);
+        double p_ply = std::min(2.50, 0.75 + 0.50 * tauRaw);
+        double w_ply = 1.0 - 0.45 * std::pow(16.0 / (16.0 + ply), p_ply);
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
-        // 6. Gentle discount (up to 20%) when time left is smaller than 4x optimum time to avoid paycheck-to-paycheck trap
+        // 6. Gentle discount (up to 30%) when time left is smaller than 4x optimum time to avoid paycheck-to-paycheck trap
         if (double(limits.time[us]) < 4.0 * double(optimumTime) && optimumTime > 0)
         {
-            double discount = 0.20 * (1.0 - double(limits.time[us]) / (4.0 * double(optimumTime)));
+            double discount = 0.30 * (1.0 - double(limits.time[us]) / (4.0 * double(optimumTime)));
             optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
         }
 
