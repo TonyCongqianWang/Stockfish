@@ -832,6 +832,7 @@ Value Search::Worker::search(
 
     // Step 5. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
+    int   material             = pos.material();
 
     // Skip early pruning when in check
     if (ss->inCheck)
@@ -1074,7 +1075,8 @@ Value Search::Worker::search(
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
-        MovePicker mp(pos, ttData.move, probCutBeta - ss->staticEval, &captureHistory);
+        int threshold = int(((probCutBeta - ss->staticEval) * i64(91000 + material)) / 104000);
+        MovePicker mp(pos, ttData.move, threshold, &captureHistory);
         Depth      probCutDepth = depth - (improving ? 5 : 3);
 
         while ((move = mp.next_move()) != Move::none())
@@ -1727,6 +1729,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
+    int   material             = pos.material();
     if (ss->inCheck)
         bestValue = futilityBase = -VALUE_INFINITE;
     else
@@ -1819,7 +1822,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
                 }
 
                 // If static exchange evaluation is low enough, we can prune
-                if (!pos.see_ge(move, alpha - futilityBase))
+                int threshold = int(((alpha - futilityBase) * i64(91000 + material)) / 104000);
+                if (!pos.see_ge(move, threshold))
                 {
                     bestValue = std::max(bestValue, std::min(alpha, futilityBase));
                     continue;

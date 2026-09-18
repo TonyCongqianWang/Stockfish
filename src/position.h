@@ -176,6 +176,7 @@ class Position {
     int   rule50_count() const;
     Value non_pawn_material(Color c) const;
     Value non_pawn_material() const;
+    int   material() const;
     bool  dtz_is_dtm() const;  // Pawnless && (3-men || 4-men-minors-only)
 
     // Position consistency check, for debugging
@@ -335,6 +336,10 @@ inline Value Position::non_pawn_material(Color c) const { return st->nonPawnMate
 
 inline Value Position::non_pawn_material() const {
     return non_pawn_material(WHITE) + non_pawn_material(BLACK);
+}
+
+inline int Position::material() const {
+    return 534 * count<PAWN>() + non_pawn_material();
 }
 
 inline int Position::game_ply() const { return gamePly; }
