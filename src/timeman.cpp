@@ -133,7 +133,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         const double referenceNPS     = 1'000'000.0;
         double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double       tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double       tau              = std::min(4.50, 1.50 + 1.80 * std::pow(tauRaw, 0.80));
+        double       tau              = std::min(4.50, 0.80 + 1.25 * std::pow(tauRaw, 0.90));
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -168,8 +168,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (accelerated recovery out of book)
-        double p_ply = std::min(2.50, 1.25 + 0.25 * tauRaw);
-        double w_ply = 1.0 - 0.35 * std::pow(16.0 / (16.0 + ply), p_ply);
+        double p_ply = std::min(2.50, 1.00 + 0.35 * tauRaw);
+        double w_ply = 1.0 - 0.25 * std::pow(24.0 / (24.0 + ply), p_ply);
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
