@@ -132,7 +132,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Reference baseline: 1.0 Mnps (Fishtest single-thread reference)
         const double referenceNPS     = 1'000'000.0;
         double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
-        double       tau              = std::log10(std::max(1.0, effectiveGameSec));
+        double       tau              = std::pow(std::log10(std::max(1.0, effectiveGameSec)), 1.40);
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -142,13 +142,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - safetyReserve);
         double    nominalBankDraw = double(timeBank) / M;
 
-        // 3. Bank draw with flat baseline (1.0) and sublinear tau/material complexity overdraft
-        double totalMat     = double(pos.non_pawn_material()) + pos.count<PAWN>() * 208.0;
-        double matFrac      = std::clamp((totalMat - 1000.0) / (19932.0 - 1000.0), 0.0, 1.0);
-        double f_mat        = std::pow(matFrac, 0.60);
-        double maxOverdraft = std::max(0.20, 0.84 * std::pow(tau, 0.82));
-        double f_bank       = 1.0 + maxOverdraft * f_mat;
-        double bankDraw     = nominalBankDraw * f_bank;
+        // 3. Multiplicative bank factor with linear material fraction and king baseline
+        constexpr double KingValue   = 4.0 * PawnValue;
+        constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
+
+        double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
+        double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
+        double tbFactor = std::max(0.95, tau * matFrac);
+        double bankDraw = nominalBankDraw * tbFactor;
 
         // Decrease time bank draw if behind in time.
         // This is skipped if the nodestime option is used because we can't calculate
@@ -162,7 +163,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
-        // 4. Base move budget combining overdrafted bank draw and net increment cash flow
+        // 4. Base move budget combining time bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (accelerated recovery out of book)
