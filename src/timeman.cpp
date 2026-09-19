@@ -118,7 +118,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             double sublinear =
               std::copysign(std::pow(std::abs(effectiveIncMs), 0.25), effectiveIncMs);
             initialGameSec =
-              std::max(0.1, (scaledTime + effectiveIncMs * 40.0 + sublinear * 100.0) / 1000.0);
+              std::max(0.1, (scaledTime + effectiveIncMs * 40.0 + sublinear * 40.0) / 1000.0);
         }
 
         int    threadsCount = std::max(1, int(options["Threads"]));
@@ -133,7 +133,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         const double referenceNPS     = 1'000'000.0;
         double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double       tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double       tau              = std::min(4.50, 1.20 + 1.50 * std::pow(tauRaw, 0.80));
+        double       tau              = std::min(4.50, 0.80 + 1.50 * std::pow(tauRaw, 0.80));
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -144,7 +144,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double    nominalBankDraw = double(timeBank) / M;
 
         // 3. Multiplicative bank factor with concave material fraction and king baseline
-        constexpr double KingValue   = (QueenValue + RookValue) / 2.0;
+        constexpr double KingValue   = QueenValue * 1.25;
         constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
 
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
@@ -168,8 +168,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget (accelerated recovery out of book)
-        double p_ply = std::min(2.50, 1.25 + 0.25 * tauRaw);
-        double w_ply = 1.0 - 0.42 * std::pow(16.0 / (16.0 + ply), p_ply);
+        double p_ply = std::min(2.50, 1.30 + 0.35 * tauRaw);
+        double w_ply = 1.0 - 0.62 * std::pow(12.0 / (12.0 + ply), p_ply);
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
