@@ -274,6 +274,8 @@ void ThreadPool::clear() {
     main_manager()->callsCnt           = 0;
     main_manager()->bestPreviousScore  = VALUE_INFINITE;
     main_manager()->originalTimeAdjust = -1;
+    main_manager()->totalGameTimeMs    = 0;
+    main_manager()->totalGameNodes     = 0;
     main_manager()->tm.clear();
 }
 

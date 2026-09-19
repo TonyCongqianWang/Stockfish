@@ -296,6 +296,8 @@ class SearchManager {
 
     Stockfish::TimeManagement tm;
     double                    originalTimeAdjust;
+    TimePoint                 totalGameTimeMs = 0;
+    u64                       totalGameNodes  = 0;
     int                       callsCnt;
     std::atomic_bool          ponder;
 

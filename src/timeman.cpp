@@ -34,6 +34,7 @@ TimePoint TimeManagement::maximum() const { return maximumTime; }
 void TimeManagement::clear() {
     availableNodes    = -1;  // When in 'nodes as time' mode
     previousMovesToGo = 0;
+    isFirstSearch     = false;
 }
 
 void TimeManagement::advance_nodes_time(i64 nodes) {
@@ -49,7 +50,8 @@ void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          double&             originalTimeAdjust,
+                          TimePoint           totalGameTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     // If we have no time, we don't need to fully initialize TM.
@@ -63,8 +65,11 @@ void TimeManagement::init(Search::LimitsType& limits,
     if (limits.time[us] == 0)
     {
         optimumTime = maximumTime = NoBound;
+        isFirstSearch = false;
         return;
     }
+
+    isFirstSearch = (totalGameTimeMs == 0 || ply <= 1);
 
     TimePoint moveOverhead = TimePoint(options["Move Overhead"]);
 
@@ -156,7 +161,12 @@ void TimeManagement::init(Search::LimitsType& limits,
     }
 
     // Limit the maximum possible time for this move
-    optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
+    TimePoint maxClockCap = TimePoint(0.8097 * limits.time[us] - moveOverhead);
+    optimumTime           = TimePoint(std::max(1.0, optScale * timeLeft));
+
+    if (isFirstSearch)
+        optimumTime = std::min(maxClockCap, TimePoint(optimumTime * 1.5));
+
     maximumTime =
       TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
                                                        maxScale * optimumTime)));

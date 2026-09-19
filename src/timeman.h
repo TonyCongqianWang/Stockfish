@@ -41,7 +41,8 @@ class TimeManagement {
               Color               us,
               int                 ply,
               const OptionsMap&   options,
-              double&             originalTimeAdjust);
+              double&             originalTimeAdjust,
+              TimePoint           totalGameTimeMs);
 
     TimePoint optimum() const;
     TimePoint maximum() const;
@@ -50,6 +51,7 @@ class TimeManagement {
         return useNodesTime ? TimePoint(nodes()) : elapsed_time();
     }
     TimePoint elapsed_time() const { return now() - startTime; };
+    bool is_first_search() const { return isFirstSearch; }
 
     void clear();
     void advance_nodes_time(i64 nodes);
@@ -60,6 +62,8 @@ class TimeManagement {
     TimePoint startTime;
     TimePoint optimumTime = NoBound;
     TimePoint maximumTime = NoBound;
+
+    bool isFirstSearch = false;
 
     // Related to 'nodes as time' mode:
     bool useNodesTime      = false;

@@ -203,8 +203,15 @@ void Search::Worker::start_searching() {
         return;
     }
 
+    if (rootPos.game_ply() <= 1)
+    {
+        main_manager()->totalGameTimeMs = 0;
+        main_manager()->totalGameNodes  = 0;
+    }
+
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
-                            main_manager()->originalTimeAdjust);
+                            main_manager()->originalTimeAdjust,
+                            main_manager()->totalGameTimeMs);
     tt.new_search();
     main_manager()->updates.onStart();
 
@@ -240,6 +247,12 @@ void Search::Worker::start_searching() {
     if (limits.npmsec)
         main_manager()->tm.advance_nodes_time(threads.nodes_searched()
                                               - limits.inc[rootPos.side_to_move()]);
+
+    if (!limits.depth && limits.use_time_management())
+    {
+        main_manager()->totalGameNodes  += threads.nodes_searched();
+        main_manager()->totalGameTimeMs += main_manager()->tm.elapsed_time();
+    }
 
     Worker* bestThread = this;
     Skill   skill =
@@ -333,6 +346,8 @@ bool Search::Worker::iterative_deepening() {
     for (Color c : {WHITE, BLACK})
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
             mainHistory[c][i] = mainHistory[c][i] * 729 / 1024;
+
+    bool warmupDone = false;
 
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (rootDepth + 1 < MAX_PLY && !threads.stop
@@ -579,25 +594,55 @@ bool Search::Worker::iterative_deepening() {
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
         {
-            u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
+            auto elapsedTime = elapsed();
 
-            double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
-                                  + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
-                               / 100.0;
-            fallingEval = std::clamp(fallingEval, 0.576, 1.728);
+            bool warmingUp = false;
+            if (mainThread->tm.is_first_search() && !warmupDone)
+            {
+                if (elapsedTime < 0.20 * mainThread->tm.optimum())
+                    warmingUp = true;
+                else
+                {
+                    warmupDone                         = true;
+                    totBestMoveChanges                 = 0;
+                    for (auto&& th : threads)
+                        th->worker->bestMoveChanges = 0;
+                    lastBestMoveDepth                  = rootDepth;
+                    mainThread->previousTimeReduction = 1.0;
+                }
+            }
 
-            // If the bestMove is stable over several iterations, reduce time accordingly
-            timeReduction = std::clamp(
-              interpolate(double(rootDepth - lastBestMoveDepth), 4.96, 18.79, 0.639, 1.712), 0.629,
-              1.544);
+            double fallingEval, reduction, bestMoveInstability, highBestMoveEffort;
 
-            double reduction =
-              (1.468 + mainThread->previousTimeReduction) / (2.284 * timeReduction);
+            if (warmingUp)
+            {
+                fallingEval         = 1.0;
+                reduction           = 1.0;
+                bestMoveInstability = 1.0;
+                highBestMoveEffort  = 1.0;
+            }
+            else
+            {
+                u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
 
-            double bestMoveInstability = 1.077 + 2.229 * totBestMoveChanges / threads.size();
+                fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
+                                      + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
+                                   / 100.0;
+                fallingEval = std::clamp(fallingEval, 0.576, 1.728);
 
-            double highBestMoveEffort = std::clamp(
-              interpolate(i64(nodesEffort), i64(75800), i64(104510), 0.969, 0.714), 0.693, 0.838);
+                // If the bestMove is stable over several iterations, reduce time accordingly
+                timeReduction = std::clamp(
+                  interpolate(double(rootDepth - lastBestMoveDepth), 4.96, 18.79, 0.639, 1.712), 0.629,
+                  1.544);
+
+                reduction =
+                  (1.468 + mainThread->previousTimeReduction) / (2.284 * timeReduction);
+
+                bestMoveInstability = 1.077 + 2.229 * totBestMoveChanges / threads.size();
+
+                highBestMoveEffort = std::clamp(
+                  interpolate(i64(nodesEffort), i64(75800), i64(104510), 0.969, 0.714), 0.693, 0.838);
+            }
 
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * highBestMoveEffort;
@@ -606,12 +651,12 @@ bool Search::Worker::iterative_deepening() {
                 // Cap used time to 0.5s for a better viewer experience
                 totalTime = std::min(500.0, totalTime);
 
-            auto elapsedTime = elapsed();
-
             // Stop the search if we have exceeded totalTime or maximum time,
             // or if we know that there are no better moves in the analysed line(s).
-            if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
-                || rootMoves[multiPV - 1].score >= mate_in(3) || rootMoves[0].score == mated_in(2))
+            if (warmingUp)
+                threads.stop = false;
+            else if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
+                     || rootMoves[multiPV - 1].score >= mate_in(3) || rootMoves[0].score == mated_in(2))
             {
                 // If we are allowed to ponder do not stop the search now but
                 // keep pondering until the GUI sends "ponderhit" or "stop".
