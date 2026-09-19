@@ -56,7 +56,9 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     optimism += optimism * i64(nnueComplexity) / 476;
     nnue -= nnue * i64(nnueComplexity) / 18236;
 
-    int v = nnue + (nnue * i64(13000) + optimism * i64(7675)) / 91000;
+    int material  = 534 * pos.count<PAWN>() + pos.non_pawn_material();
+    int optScaled = int((optimism * i64(7675) * 104000) / (91000 + material));
+    int v         = nnue + (nnue * i64(13000) + optScaled) / 91000;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 199;
