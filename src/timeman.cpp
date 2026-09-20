@@ -132,7 +132,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double tau              = 1.62 + 0.934 * tauRaw;
+        double tau              = 1.85 + 0.71 * std::pow(tauRaw, 1.20);
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
