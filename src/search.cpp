@@ -1020,7 +1020,10 @@ Value Search::Worker::search(
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
                              + std::abs(correctionValue) / 198435;
 
-        if (eval - futilityMargin >= beta)
+        int   material       = pos.material();
+        Value adjustedMargin = Value((futilityMargin * i64(104000)) / (91000 + material));
+
+        if (eval - adjustedMargin >= beta)
             return (661 * beta + 363 * eval) / 1024;
     }
 
