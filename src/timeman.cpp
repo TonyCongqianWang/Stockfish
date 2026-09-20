@@ -121,19 +121,18 @@ void TimeManagement::init(Search::LimitsType& limits,
             initialGameSec = std::max(0.1, (linearGameMs + 50.0 * sublinear) / 1000.0);
         }
 
-        int    threadsCount = std::max(1, int(options["Threads"]));
-        double effectiveNPS = 2'000'000.0 * std::pow(threadsCount, 0.85);
+        int          threadsCount = std::max(1, int(options["Threads"]));
+        const double referenceNPS = 628'000.0;
+        double       effectiveNPS = referenceNPS * std::pow(threadsCount, 0.85);
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
         else if (totalGameTimeMs >= 100)
             effectiveNPS = (double(totalGameNodes) * 1000.0) / double(totalGameTimeMs);
 
-        // Reference baseline: 1.0 Mnps (Fishtest single-thread reference)
-        const double referenceNPS     = 1'000'000.0;
-        double       effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
-        double       tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double       tau              = 1.30 + 1.03 * tauRaw;
+        double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
+        double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
+        double tau              = 1.62 + 0.934 * tauRaw;
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
