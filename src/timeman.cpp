@@ -132,15 +132,14 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double tau              = 1.85 + 0.71 * std::pow(tauRaw, 1.20);
+        double tau              = 1.12 + 1.52 * std::pow(tauRaw, 0.75);
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
 
-        // 2. Time Bank & Nominal Draw
+        // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         TimePoint safetyReserve   = moveOverhead * 4;
         TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - safetyReserve);
-        double    nominalBankDraw = double(timeBank) / M;
 
         // 3. Multiplicative bank factor with concave material fraction and king baseline
         constexpr double KingValue   = QueenValue * 1.25;
@@ -149,7 +148,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
         double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
         double tbFactor = std::max(0.50, tau * std::pow(matFrac, 0.55));
-        double bankDraw = nominalBankDraw * tbFactor;
+        double bankDraw = double(timeBank) * (tbFactor / (M + tbFactor));
 
         // Decrease time bank draw if behind in time.
         // This is skipped if the nodestime option is used because we can't calculate
