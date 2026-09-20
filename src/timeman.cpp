@@ -107,18 +107,18 @@ void TimeManagement::init(Search::LimitsType& limits,
     {
         // Net per-move increment cash flow after accounting for communication/execution overhead.
         // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
-        double effectiveIncMs =
-          (double(limits.inc[us]) - double(moveOverhead)) / double(scaleFactor);
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
         // Characteristic total game duration scale: tau = log10(effectiveGameSec)
         // Scaled by effective compute effort across threads and hardware speed
         if (initialGameSec <= 0.0)
         {
+            double effectiveIncMs = effectiveInc / double(scaleFactor);
             double sublinear =
-              std::copysign(std::pow(std::abs(effectiveIncMs), 0.25), effectiveIncMs);
-            initialGameSec =
-              std::max(0.1, (scaledTime + effectiveIncMs * 40.0 + sublinear * 40.0) / 1000.0);
+              std::copysign(std::pow(std::abs(effectiveIncMs), 0.10), effectiveIncMs);
+            double linearGameMs =
+              (double(limits.time[us]) + 49.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
+            initialGameSec = std::max(0.1, (linearGameMs + 50.0 * sublinear) / 1000.0);
         }
 
         int    threadsCount = std::max(1, int(options["Threads"]));
@@ -168,7 +168,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount applied to base budget with asymptotic saturation and book half-life
-        double p_ply = 1.25 + 0.40 * tauRaw;
+        double p_ply = 1.20 + 0.42 * tauRaw;
         double A_ply = 1.0 - 1.10 / (1.50 + 0.60 * tau);
         double w_ply = 1.0 - A_ply * std::pow(12.0 / (12.0 + ply), p_ply);
         optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
