@@ -117,8 +117,8 @@ void TimeManagement::init(Search::LimitsType& limits,
             double sublinear =
               std::copysign(std::pow(std::abs(effectiveIncMs), 0.10), effectiveIncMs);
             double linearGameMs =
-              (double(limits.time[us]) + 49.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
-            initialGameSec = std::max(0.1, (linearGameMs + 50.0 * sublinear) / 1000.0);
+              (double(limits.time[us]) + 68.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
+            initialGameSec = std::max(0.1, (linearGameMs + 250.0 * sublinear) / 1000.0);
         }
 
         int          threadsCount = std::max(1, int(options["Threads"]));
@@ -132,7 +132,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double tau              = 1.12 + 1.52 * std::pow(tauRaw, 0.75);
+        double tau              = 1.03 + 1.54 * std::pow(tauRaw, 0.75);
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -178,7 +178,15 @@ void TimeManagement::init(Search::LimitsType& limits,
             optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
         }
 
-        // 7. Dynamic maxScale ceiling and hard safety caps
+        // 7. Linear clock protection in sudden death / low increment: reduce usage linearly down to 0 at zero clock
+        double protectThreshold = M * double(moveOverhead) * 2.0;
+        if (effectiveInc <= 0.0 && double(limits.time[us]) < protectThreshold && protectThreshold > 0.0)
+        {
+            double scale = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
+            optimumTime  = std::max(TimePoint(1), TimePoint(double(optimumTime) * scale));
+        }
+
+        // 8. Dynamic maxScale ceiling and hard safety caps
         double logTimeInSec = std::log10(scaledTime / 1000.0);
         double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
         double maxScale     = std::min(6.873, maxConstant + ply / 12.352);
