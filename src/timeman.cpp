@@ -132,14 +132,16 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double tau              = 1.03 + 1.54 * std::pow(tauRaw, 0.75);
+        double tau              = 1.55 + 2.32 * std::pow(tauRaw, 0.75);
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
-        TimePoint safetyReserve   = moveOverhead * 4;
-        TimePoint timeBank        = std::max(TimePoint(0), limits.time[us] - safetyReserve);
+        // Time bank deducts safety reserve and the current move's incoming increment
+        TimePoint safetyReserve = moveOverhead * 4;
+        TimePoint timeBank =
+          std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
         // 3. Multiplicative bank factor with concave material fraction and king baseline
         constexpr double KingValue   = QueenValue * 1.25;
@@ -165,11 +167,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 4. Base move budget combining time bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
-        // 5. Early ply discount applied to base budget with asymptotic saturation and book half-life
-        double p_ply = 1.20 + 0.42 * tauRaw;
-        double A_ply = 1.0 - 1.10 / (1.50 + 0.60 * tau);
-        double w_ply = 1.0 - A_ply * std::pow(12.0 / (12.0 + ply), p_ply);
-        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        // 5. Early ply discount copying Master, saturating at Move 40 (Ply 80)
+        double logTimeInSec = std::log10(scaledTime / 1000.0);
+        double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
+        double term_ply     = 0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant;
+        double term_80      = 0.012112 + std::pow(80.0 + 3.22713, 0.46866) * optConstant;
+        double w_ply        = std::min(1.0, term_ply / term_80);
+        optimumTime         = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
         if (double(limits.time[us]) < 2.5 * double(optimumTime) && optimumTime > 0)
@@ -187,9 +191,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 8. Dynamic maxScale ceiling and hard safety caps
-        double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
-        double maxScale     = std::min(6.873, maxConstant + ply / 12.352);
+        double maxConstant = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
+        double maxScale    = std::min(6.873, maxConstant + ply / 12.352);
 
         TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
         optimumTime           = std::min(optimumTime, maxClockCap);
