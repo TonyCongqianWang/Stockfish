@@ -99,8 +99,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
     // These numbers are used where multiplications, divisions,
     // or comparisons with constants are involved.
-    const i64       scaleFactor = useNodesTime ? npmsec : 1;
-    const TimePoint scaledTime  = std::max(TimePoint(1), limits.time[us] / scaleFactor);
+    const i64 scaleFactor = useNodesTime ? npmsec : 1;
 
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
@@ -113,12 +112,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Scaled by effective compute effort across threads and hardware speed
         if (initialGameSec <= 0.0)
         {
-            double effectiveIncMs = effectiveInc / double(scaleFactor);
-            double sublinear =
-              std::copysign(std::pow(std::abs(effectiveIncMs), 0.10), effectiveIncMs);
             double linearGameMs =
-              (double(limits.time[us]) + 68.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
-            initialGameSec = std::max(0.1, (linearGameMs + 250.0 * sublinear) / 1000.0);
+              (double(limits.time[us]) + 49.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
+            initialGameSec = std::max(0.1, linearGameMs / 1000.0);
         }
 
         int          threadsCount = std::max(1, int(options["Threads"]));
@@ -132,7 +128,9 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double tau              = 1.55 + 2.32 * std::pow(tauRaw, 0.75);
+        double optConstant      = std::min(0.0029869 + 0.00033554 * tauRaw, 0.004905);
+        double timeAdjust       = 0.5675 + 0.3272 * tauRaw;
+        double tau              = 691.3 * optConstant * timeAdjust;
 
         // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
         double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
@@ -167,13 +165,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 4. Base move budget combining time bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
-        // 5. Early ply discount copying Master, saturating at Move 40 (Ply 80)
-        double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
-        double term_ply     = 0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant;
-        double term_80      = 0.012112 + std::pow(80.0 + 3.22713, 0.46866) * optConstant;
-        double w_ply        = std::min(1.0, term_ply / term_80);
-        optimumTime         = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        // 5. Early ply discount copying Master, saturating at Move 25 (Ply 50)
+        double term_ply = 0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant;
+        double term_50  = 0.012112 + std::pow(50.0 + 3.22713, 0.46866) * optConstant;
+        double w_ply    = std::min(1.0, term_ply / term_50);
+        optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
         if (double(limits.time[us]) < 2.5 * double(optimumTime) && optimumTime > 0)
@@ -191,7 +187,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 8. Dynamic maxScale ceiling and hard safety caps
-        double maxConstant = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
+        double maxConstant = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
         double maxScale    = std::min(6.873, maxConstant + ply / 12.352);
 
         TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
