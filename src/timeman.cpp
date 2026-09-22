@@ -49,7 +49,7 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 void TimeManagement::init(Search::LimitsType& limits,
                           const Position&     pos,
                           const OptionsMap&   options,
-                          double&             initialGameSec,
+                          [[maybe_unused]] double& initialGameSec,
                           u64                 totalGameNodes,
                           TimePoint           totalGameTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
@@ -104,18 +104,18 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
+        // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
+        double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
+
         // Net per-move increment cash flow after accounting for communication/execution overhead.
         // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
-        // Characteristic total game duration scale: tau = log10(effectiveGameSec)
-        // Scaled by effective compute effort across threads and hardware speed
-        if (initialGameSec <= 0.0)
-        {
-            double linearGameMs =
-              (double(limits.time[us]) + 49.0 * effectiveInc - 6.0 * double(moveOverhead)) / double(scaleFactor);
-            initialGameSec = std::max(0.1, linearGameMs / 1000.0);
-        }
+        // Remaining game duration across our physically anchored horizon M.
+        // Dynamic on each move: if we have 1s left, it does not matter what clock we started at.
+        double remainingGameMs =
+          (double(limits.time[us]) + (M - 1.0) * std::max(0.0, effectiveInc)) / double(scaleFactor);
+        double remainingGameSec = std::max(0.1, remainingGameMs / 1000.0);
 
         int          threadsCount = std::max(1, int(options["Threads"]));
         const double referenceNPS = 628'000.0;
@@ -126,14 +126,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         else if (totalGameTimeMs >= 100)
             effectiveNPS = (double(totalGameNodes) * 1000.0) / double(totalGameTimeMs);
 
-        double effectiveGameSec = initialGameSec * (effectiveNPS / referenceNPS);
+        double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double optConstant      = std::min(0.0029869 + 0.00033554 * tauRaw, 0.004905);
         double timeAdjust       = 0.5675 + 0.3272 * tauRaw;
-        double tau              = 691.3 * optConstant * timeAdjust;
 
-        // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
-        double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
+        // Peak spending factor increased to 1037.0 (1.5x of 691.3)
+        // With dynamic remaining game duration, peak draw is generous while naturally scaling down
+        double tau = 1037.0 * optConstant * timeAdjust;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -141,8 +141,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
-        // 3. Multiplicative bank factor with linear material fraction and king baseline
-        constexpr double KingValue   = QueenValue;
+        // 3. Multiplicative bank factor with linear material fraction and calibrated king baseline
+        constexpr double KingValue   = QueenValue * 1.5;
         constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
 
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
@@ -179,7 +179,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 7. Linear clock protection in sudden death / low increment: reduce usage linearly down to 0 at zero clock
-        double protectThreshold = M * double(moveOverhead) * 2.0;
+        double protectThreshold = M * double(moveOverhead) * 0.5;
         if (effectiveInc <= 0.0 && double(limits.time[us]) < protectThreshold && protectThreshold > 0.0)
         {
             double scale = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
