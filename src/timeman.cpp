@@ -141,13 +141,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
-        // 3. Multiplicative bank factor with concave material fraction and king baseline
-        constexpr double KingValue   = QueenValue * 1.25;
+        // 3. Multiplicative bank factor with linear material fraction and king baseline
+        constexpr double KingValue   = QueenValue;
         constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
 
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
         double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
-        double tbFactor = std::max(0.50, tau * std::pow(matFrac, 0.55));
+        double tbFactor = tau * matFrac;
         double bankDraw = double(timeBank) * (tbFactor / (M + tbFactor));
 
         // Decrease time bank draw if behind in time.
