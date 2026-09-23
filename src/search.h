@@ -296,6 +296,8 @@ class SearchManager {
 
     Stockfish::TimeManagement tm;
     double                    originalTimeAdjust;
+    u64                       mainThreadNodes  = 0;
+    TimePoint                 mainThreadTimeMs = 0;
     int                       callsCnt;
     std::atomic_bool          ponder;
 

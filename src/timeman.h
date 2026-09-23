@@ -41,7 +41,9 @@ class TimeManagement {
               Color               us,
               int                 ply,
               const OptionsMap&   options,
-              double&             originalTimeAdjust);
+              double&             originalTimeAdjust,
+              u64                 mainThreadNodes  = 0,
+              TimePoint           mainThreadTimeMs = 0);
 
     TimePoint optimum() const;
     TimePoint maximum() const;
