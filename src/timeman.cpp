@@ -111,10 +111,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
-        // Remaining game duration across our physically anchored horizon M.
-        // Dynamic on each move: if we have 1s left, it does not matter what clock we started at.
+        // Remaining game duration across our physically anchored horizon M with c = 0.75.
+        // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
         double remainingGameMs =
-          (double(limits.time[us]) + (M - 1.0) * std::max(0.0, effectiveInc)) / double(scaleFactor);
+          (double(limits.time[us]) + 0.75 * (M - 1.0) * effectiveInc) / double(scaleFactor);
         double remainingGameSec = std::max(0.1, remainingGameMs / 1000.0);
 
         int          threadsCount = std::max(1, int(options["Threads"]));
@@ -131,9 +131,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         double optConstant      = std::min(0.0029869 + 0.00033554 * tauRaw, 0.004905);
         double timeAdjust       = 0.5675 + 0.3272 * tauRaw;
 
-        // Peak spending factor increased to 1037.0 (1.5x of 691.3)
-        // With dynamic remaining game duration, peak draw is generous while naturally scaling down
-        double tau = 1037.0 * optConstant * timeAdjust;
+        // Calibrated spending factor (830.0) with dynamic remaining game duration
+        double tau = 830.0 * optConstant * timeAdjust;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -165,11 +164,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         // 4. Base move budget combining time bank draw and net increment cash flow
         double baseMoveBudget = bankDraw + effectiveInc;
 
-        // 5. Early ply discount copying Master, saturating at Move 25 (Ply 50)
-        double term_ply = 0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant;
-        double term_50  = 0.012112 + std::pow(50.0 + 3.22713, 0.46866) * optConstant;
-        double w_ply    = std::min(1.0, term_ply / term_50);
-        optimumTime     = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
+        // Baseline floor w0 is TC-dependent: higher/consistent for bullet (~0.70), deeper discount for classical (~0.40)
+        double w0    = std::clamp(0.70 - 0.20 * std::min(1.5, tauRaw), 0.35, 0.75);
+        double w_ply = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
+        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
         if (double(limits.time[us]) < 2.5 * double(optimumTime) && optimumTime > 0)
