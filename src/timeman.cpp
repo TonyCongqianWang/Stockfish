@@ -49,7 +49,9 @@ void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          double&             originalTimeAdjust,
+                          u64                 mainThreadNodes,
+                          TimePoint           mainThreadTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     // If we have no time, we don't need to fully initialize TM.
@@ -118,12 +120,28 @@ void TimeManagement::init(Search::LimitsType& limits,
     // game time for the current move, so also cap to a percentage of available game time.
     if (limits.movestogo == 0)
     {
+        // Calculate effective NPS based on main thread performance scaled by thread count
+        int          threadsCount = std::max(1, int(options["Threads"]));
+        const double referenceNPS = 628'000.0;
+        double       effectiveNPS = referenceNPS * std::pow(threadsCount, 0.80);
+
+        if (useNodesTime)
+            effectiveNPS = double(npmsec) * 1000.0;
+        else if (mainThreadTimeMs >= 100 && mainThreadNodes > 0)
+        {
+            double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
+            effectiveNPS   = mainNPS * std::pow(threadsCount, 0.80);
+        }
+
+        double effectiveGameSec  = (double(scaledTime) / 1000.0) * (effectiveNPS / referenceNPS);
+        double effectiveTimeLeft = double(timeLeft) * (effectiveNPS / referenceNPS);
+
         // Extra time according to timeLeft
         if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3272 * std::log10(timeLeft) - 0.4141;
+            originalTimeAdjust = 0.3272 * std::log10(std::max(1.0, effectiveTimeLeft)) - 0.4141;
 
-        // Calculate time constants based on current time left.
-        double logTimeInSec = std::log10(scaledTime / 1000.0);
+        // Calculate time constants based on effective game time.
+        double logTimeInSec = std::log10(std::max(0.001, effectiveGameSec));
         double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
         double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
 
