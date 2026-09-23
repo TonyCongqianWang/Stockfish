@@ -128,11 +128,17 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
-        double optConstant      = std::min(0.0029869 + 0.00033554 * tauRaw, 0.004905);
-        double timeAdjust       = 0.5675 + 0.3272 * tauRaw;
 
-        // Calibrated spending factor (830.0) with dynamic remaining game duration
-        double tau = 830.0 * optConstant * timeAdjust;
+        // Explicit 2nd-order polynomial in tauRaw representing optConstant * timeAdjust:
+        // P(x) = (0.0029869 + 0.00033554 * x) * (0.5675 + 0.3272 * x)
+        //      = 0.00169507 + 0.00116773 * x + 0.00010979 * x^2
+        constexpr double c0 = 0.00169507;
+        constexpr double c1 = 0.00116773;
+        constexpr double c2 = 0.00010979;
+        double polyTau = c0 + tauRaw * (c1 + c2 * tauRaw);
+
+        // Calibrated spending factor (830.0)
+        double tau = 830.0 * polyTau;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -140,13 +146,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
-        // 3. Multiplicative bank factor with linear material fraction and calibrated king baseline
+        // 3. Multiplicative bank factor with sub-linear material power (p = 0.75) and calibrated king baseline
         constexpr double KingValue   = QueenValue * 1.5;
         constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
 
         double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
         double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
-        double tbFactor = tau * matFrac;
+        double tbFactor = tau * std::pow(matFrac, 0.75);
         double bankDraw = double(timeBank) * (tbFactor / (M + tbFactor));
 
         // Decrease time bank draw if behind in time.
@@ -165,10 +171,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
-        // Baseline floor w0 is TC-dependent: higher/consistent for bullet (~0.70), deeper discount for classical (~0.40)
-        double w0    = std::clamp(0.70 - 0.20 * std::min(1.5, tauRaw), 0.35, 0.75);
-        double w_ply = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
-        optimumTime  = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        // Opening discount is completely decoupled / invisible from tau, with fixed baseline floor w0 = 0.40
+        constexpr double w0  = 0.40;
+        double w_ply         = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
+        optimumTime          = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
         if (double(limits.time[us]) < 2.5 * double(optimumTime) && optimumTime > 0)
