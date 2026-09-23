@@ -104,8 +104,8 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
-        // 1. Physically anchored remaining moves horizon (M = 4 + 2 * pieces)
-        double M = std::max(8.0, 4.0 + 2.0 * pos.count<ALL_PIECES>());
+        // 1. Physically anchored remaining moves horizon (M = 6 + 2 * pieces, initial estimate: 70 moves)
+        double M = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
 
         // Net per-move increment cash flow after accounting for communication/execution overhead.
         // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
@@ -115,7 +115,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
         double remainingGameMs =
           (double(limits.time[us]) + 0.75 * (M - 1.0) * effectiveInc) / double(scaleFactor);
-        double remainingGameSec = std::max(0.1, remainingGameMs / 1000.0);
+        double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
 
         int          threadsCount = std::max(1, int(options["Threads"]));
         const double referenceNPS = 628'000.0;
@@ -128,17 +128,15 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
+        double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Explicit 2nd-order polynomial in tauRaw representing optConstant * timeAdjust:
-        // P(x) = (0.0029869 + 0.00033554 * x) * (0.5675 + 0.3272 * x)
-        //      = 0.00169507 + 0.00116773 * x + 0.00010979 * x^2
-        constexpr double c0 = 0.00169507;
-        constexpr double c1 = 0.00116773;
-        constexpr double c2 = 0.00010979;
-        double polyTau = c0 + tauRaw * (c1 + c2 * tauRaw);
-
-        // Calibrated spending factor (830.0)
-        double tau = 830.0 * polyTau;
+        // Front-loading intensity tau:
+        // Lower asymptote: lim_{tauRaw -> -inf} tau = 1.0 (pure uniform amortization at zero surplus)
+        // Upper asymptote: lim_{tauRaw -> +inf} tau = 1.0 + deltaTau = 4.8 (finite saturation ceiling)
+        constexpr double deltaTau = 3.8;
+        constexpr double x0       = 1.3;
+        constexpr double k        = 1.1;
+        double tau = 1.0 + deltaTau / (1.0 + std::exp(-k * (tauRawActual - x0)));
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -146,14 +144,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
-        // 3. Multiplicative bank factor with sub-linear material power (p = 0.75) and calibrated king baseline
-        constexpr double KingValue   = QueenValue * 1.5;
-        constexpr double MaxMaterial = 2.0 * (QueenValue + 2 * RookValue + 2 * BishopValue + 2 * KnightValue + 8 * PawnValue + KingValue);
-
-        double totalMat = double(pos.non_pawn_material()) + pos.count<PAWN>() * double(PawnValue) + 2.0 * KingValue;
-        double matFrac  = std::clamp(totalMat / MaxMaterial, 0.0, 1.0);
-        double tbFactor = tau * std::pow(matFrac, 0.75);
-        double bankDraw = double(timeBank) * (tbFactor / (M + tbFactor));
+        // 3. Multiplicative bank factor without matFrac (dynamic horizon M governs game phase)
+        double bankDraw = double(timeBank) * (tau / (M + tau));
 
         // Decrease time bank draw if behind in time.
         // This is skipped if the nodestime option is used because we can't calculate
