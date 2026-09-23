@@ -104,19 +104,11 @@ void TimeManagement::init(Search::LimitsType& limits,
     // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
-        // 1. Physically anchored remaining moves horizon (M = 6 + 2 * pieces, initial estimate: 70 moves)
-        double M = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
-
         // Net per-move increment cash flow after accounting for communication/execution overhead.
         // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
-        // Remaining game duration across our physically anchored horizon M with c = 0.75.
-        // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
-        double remainingGameMs =
-          (double(limits.time[us]) + 0.75 * (M - 1.0) * effectiveInc) / double(scaleFactor);
-        double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
-
+        // Effective worker computation speed (nodes per second)
         int          threadsCount = std::max(1, int(options["Threads"]));
         const double referenceNPS = 628'000.0;
         double       effectiveNPS = referenceNPS * std::pow(threadsCount, 0.85);
@@ -126,16 +118,37 @@ void TimeManagement::init(Search::LimitsType& limits,
         else if (totalGameTimeMs >= 100)
             effectiveNPS = (double(totalGameNodes) * 1000.0) / double(totalGameTimeMs);
 
+        // 1. Physically grounded move horizon:
+        // A move costs communication latency (moveOverhead) PLUS the minimum computational effort
+        // to complete root moves evaluation and initial tactical checks (~2500 nodes).
+        double minSearchMs = (2500.0 * 1000.0) / effectiveNPS;
+        double netDrain    = minSearchMs - effectiveInc;
+
+        // In healthy increment formats (netDrain <= 0), the clock never drains from move turnover.
+        // In sudden death or low increment (netDrain > 0), the clock can physically support at most
+        // limits.time / netDrain moves before flagging.
+        double M_capacity = netDrain > 0.0 ? (double(limits.time[us]) / netDrain) : 9999.0;
+        double M_pieces   = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
+        double M          = std::max(2.0, std::min(M_pieces, M_capacity));
+
+        // Remaining game duration across our physically anchored horizon M with c = 0.75.
+        // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
+        double remainingGameMs =
+          (double(limits.time[us]) + 0.75 * (M - 1.0) * effectiveInc) / double(scaleFactor);
+        double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
+
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
         // Front-loading intensity tau:
-        // Lower asymptote: lim_{tauRaw -> -inf} tau = 1.0 (pure uniform amortization at zero surplus)
-        // Upper asymptote: lim_{tauRaw -> +inf} tau = 1.0 + deltaTau = 4.8 (finite saturation ceiling)
-        constexpr double deltaTau = 3.8;
-        constexpr double x0       = 1.3;
-        constexpr double k        = 1.1;
+        // Lower asymptote: lim_{tauRawActual -> -inf} tau = 1.0 (pure uniform amortization at zero surplus)
+        // Upper asymptote: lim_{tauRawActual -> +inf} tau = 1.0 + deltaTau = 3.8 (finite saturation ceiling)
+        // Calibrated to match Master at Move 50 for LTC (tau = 2.50) and VVLTC (tau = 3.10),
+        // with gentle/zero front-loading at 1.5s+0.0s (tau = 1.096).
+        constexpr double deltaTau = 2.80;
+        constexpr double x0       = 1.85;
+        constexpr double k        = 2.00;
         double tau = 1.0 + deltaTau / (1.0 + std::exp(-k * (tauRawActual - x0)));
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
@@ -160,6 +173,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 4. Base move budget combining time bank draw and net increment cash flow
+        // effectiveInc is strictly unclamped to preserve the physical reality of move overhead.
         double baseMoveBudget = bankDraw + effectiveInc;
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
@@ -175,11 +189,11 @@ void TimeManagement::init(Search::LimitsType& limits,
             optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
         }
 
-        // 7. Linear clock protection in sudden death / low increment: reduce usage linearly down to 0 at zero clock
+        // 7. Time scramble protection: reduce usage smoothly down to 0 at zero clock with a 0.5 power curve (sqrt)
         double protectThreshold = M * double(moveOverhead) * 0.5;
         if (effectiveInc <= 0.0 && double(limits.time[us]) < protectThreshold && protectThreshold > 0.0)
         {
-            double scale = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
+            double scale = std::sqrt(std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0));
             optimumTime  = std::max(TimePoint(1), TimePoint(double(optimumTime) * scale));
         }
 
