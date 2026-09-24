@@ -131,10 +131,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         double M_pieces   = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
         double M          = std::max(2.0, std::min(M_pieces, M_capacity));
 
-        // Remaining game duration across our physically anchored horizon M with c = 0.75.
+        // Remaining game duration across our physically anchored horizon M with full increment accounting (c = 1.0).
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
+        constexpr double c_inc = 1.0;
         double remainingGameMs =
-          (double(limits.time[us]) + 0.75 * (M - 1.0) * effectiveInc) / double(scaleFactor);
+          (double(limits.time[us]) + c_inc * (M - 1.0) * effectiveInc) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
@@ -182,25 +183,24 @@ void TimeManagement::init(Search::LimitsType& limits,
         double w_ply         = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
         optimumTime          = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
-        // 6. Gentle discount (up to 20%) when time left is smaller than 2.5x optimum time to avoid paycheck-to-paycheck trap
-        if (double(limits.time[us]) < 2.5 * double(optimumTime) && optimumTime > 0)
-        {
-            double discount = 0.20 * (1.0 - double(limits.time[us]) / (2.5 * double(optimumTime)));
-            optimumTime     = std::max(TimePoint(1), TimePoint(double(optimumTime) * (1.0 - discount)));
-        }
-
-        // 7. Time scramble protection: reduce usage smoothly down to 0 at zero clock with a 0.5 power curve (sqrt)
-        double protectThreshold = M * double(moveOverhead) * 0.5;
-        if (effectiveInc <= 0.0 && double(limits.time[us]) < protectThreshold && protectThreshold > 0.0)
-        {
-            double scale = std::sqrt(std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0));
-            optimumTime  = std::max(TimePoint(1), TimePoint(double(optimumTime) * scale));
-        }
-
-        // 8. Dynamic maxScale ceiling and hard safety caps
+        // 6. Dynamic maxScale ceiling
         double maxConstant = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
         double maxScale    = std::min(6.873, maxConstant + ply / 12.352);
 
+        // 7. Extension-aware safety reserve protection:
+        // Scaled against 2x maximum search extension capacity instead of optimum time.
+        // Uses a rational late-drop curve m(u) = u*(1+c)/(u+c) achieving ~30% discount at 5% threshold
+        // while smoothly converging to 0% usage at 0% clock.
+        double protectThreshold = 2.0 * double(optimumTime) * maxScale;
+        if (protectThreshold > 0.0 && double(limits.time[us]) < protectThreshold)
+        {
+            constexpr double c = 0.020;
+            double u     = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
+            double scale = (u * (1.0 + c)) / (u + c);
+            optimumTime  = std::max(TimePoint(1), TimePoint(double(optimumTime) * scale));
+        }
+
+        // 8. Hard safety caps
         TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
         optimumTime           = std::min(optimumTime, maxClockCap);
         maximumTime           = std::max(optimumTime, std::min(maxClockCap, TimePoint(optimumTime * maxScale)));
