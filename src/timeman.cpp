@@ -142,16 +142,21 @@ void TimeManagement::init(Search::LimitsType& limits,
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Front-loading intensity tau via quadratic-exponent sigmoid:
-        // Exponent z(x) = a * x^2 + b * x + c (a = 0.60, b = 0.784, c = -3.504)
-        // Flattens slope at low regime (tau ~ 1.095 at 1.5s SD, gentle growth in high-inc)
-        // while the quadratic term smoothly drives tau to match Master at LTC (2.40) and VVLTC (3.10+).
+        // Front-loading intensity tau via sigmoid into 2nd-order polynomial on non-negative s:
+        // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
+        // Strictly monotonic across all game horizons, flattens slope at low regime (tau ~ 1.08 at 1.5s SD)
+        // while smoothly matching Master at LTC (2.40) and VVLTC (3.03).
         constexpr double deltaTau = 2.80;
-        constexpr double a_z      = 0.60;
-        constexpr double b_z      = 0.784;
-        constexpr double c_z      = -3.504;
-        double z   = a_z * tauRawActual * tauRawActual + b_z * tauRawActual + c_z;
-        double tau = 1.0 + deltaTau / (1.0 + std::exp(-z));
+        constexpr double k        = 2.05;
+        constexpr double x0       = 1.68;
+        constexpr double c1       = 0.65;
+
+        double s = 0.0;
+        if (tauRawActual > -2.0)
+            s = 1.0 / (1.0 + std::exp(-k * (tauRawActual - x0)));
+
+        double p_s = c1 * s + (1.0 - c1) * (s * s);
+        double tau = 1.0 + deltaTau * p_s;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -190,12 +195,12 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
         // 7. Gradual extension reserve compression:
-        // Scaled against 2x nominal maximum search extension capacity.
+        // Scaled against 2x nominal maximum search extension capacity and Sudden Death turnover (-M_pieces * effectiveInc).
         // When remaining clock falls below protectThreshold, BOTH optimumTime and maximumTime
         // are gradually compressed together via a gentle rational curve (c = 0.25) before capping.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double protectThreshold = 2.0 * double(nominalMaximum);
+        double protectThreshold = std::max(2.0 * double(nominalMaximum), -M_pieces * effectiveInc);
         if (protectThreshold > 0.0 && double(limits.time[us]) < protectThreshold)
         {
             constexpr double c = 0.25;
