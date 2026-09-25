@@ -42,6 +42,7 @@ class TimeManagement {
               int                 ply,
               const OptionsMap&   options,
               double&             originalTimeAdjust,
+              double&             threadScalingFactor,
               u64                 mainThreadNodes  = 0,
               TimePoint           mainThreadTimeMs = 0);
 
