@@ -205,6 +205,7 @@ void Search::Worker::start_searching() {
 
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust,
+                            main_manager()->threadScalingFactor,
                             main_manager()->mainThreadNodes,
                             main_manager()->mainThreadTimeMs);
     tt.new_search();
