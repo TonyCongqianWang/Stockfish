@@ -131,9 +131,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         double M_pieces   = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
         double M          = std::max(2.0, std::min(M_pieces, M_capacity));
 
-        // Remaining game duration across our physically anchored horizon M with full increment accounting (c = 1.0).
+        // Remaining game duration across our physically anchored horizon M with increment accounting (c_inc = 0.85).
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
-        constexpr double c_inc = 1.0;
+        constexpr double c_inc = 0.85;
         double remainingGameMs =
           (double(limits.time[us]) + c_inc * (M - 1.0) * effectiveInc) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
@@ -142,15 +142,16 @@ void TimeManagement::init(Search::LimitsType& limits,
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Front-loading intensity tau:
-        // Lower asymptote: lim_{tauRawActual -> -inf} tau = 1.0 (pure uniform amortization at zero surplus)
-        // Upper asymptote: lim_{tauRawActual -> +inf} tau = 1.0 + deltaTau = 3.8 (finite saturation ceiling)
-        // Calibrated to match Master at Move 50 for LTC (tau = 2.50) and VVLTC (tau = 3.10),
-        // with gentle/zero front-loading at 1.5s+0.0s (tau = 1.096).
+        // Front-loading intensity tau via quadratic-exponent sigmoid:
+        // Exponent z(x) = a * x^2 + b * x + c (a = 0.60, b = 0.784, c = -3.504)
+        // Flattens slope at low regime (tau ~ 1.095 at 1.5s SD, gentle growth in high-inc)
+        // while the quadratic term smoothly drives tau to match Master at LTC (2.40) and VVLTC (3.10+).
         constexpr double deltaTau = 2.80;
-        constexpr double x0       = 1.85;
-        constexpr double k        = 2.00;
-        double tau = 1.0 + deltaTau / (1.0 + std::exp(-k * (tauRawActual - x0)));
+        constexpr double a_z      = 0.60;
+        constexpr double b_z      = 0.784;
+        constexpr double c_z      = -3.504;
+        double z   = a_z * tauRawActual * tauRawActual + b_z * tauRawActual + c_z;
+        double tau = 1.0 + deltaTau / (1.0 + std::exp(-z));
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -179,31 +180,35 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
         // Opening discount is completely decoupled / invisible from tau, with fixed baseline floor w0 = 0.40
-        constexpr double w0  = 0.40;
-        double w_ply         = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
-        optimumTime          = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        constexpr double w0      = 0.40;
+        double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
+        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
-        double maxConstant = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
-        double maxScale    = std::min(6.873, maxConstant + ply / 12.352);
+        double maxConstant       = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
+        double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
+        TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
-        // 7. Extension-aware safety reserve protection:
-        // Scaled against 2x maximum search extension capacity instead of optimum time.
-        // Uses a rational late-drop curve m(u) = u*(1+c)/(u+c) achieving ~30% discount at 5% threshold
-        // while smoothly converging to 0% usage at 0% clock.
-        double protectThreshold = 2.0 * double(optimumTime) * maxScale;
+        // 7. Gradual extension reserve compression:
+        // Scaled against 2x nominal maximum search extension capacity.
+        // When remaining clock falls below protectThreshold, BOTH optimumTime and maximumTime
+        // are gradually compressed together via a gentle rational curve (c = 0.25) before capping.
+        optimumTime = nominalOptimum;
+        maximumTime = nominalMaximum;
+        double protectThreshold = 2.0 * double(nominalMaximum);
         if (protectThreshold > 0.0 && double(limits.time[us]) < protectThreshold)
         {
-            constexpr double c = 0.020;
+            constexpr double c = 0.25;
             double u     = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
             double scale = (u * (1.0 + c)) / (u + c);
-            optimumTime  = std::max(TimePoint(1), TimePoint(double(optimumTime) * scale));
+            optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
+            maximumTime  = std::max(TimePoint(1), TimePoint(double(nominalMaximum) * scale));
         }
 
         // 8. Hard safety caps
         TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
         optimumTime           = std::min(optimumTime, maxClockCap);
-        maximumTime           = std::max(optimumTime, std::min(maxClockCap, TimePoint(optimumTime * maxScale)));
+        maximumTime           = std::max(optimumTime, std::min(maxClockCap, maximumTime));
     }
 
     // Cyclic time controls (x moves in y seconds + z increment)
