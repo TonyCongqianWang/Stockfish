@@ -50,6 +50,7 @@ void TimeManagement::init(Search::LimitsType& limits,
                           int                 ply,
                           const OptionsMap&   options,
                           double&             originalTimeAdjust,
+                          double&             threadScalingFactor,
                           u64                 mainThreadNodes,
                           TimePoint           mainThreadTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
@@ -120,17 +121,35 @@ void TimeManagement::init(Search::LimitsType& limits,
     // game time for the current move, so also cap to a percentage of available game time.
     if (limits.movestogo == 0)
     {
+        int threadsCount = std::max(1, int(options["Threads"]));
+
+        // Calculate thread scaling factor once at the start of the game
+        if (threadScalingFactor < 0)
+        {
+            if (threadsCount > 1)
+            {
+                double gameTimeSec = (scaledTime >= 1000)
+                                       ? (double(scaledTime) / 1000.0)
+                                       : (double(timeLeft / scaleFactor) / 1000.0);
+                double nodeBudgetMnodes = std::max(0.5, gameTimeSec);
+                double a = std::clamp(12.4429 * std::pow(nodeBudgetMnodes / 100.0, -0.377), 1.0, 80.0);
+                double equivNodesPct = (100.0 - a) + a * std::pow(threadsCount, 2.0 / 3.0);
+                threadScalingFactor  = (100.0 * threadsCount) / equivNodesPct;
+            }
+            else
+                threadScalingFactor = 1.0;
+        }
+
         // Calculate effective NPS based on main thread performance scaled by thread count
-        int          threadsCount = std::max(1, int(options["Threads"]));
         const double referenceNPS = 628'000.0;
-        double       effectiveNPS = referenceNPS * std::pow(threadsCount, 0.80);
+        double       effectiveNPS = referenceNPS * threadScalingFactor;
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
         else if (mainThreadTimeMs >= 100 && mainThreadNodes > 0)
         {
             double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
-            effectiveNPS   = mainNPS * std::pow(threadsCount, 0.80);
+            effectiveNPS   = mainNPS * threadScalingFactor;
         }
 
         double effectiveGameSec  = (double(scaledTime) / 1000.0) * (effectiveNPS / referenceNPS);
