@@ -131,9 +131,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         double M_pieces   = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
         double M          = std::max(2.0, std::min(M_pieces, M_capacity));
 
-        // Remaining game duration across our physically anchored horizon M with increment accounting (c_inc = 0.85).
+        // Remaining game duration across our physically anchored horizon M with full increment accounting (c_inc = 1.0).
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
-        constexpr double c_inc = 0.85;
+        constexpr double c_inc = 1.0;
         double remainingGameMs =
           (double(limits.time[us]) + c_inc * (M - 1.0) * effectiveInc) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
@@ -144,12 +144,12 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // Front-loading intensity tau via sigmoid into 2nd-order polynomial on non-negative s:
         // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
-        // Strictly monotonic across all game horizons, flattens slope at low regime (tau ~ 1.08 at 1.5s SD)
-        // while smoothly matching Master at LTC (2.40) and VVLTC (3.03).
-        constexpr double deltaTau = 2.80;
-        constexpr double k        = 2.05;
-        constexpr double x0       = 1.68;
-        constexpr double c1       = 0.65;
+        // Strictly monotonic across all game horizons, flattens slope at low regime (tau ~ 1.10 at 1.5s SD)
+        // while tracking Master's front-loading capacity across STC, LTC, and VVLTC.
+        constexpr double deltaTau = 3.20;
+        constexpr double k        = 2.00;
+        constexpr double x0       = 1.50;
+        constexpr double c1       = 0.60;
 
         double s = 0.0;
         if (tauRawActual > -2.0)
@@ -160,7 +160,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
-        TimePoint safetyReserve = moveOverhead * 4;
+        TimePoint safetyReserve = moveOverhead * 10;
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
