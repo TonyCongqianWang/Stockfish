@@ -124,12 +124,21 @@ void TimeManagement::init(Search::LimitsType& limits,
         double minSearchMs = (2500.0 * 1000.0) / effectiveNPS;
         double netDrain    = minSearchMs - effectiveInc;
 
-        // In healthy increment formats (netDrain <= 0), the clock never drains from move turnover.
-        // In sudden death or low increment (netDrain > 0), the clock can physically support at most
-        // limits.time / netDrain moves before flagging.
-        double M_capacity = netDrain > 0.0 ? (double(limits.time[us]) / netDrain) : 9999.0;
-        double M_pieces   = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
-        double M          = std::max(2.0, std::min(M_pieces, M_capacity));
+        double M_pieces = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
+        double M        = M_pieces;
+        double sdScale  = 1.0;
+
+        if (netDrain > 0.0)
+        {
+            double turnoverThreshold = M_pieces * netDrain;
+            if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
+            {
+                double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
+                constexpr double c_sd = 0.50;
+                sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
+                M       = 2.0 + (M_pieces - 2.0) * u;
+            }
+        }
 
         // Remaining game duration across our physically anchored horizon M with full increment accounting (c_inc = 1.0).
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
@@ -179,9 +188,9 @@ void TimeManagement::init(Search::LimitsType& limits,
             bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
-        // 4. Base move budget combining time bank draw and net increment cash flow
-        // effectiveInc is strictly unclamped to preserve the physical reality of move overhead.
-        double baseMoveBudget = bankDraw + effectiveInc;
+        // 4. Base move budget combining time bank draw and net increment cash flow,
+        // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
+        double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
         // Opening discount is completely decoupled / invisible from tau, with fixed baseline floor w0 = 0.40
@@ -194,13 +203,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
-        // 7. Gradual extension reserve compression:
-        // Scaled against 2x nominal maximum search extension capacity and Sudden Death turnover (-M_pieces * effectiveInc).
-        // When remaining clock falls below protectThreshold, BOTH optimumTime and maximumTime
-        // are gradually compressed together via a gentle rational curve (c = 0.25) before capping.
+        // 7. Protect search extensions from blowing up clock when remaining time is critical
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double protectThreshold = std::max(2.0 * double(nominalMaximum), -M_pieces * effectiveInc);
+        double protectThreshold = 2.0 * double(nominalMaximum);
         if (protectThreshold > 0.0 && double(limits.time[us]) < protectThreshold)
         {
             constexpr double c = 0.25;
