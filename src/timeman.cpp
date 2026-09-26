@@ -124,7 +124,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double minSearchMs = (2500.0 * 1000.0) / effectiveNPS;
         double netDrain    = minSearchMs - effectiveInc;
 
-        double M_pieces = std::max(8.0, 6.0 + 2.0 * pos.count<ALL_PIECES>());
+        double M_pieces = std::max(8.0, 10.0 + 2.0 * pos.count<ALL_PIECES>());
         double M        = M_pieces;
         double sdScale  = 1.0;
 
@@ -140,9 +140,9 @@ void TimeManagement::init(Search::LimitsType& limits,
             }
         }
 
-        // Remaining game duration across our physically anchored horizon M with full increment accounting (c_inc = 1.0).
+        // Remaining game duration across our physically anchored horizon M with calibrated increment accounting (c_inc = 0.90).
         // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
-        constexpr double c_inc = 1.0;
+        constexpr double c_inc = 0.90;
         double remainingGameMs =
           (double(limits.time[us]) + c_inc * (M - 1.0) * effectiveInc) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
@@ -151,14 +151,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Front-loading intensity tau via sigmoid into 2nd-order polynomial on non-negative s:
+        // Front-loading intensity tau via wide-scale sigmoid (k = 1.10, x0 = 1.35) into 2nd-order polynomial:
         // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
-        // Strictly monotonic across all game horizons, flattens slope at low regime (tau ~ 1.10 at 1.5s SD)
-        // while tracking Master's front-loading capacity across STC, LTC, and VVLTC.
-        constexpr double deltaTau = 3.20;
-        constexpr double k        = 2.00;
-        constexpr double x0       = 1.50;
-        constexpr double c1       = 0.60;
+        // Provides a wide linear regime spanning 3.5 decades: lifts front-loading in 2s-10s Sudden Death
+        // while preserving headroom and smooth progression for STC, LTC, and Classical TCs without truncation.
+        constexpr double deltaTau = 3.50;
+        constexpr double k        = 1.10;
+        constexpr double x0       = 1.35;
+        constexpr double c1       = 0.25;
 
         double s = 0.0;
         if (tauRawActual > -2.0)
