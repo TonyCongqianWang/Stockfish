@@ -140,11 +140,13 @@ void TimeManagement::init(Search::LimitsType& limits,
             }
         }
 
-        // Remaining game duration across our physically anchored horizon M with calibrated increment accounting (c_inc = 0.90).
-        // Dynamic on each move: effectiveInc is strictly unclamped and deducted when negative.
-        constexpr double c_inc = 0.90;
+        // Remaining game duration across our physically anchored horizon M with distributed liquidity balance (delta = 0.07).
+        // Balances liquid bank capital against future increment cash flow:
+        // (1 + delta) * T + (1 - delta) * I = (T + I) + delta * (T - I)
+        double totalExpectedMs = double(limits.time[us]) + (M - 1.0) * effectiveInc;
+        constexpr double delta = 0.07;
         double remainingGameMs =
-          (double(limits.time[us]) + c_inc * (M - 1.0) * effectiveInc) / double(scaleFactor);
+          (totalExpectedMs + delta * (double(limits.time[us]) - (M - 1.0) * effectiveInc)) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
