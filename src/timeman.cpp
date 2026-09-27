@@ -49,7 +49,7 @@ void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
-                          double&             originalTimeAdjust,
+                          TimePoint&          initialTimeLeft,
                           double&             threadScalingFactor,
                           u64                 mainThreadNodes,
                           TimePoint           mainThreadTimeMs) {
@@ -152,12 +152,15 @@ void TimeManagement::init(Search::LimitsType& limits,
             effectiveNPS   = mainNPS * threadScalingFactor;
         }
 
-        double effectiveGameSec  = (double(scaledTime) / 1000.0) * (effectiveNPS / referenceNPS);
-        double effectiveTimeLeft = double(timeLeft) * (effectiveNPS / referenceNPS);
+        double effectiveGameSec = (double(scaledTime) / 1000.0) * (effectiveNPS / referenceNPS);
 
-        // Extra time according to timeLeft
-        if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3272 * std::log10(std::max(1.0, effectiveTimeLeft)) - 0.4141;
+        // Capture initial time left (with increments, without move overhead) at game start
+        if (initialTimeLeft < 0)
+            initialTimeLeft =
+              std::max(TimePoint(1), (limits.time[us] + limits.inc[us] * (mtg - 1)) / scaleFactor);
+
+        double effectiveInitialTime = double(initialTimeLeft) * (effectiveNPS / referenceNPS);
+        double originalTimeAdjust   = 0.3272 * std::log10(std::max(1.0, effectiveInitialTime)) - 0.4141;
 
         // Calculate time constants based on effective game time.
         double logTimeInSec = std::log10(std::max(0.001, effectiveGameSec));
