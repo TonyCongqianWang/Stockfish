@@ -134,7 +134,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
             {
                 double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
-                constexpr double c_sd = 0.50;
+                constexpr double c_sd = 0.40;
                 sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
                 M       = 2.0 + (M_pieces - 2.0) * u;
             }
@@ -153,13 +153,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Front-loading intensity tau via calibrated sigmoid (k = 1.60, x0 = 1.35) into 2nd-order polynomial:
+        // Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
         // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
-        // Provides steepened transition (dtau/dx ~ 0.80 - 1.15 across 5s-15s) with elevated 1.5s SD floor
-        // and robust headroom for STC, LTC, and Classical TCs without premature truncation.
-        constexpr double deltaTau = 3.20;
-        constexpr double k        = 1.60;
-        constexpr double x0       = 1.35;
+        // Provides steepened transition (dtau/dx ~ 0.95 - 1.25 across 5s-15s) with elevated bullet SD floor (tau ~ 1.31)
+        // and generous headroom for VVLTC (tau ~ 4.01) and Classical TCs without premature saturation.
+        constexpr double deltaTau = 3.50;
+        constexpr double k        = 1.55;
+        constexpr double x0       = 1.25;
         constexpr double c1       = 0.60;
 
         double s = 0.0;
@@ -195,8 +195,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
-        // Opening discount is completely decoupled / invisible from tau, with calibrated baseline floor w0 = 0.45
-        constexpr double w0      = 0.45;
+        // Opening discount is completely decoupled / invisible from tau, with calibrated baseline floor w0 = 0.50
+        constexpr double w0      = 0.50;
         double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
