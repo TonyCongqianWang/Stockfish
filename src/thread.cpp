@@ -272,7 +272,7 @@ void ThreadPool::clear() {
 
     main_manager()->callsCnt            = 0;
     main_manager()->bestPreviousScore   = VALUE_INFINITE;
-    main_manager()->originalTimeAdjust  = -1;
+    main_manager()->initialTimeLeft     = -1;
     main_manager()->threadScalingFactor = -1.0;
     main_manager()->mainThreadNodes     = 0;
     main_manager()->mainThreadTimeMs    = 0;
