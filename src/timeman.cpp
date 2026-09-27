@@ -140,11 +140,11 @@ void TimeManagement::init(Search::LimitsType& limits,
             }
         }
 
-        // Remaining game duration across our physically anchored horizon M with distributed liquidity balance (delta = 0.07).
+        // Remaining game duration across our physically anchored horizon M with distributed liquidity balance (delta = 0.12).
         // Balances liquid bank capital against future increment cash flow:
         // (1 + delta) * T + (1 - delta) * I = (T + I) + delta * (T - I)
         double totalExpectedMs = double(limits.time[us]) + (M - 1.0) * effectiveInc;
-        constexpr double delta = 0.07;
+        constexpr double delta = 0.12;
         double remainingGameMs =
           (totalExpectedMs + delta * (double(limits.time[us]) - (M - 1.0) * effectiveInc)) / double(scaleFactor);
         double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
@@ -155,9 +155,9 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
         // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
-        // Provides steepened transition (dtau/dx ~ 0.95 - 1.25 across 5s-15s) with elevated bullet SD floor (tau ~ 1.31)
-        // and generous headroom for VVLTC (tau ~ 4.01) and Classical TCs without premature saturation.
-        constexpr double deltaTau = 3.50;
+        // Provides steepened transition (dtau/dx ~ 1.00 - 1.35 across 5s-15s) with elevated bullet SD floor (tau ~ 1.34)
+        // and generous headroom for VVLTC (tau ~ 4.25) and Classical TCs without premature saturation.
+        constexpr double deltaTau = 3.80;
         constexpr double k        = 1.55;
         constexpr double x0       = 1.25;
         constexpr double c1       = 0.60;
