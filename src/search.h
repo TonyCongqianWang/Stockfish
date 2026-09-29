@@ -295,9 +295,9 @@ class SearchManager {
                    Depth                     depth);
 
     Stockfish::TimeManagement tm;
-    double                    initialGameSec  = 0.0;
-    u64                       totalGameNodes  = 0;
-    TimePoint                 totalGameTimeMs = 0;
+    double                    threadScalingFactor = -1.0;
+    u64                       mainThreadNodes     = 0;
+    TimePoint                 mainThreadTimeMs    = 0;
     int                       callsCnt;
     std::atomic_bool          ponder;
 
