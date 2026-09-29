@@ -169,14 +169,12 @@ void TimeManagement::init(Search::LimitsType& limits,
             }
         }
 
-        // Remaining game duration across our physically anchored horizon M with distributed liquidity balance (delta = 0.12).
-        // Balances liquid bank capital against future increment cash flow:
-        // (1 + delta) * T + (1 - delta) * I = (T + I) + delta * (T - I)
-        double totalExpectedMs = double(limits.time[us]) + (M - 1.0) * effectiveInc;
-        constexpr double delta = 0.12;
-        double remainingGameMs =
-          (totalExpectedMs + delta * (double(limits.time[us]) - (M - 1.0) * effectiveInc)) / double(scaleFactor);
-        double remainingGameSec = std::max(0.01, remainingGameMs / 1000.0);
+        // Remaining game duration across our physically anchored horizon M.
+        // Dimensionally grounded total effective time without artificial overdraft inflation (delta = 0.0).
+        double totalExpectedMs    = double(limits.time[us]) + (M - 1.0) * effectiveInc;
+        double totalEffectiveTime = std::max(1.0, totalExpectedMs);
+        double remainingGameMs    = totalEffectiveTime / double(scaleFactor);
+        double remainingGameSec   = std::max(0.01, remainingGameMs / 1000.0);
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
         double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
@@ -224,19 +222,18 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh)
-        // Dynamic opening denominator D(kappa) adapts the exit rate to forward-looking cash flow replenishment:
-        // SD exits discount rapidly (D ~ 13.0) to prevent bank starvation,
-        // while 2% increment retains the optimal extended tail (D ~ 20.0).
+        // Dynamic opening denominator D(x) using the continuous cash flow replenishment ratio
+        // x = totalEffectiveTime / limits.time = 1 / kappa.
+        // Smoothly transitions from SD (x ~ 0.75, D ~ 14.8) to 0.5% inc (x ~ 1.0, D ~ 16.2),
+        // 1% inc (x ~ 1.2, D ~ 17.1), 2% inc (x ~ 1.6, D ~ 18.4), and higher incs (x >= 2.4, D >= 20.1).
         constexpr double w0     = 0.50;
-        constexpr double D_sd   = 13.0;
-        constexpr double deltaD = 10.5;
-        constexpr double kappa0 = 0.42;
+        constexpr double D_min  = 6.5;
+        constexpr double deltaD = 19.0;
+        constexpr double x0_ply = 0.95;
 
-        double kappa = 0.0;
-        if (effectiveInc > 0.0 && limits.time[us] > 0)
-            kappa = ((M - 1.0) * effectiveInc) / double(limits.time[us]);
+        double x = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
 
-        double D_ply             = D_sd + deltaD * (kappa / (kappa + kappa0));
+        double D_ply             = D_min + deltaD * (x / (x + x0_ply));
         double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / D_ply);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
