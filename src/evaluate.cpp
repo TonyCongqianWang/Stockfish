@@ -72,8 +72,8 @@ Value scale_evaluation(Value nnue, int optimism, const Position& pos) {
     // Scale NNUE into search evaluation space (matches the UCI WDL domain)
     Value nnue_v = nnue * i64(90649 + material) / 90649;
 
-    // Algebraic WDL parameters in search space
-    int a = 340 - (60 * material) / 32000;
+    // Early game requires a higher margin to win due to drawing buffers
+    int a = 240 + (120 * material) / 32000;
     constexpr int b = 70;
 
     int se_margin   = wdl_margin(se, a, b);
