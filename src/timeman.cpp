@@ -49,9 +49,9 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 void TimeManagement::init(Search::LimitsType& limits,
                           const Position&     pos,
                           const OptionsMap&   options,
-                          [[maybe_unused]] double& initialGameSec,
-                          u64                 totalGameNodes,
-                          TimePoint           totalGameTimeMs) {
+                          double&             threadScalingFactor,
+                          u64                 mainThreadNodes,
+                          TimePoint           mainThreadTimeMs) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     Color us  = pos.side_to_move();
@@ -109,14 +109,43 @@ void TimeManagement::init(Search::LimitsType& limits,
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
         // Effective worker computation speed (nodes per second)
-        int          threadsCount = std::max(1, int(options["Threads"]));
-        const double referenceNPS = 628'000.0;
-        double       effectiveNPS = referenceNPS * std::pow(threadsCount, 0.85);
+        int threadsCount = std::max(1, int(options["Threads"]));
+
+        // Calculate thread scaling factor once at the start of the game
+        if (threadScalingFactor < 0)
+        {
+            if (threadsCount > 1)
+            {
+                const TimePoint scaledTime = std::max(TimePoint(1), limits.time[us] / scaleFactor);
+                int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
+                if (scaledTime < 1000 && limits.movestogo == 0)
+                    mtg = int(scaledTime * 0.05);
+                TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
+                                                              - moveOverhead * (2 + mtg));
+
+                double gameTimeSec = (scaledTime >= 1000)
+                                       ? (double(scaledTime) / 1000.0)
+                                       : (double(timeLeft / scaleFactor) / 1000.0);
+                double nodeBudgetMnodes = std::max(0.5, gameTimeSec);
+                double a = std::clamp(12.4429 * std::pow(nodeBudgetMnodes / 100.0, -0.377), 1.0, 80.0);
+                double equivNodesPct = (100.0 - a) + a * std::pow(threadsCount, 2.0 / 3.0);
+                threadScalingFactor  = (100.0 * threadsCount) / equivNodesPct;
+            }
+            else
+                threadScalingFactor = 1.0;
+        }
+
+        // Calculate effective NPS based on main thread performance scaled by thread count
+        const double referenceNPS = 412'000.0;
+        double       effectiveNPS = referenceNPS * threadScalingFactor;
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
-        else if (totalGameTimeMs >= 100)
-            effectiveNPS = (double(totalGameNodes) * 1000.0) / double(totalGameTimeMs);
+        else if (mainThreadTimeMs >= 100 && mainThreadNodes > 0)
+        {
+            double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
+            effectiveNPS   = mainNPS * threadScalingFactor;
+        }
 
         // 1. Physically grounded move horizon:
         // A move costs communication latency (moveOverhead) PLUS the minimum computational effort
