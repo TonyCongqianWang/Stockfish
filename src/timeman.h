@@ -41,9 +41,9 @@ class TimeManagement {
     void init(Search::LimitsType& limits,
               const Position&     pos,
               const OptionsMap&   options,
-              double&             initialGameSec,
-              u64                 totalGameNodes,
-              TimePoint           totalGameTimeMs);
+              double&             threadScalingFactor,
+              u64                 mainThreadNodes  = 0,
+              TimePoint           mainThreadTimeMs = 0);
 
     TimePoint optimum() const;
     TimePoint maximum() const;

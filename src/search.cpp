@@ -204,9 +204,9 @@ void Search::Worker::start_searching() {
     }
 
     main_manager()->tm.init(limits, rootPos, options,
-                            main_manager()->initialGameSec,
-                            main_manager()->totalGameNodes,
-                            main_manager()->totalGameTimeMs);
+                            main_manager()->threadScalingFactor,
+                            main_manager()->mainThreadNodes,
+                            main_manager()->mainThreadTimeMs);
     tt.new_search();
     main_manager()->updates.onStart();
 
@@ -245,8 +245,8 @@ void Search::Worker::start_searching() {
 
     if (!limits.depth && limits.time[rootPos.side_to_move()] > 0)
     {
-        main_manager()->totalGameNodes  += threads.nodes_searched();
-        main_manager()->totalGameTimeMs += main_manager()->tm.elapsed_time();
+        main_manager()->mainThreadNodes  += this->nodes;
+        main_manager()->mainThreadTimeMs += main_manager()->tm.elapsed_time();
     }
 
     Worker* bestThread = this;
