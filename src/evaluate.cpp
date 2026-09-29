@@ -43,6 +43,13 @@ static int simple_eval(const Position& pos) {
          - pos.non_pawn_material(~c);
 }
 
+// Algebraic WDL margin (Win - Loss) normalized to [-1024, 1024]
+static int wdl_margin(int v, int a, int b) {
+    int tp = (v + a) * 1024 / (std::abs(v + a) + b);
+    int tn = (v - a) * 1024 / (std::abs(v - a) + b);
+    return (tp + tn) / 2;
+}
+
 Value scale_evaluation(Value nnue, int optimism, const Position& pos);
 
 Value Eval::evaluate(const Eval::NNUE::Network&     network,
@@ -60,20 +67,26 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 Value scale_evaluation(Value nnue, int optimism, const Position& pos) {
     Value se = simple_eval(pos);
 
-    // Normalize the raw evaluations to [-1024, 1024] to measure their correlation.
-    int se_norm   = (se * 1024) / (std::abs(se) + 1024);
-    int nnue_norm = (nnue * 1024) / (std::abs(nnue) + 1024);
-    // When NNUE and material agree (positive alignment), the position is straightforward;
-    // otherwise (negative alignment) it involves complex compensation. In a representative
-    // sample, alignment averages -1 or so, i.e. it is well-centered in [-2048, 2048].
-    int alignment = (se_norm * nnue_norm) / 512;
-
-    // When winning, we favor easy positions, and vice versa
-    int base_eval = nnue + (nnue * alignment) / 65536 + (optimism * alignment) / 16384;
-
-    // Scale the combined evaluation by total material
     int material = 521 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = base_eval * i64(90649 + material) / 90649;
+
+    // Scale NNUE into search evaluation space (matches the UCI WDL domain)
+    Value nnue_v = nnue * i64(90649 + material) / 90649;
+
+    // Algebraic WDL parameters in search space
+    int a = 340 - (60 * material) / 32000;
+    constexpr int b = 70;
+
+    int se_margin   = wdl_margin(se, a, b);
+    int nnue_margin = wdl_margin(nnue_v, a, b);
+
+    // Alignment measures directional concordance; margin distance measures dynamic complexity
+    int alignment  = (se_margin * nnue_margin) / 512;
+    int complexity = std::abs(se_margin - nnue_margin) - 256;
+
+    int se_adjust = alignment + complexity;
+
+    // When winning, we favor easy positions and dynamic tension over flat draws, and vice versa
+    int v = nnue_v + (nnue_v * se_adjust) / 65536 + (optimism * se_adjust) / 16384;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 189;
