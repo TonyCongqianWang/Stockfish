@@ -194,10 +194,21 @@ void TimeManagement::init(Search::LimitsType& limits,
         // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
-        // 5. Early ply discount via smooth hyperbolic tangent (tanh) asymptotic saturation at Move 25 (Ply 50)
-        // Opening discount is completely decoupled / invisible from tau, with calibrated baseline floor w0 = 0.50
-        constexpr double w0      = 0.50;
-        double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / 20.0);
+        // 5. Early ply discount via smooth hyperbolic tangent (tanh)
+        // Dynamic opening denominator D(kappa) adapts the exit rate to forward-looking cash flow replenishment:
+        // SD exits discount rapidly (D ~ 13.0) to prevent bank starvation,
+        // while 2% increment retains the optimal extended tail (D ~ 20.0).
+        constexpr double w0     = 0.50;
+        constexpr double D_sd   = 13.0;
+        constexpr double deltaD = 10.5;
+        constexpr double kappa0 = 0.42;
+
+        double kappa = 0.0;
+        if (effectiveInc > 0.0 && limits.time[us] > 0)
+            kappa = ((M - 1.0) * effectiveInc) / double(limits.time[us]);
+
+        double D_ply             = D_sd + deltaD * (kappa / (kappa + kappa0));
+        double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / D_ply);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
