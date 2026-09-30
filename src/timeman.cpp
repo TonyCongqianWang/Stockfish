@@ -141,7 +141,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
-        else if (mainThreadTimeMs >= 100 && mainThreadNodes > 0)
+        else if (mainThreadTimeMs > 0 && mainThreadNodes > 0)
         {
             double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
             effectiveNPS   = mainNPS * threadScalingFactor;
@@ -222,18 +222,20 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via smooth hyperbolic tangent (tanh)
-        // Dynamic opening denominator D(x) using the continuous cash flow replenishment ratio
-        // x = totalEffectiveTime / limits.time = 1 / kappa.
-        // Smoothly transitions from SD (x ~ 0.75, D ~ 14.8) to 0.5% inc (x ~ 1.0, D ~ 16.2),
-        // 1% inc (x ~ 1.2, D ~ 17.1), 2% inc (x ~ 1.6, D ~ 18.4), and higher incs (x >= 2.4, D >= 20.1).
+        // Unified asymmetric rational opening denominator D(y) based on dimensionless net cash flow:
+        // y = (totalEffectiveTime - limits.time) / limits.time = (M - 1) * effectiveInc / limits.time
+        // Asymmetrically tapers toward lower floor (D ~ 12.8) in deep deficit (SD), gently differentiates
+        // neutral-ish deficit (0.5% inc, D ~ 14.05) from SD, smoothly anchors break-even at D0 = 14.70,
+        // and expands through 1.0% (D ~ 16.89) and 2.0% (D ~ 19.39) before saturating at ceiling (D ~ 22.90).
         constexpr double w0     = 0.50;
-        constexpr double D_min  = 6.5;
-        constexpr double deltaD = 19.0;
-        constexpr double x0_ply = 0.95;
+        constexpr double D0     = 14.70;
+        constexpr double S0     = 10.93;
+        constexpr double alpha  = 3.5439;
+        constexpr double beta   = -2.2105;
 
-        double x = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
+        double y = (totalEffectiveTime - double(limits.time[us])) / double(std::max(TimePoint(1), limits.time[us]));
 
-        double D_ply             = D_min + deltaD * (x / (x + x0_ply));
+        double D_ply             = D0 + (S0 * y) / (1.0 + alpha * std::abs(y) + beta * y);
         double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / D_ply);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
