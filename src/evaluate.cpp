@@ -75,9 +75,6 @@ Value scale_evaluation(Value nnue, int optimism, const Position& pos) {
     int material = 521 * pos.count<PAWN>() + pos.non_pawn_material();
     int v        = base_eval * i64(90649 + material) / 90649;
 
-    // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 189;
-
     // Guarantee that the evaluation does not hit the tablebase range
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 
@@ -104,6 +101,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
 
     Value nnue = network.evaluate(pos, *accumulators, *caches);
     Value s_v  = scale_evaluation(nnue, VALUE_ZERO, pos);  // requires stm perspective
+    s_v        = dampen(s_v, pos.rule50_count());
 
     ss << "NNUE evaluation          " << nnue << " (side to move, internal units)\n";
 

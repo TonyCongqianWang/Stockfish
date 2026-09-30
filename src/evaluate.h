@@ -48,6 +48,8 @@ Value evaluate(const NNUE::Network&           network,
                Eval::NNUE::AccumulatorStack&  accumulators,
                Eval::NNUE::AccumulatorCaches& caches,
                int                            optimism);
+
+inline Value dampen(Value v, int r50) { return v - (v * r50) / 189; }
 }  // namespace Eval
 
 }  // namespace Stockfish

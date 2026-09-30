@@ -136,7 +136,7 @@ void update_correction_history(const Position& pos,
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
-Value value_to_tt(Value v, int ply);
+Value value_to_tt(Value v, int ply, int r50c);
 Value value_from_tt(Value v, int ply, int r50c);
 void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
 void  update_quiet_histories(
@@ -804,7 +804,9 @@ Value Search::Worker::search(
         // Step 2. Check for aborted search or immediate draw
         if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
+            return (ss->ply >= MAX_PLY && !ss->inCheck)
+                   ? Eval::dampen(evaluate(pos), pos.rule50_count())
+                   : value_draw(nodes);
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply + 1), but if alpha is already bigger because
@@ -842,6 +844,7 @@ Value Search::Worker::search(
 
     // Step 5. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
+    Value rawStaticEval        = VALUE_NONE;
 
     // Skip early pruning when in check
     if (ss->inCheck)
@@ -851,10 +854,11 @@ Value Search::Worker::search(
     else if (ss->ttHit)
     {
         // Never assume anything about values stored in TT
-        unadjustedStaticEval = ttData.eval;
-        if (!is_valid(unadjustedStaticEval))
-            unadjustedStaticEval = evaluate(pos);
+        rawStaticEval = ttData.eval;
+        if (!is_valid(rawStaticEval))
+            rawStaticEval = evaluate(pos);
 
+        unadjustedStaticEval = Eval::dampen(rawStaticEval, pos.rule50_count());
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // ttValue can be used as a better position evaluation
@@ -864,12 +868,13 @@ Value Search::Worker::search(
     }
     else
     {
-        unadjustedStaticEval = evaluate(pos);
+        rawStaticEval        = evaluate(pos);
+        unadjustedStaticEval = Eval::dampen(rawStaticEval, pos.rule50_count());
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-                       unadjustedStaticEval, tt.generation());
+                       rawStaticEval, tt.generation());
     }
 
     // Set up the improving flag, which is true if current static evaluation is
@@ -909,8 +914,9 @@ Value Search::Worker::search(
             }
 
             // Partial workaround for the graph history interaction problem.
-            // For high rule50 counts don't produce transposition table cutoffs.
-            if (pos.rule50_count() < 96)
+            // For high rule50 counts don't produce transposition table cutoffs,
+            // unless defending a draw (beta <= VALUE_DRAW && ttData.value >= beta).
+            if (pos.rule50_count() < 96 || (beta <= VALUE_DRAW && ttData.value >= beta))
             {
                 if (depth >= 7 && ttData.move && pos.pseudo_legal(ttData.move)
                     && pos.legal(ttData.move) && !is_decisive(ttData.value))
@@ -976,9 +982,9 @@ Value Search::Worker::search(
 
                 if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
                 {
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
-                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
-                                   tt.generation());
+                    ttWriter.write(posKey, value_to_tt(value, ss->ply, pos.rule50_count()),
+                                   ss->ttPv, b, std::min(MAX_PLY - 1, depth + 6), Move::none(),
+                                   VALUE_NONE, tt.generation());
 
                     return value;
                 }
@@ -1115,8 +1121,8 @@ Value Search::Worker::search(
             if (value >= probCutBeta)
             {
                 // Save ProbCut data into transposition table
-                ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+                ttWriter.write(posKey, value_to_tt(value, ss->ply, pos.rule50_count()), ss->ttPv,
+                               BOUND_LOWER, probCutDepth + 1, move, rawStaticEval, tt.generation());
 
                 if (!is_decisive(value))
                     return value - (probCutBeta - beta);
@@ -1647,12 +1653,12 @@ moves_loop:  // When in check, search starts here
     // Step 24. Write gathered information in transposition table. Note that the
     // static evaluation is saved as it was before correction history.
     if (!excludedMove && !(rootNode && pvIdx))
-        ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
+        ttWriter.write(posKey, value_to_tt(bestValue, ss->ply, pos.rule50_count()), ss->ttPv,
                        bestValue >= beta    ? BOUND_LOWER
                        : PvNode && bestMove ? BOUND_EXACT
                                             : BOUND_UPPER,
                        moveCount != 0 ? depth : std::min(MAX_PLY - 1, depth + 6), bestMove,
-                       unadjustedStaticEval, tt.generation());
+                       rawStaticEval, tt.generation());
 
     // Adjust correction history if the best move is not a capture and
     // the error direction matches whether we are above/below bounds.
@@ -1720,7 +1726,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 2. Check for an immediate draw or maximum ply reached
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck)
+               ? Eval::dampen(evaluate(pos), pos.rule50_count())
+               : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1740,6 +1748,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 4. Static evaluation of the position
     Value unadjustedStaticEval = VALUE_NONE;
+    Value rawStaticEval        = VALUE_NONE;
     if (ss->inCheck)
         bestValue = futilityBase = -VALUE_INFINITE;
     else
@@ -1749,12 +1758,13 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (ss->ttHit)
         {
             // Never assume anything about values stored in TT
-            unadjustedStaticEval = ttData.eval;
+            rawStaticEval = ttData.eval;
 
-            if (!is_valid(unadjustedStaticEval))
-                unadjustedStaticEval = evaluate(pos);
+            if (!is_valid(rawStaticEval))
+                rawStaticEval = evaluate(pos);
 
-            ss->staticEval = bestValue =
+            unadjustedStaticEval = Eval::dampen(rawStaticEval, pos.rule50_count());
+            ss->staticEval       = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
             // ttValue can be used as a better position evaluation
@@ -1764,7 +1774,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
         else
         {
-            unadjustedStaticEval = evaluate(pos);
+            rawStaticEval        = evaluate(pos);
+            unadjustedStaticEval = Eval::dampen(rawStaticEval, pos.rule50_count());
             ss->staticEval       = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }
@@ -1777,7 +1788,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
             if (!ss->ttHit)
                 ttWriter.write(posKey, VALUE_NONE, false, BOUND_LOWER, DEPTH_UNSEARCHED,
-                               Move::none(), unadjustedStaticEval, tt.generation());
+                               Move::none(), rawStaticEval, tt.generation());
             return bestValue;
         }
 
@@ -1901,9 +1912,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 10. Save gathered info in transposition table. The static evaluation
     // is saved as it was before adjustment by correction history.
-    ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
-                   bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
+    ttWriter.write(posKey, value_to_tt(bestValue, ss->ply, pos.rule50_count()), pvHit,
+                   bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove, rawStaticEval,
+                   tt.generation());
 
     // The search is now complete
     assert(-VALUE_INFINITE < bestValue && bestValue < VALUE_INFINITE);
@@ -1934,16 +1945,29 @@ Value Search::Worker::evaluate(const Position& pos) {
 namespace {
 
 // Adjusts a mate or TB score from "plies to mate from the root" to
-// "plies to mate from the current position". Standard scores are unchanged.
+// "plies to mate from the current position". Standard scores are normalized
+// to a clock-canonical representation with a gentle, sign-preserving tie-breaker.
 // The function is called before storing a value in the transposition table.
-Value value_to_tt(Value v, int ply) { return is_win(v) ? v + ply : is_loss(v) ? v - ply : v; }
+Value value_to_tt(Value v, int ply, int r50c) {
+    if (!is_valid(v))
+        return VALUE_NONE;
+
+    if (is_win(v))
+        return v + ply;
+    if (is_loss(v))
+        return v - ply;
+    if (v == VALUE_DRAW)
+        return VALUE_DRAW;
+
+    int f = std::min(r50c / 12, std::abs(int(v)));
+    return v > 0 ? v + f : v - f;
+}
 
 
 // Inverse of value_to_tt(): it adjusts a mate or TB score from the transposition
 // table (which refers to the plies to mate/be mated from current position) to
-// "plies to mate/be mated (TB win/loss) from the root". However, to avoid
-// potentially false mate or TB scores related to the 50 moves rule and the
-// graph history interaction, we return the highest non-TB score instead.
+// "plies to mate/be mated (TB win/loss) from the root". Standard scores are
+// reconstructed for the current node's clock with guaranteed sign preservation.
 Value value_from_tt(Value v, int ply, int r50c) {
 
     if (!is_valid(v))
@@ -1977,7 +2001,11 @@ Value value_from_tt(Value v, int ply, int r50c) {
         return v + ply;
     }
 
-    return v;
+    if (v == VALUE_DRAW)
+        return VALUE_DRAW;
+
+    int f = std::min(r50c / 12, std::abs(int(v)));
+    return v > 0 ? std::max(Value(0), v - f) : std::min(Value(0), v + f);
 }
 
 
