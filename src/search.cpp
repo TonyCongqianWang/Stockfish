@@ -772,7 +772,7 @@ Value Search::Worker::search(
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
     bool  capture, ttCapture;
-    int   priorReduction;
+    int   priorReduction, iirReduction = 0;
     Piece movedPiece;
 
     SearchedList capturesSearched;
@@ -819,7 +819,8 @@ Value Search::Worker::search(
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
-    Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
+    const Value originalAlpha = alpha;
+    Square      prevSq        = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
     bestMove       = Move::none();
     priorReduction = (ss - 1)->reduction;
     (ss - 1)->reduction        = 0;
@@ -1075,10 +1076,13 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Step 11. Internal iterative reductions
-    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Making IIR more aggressive scales poorly.
+    // Reduce search depth for cut and PV nodes without a transposition table move.
+    // Cutoffs and PV moves found at reduced depth are verified at full depth.
     if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
-        depth--;
+    {
+        iirReduction = 2;
+        depth -= iirReduction;
+    }
 
     // Step 12. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
@@ -1409,7 +1413,7 @@ moves_loop:  // When in check, search starts here
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 53;
                 const bool doShallowerSearch = value < bestValue + 8;
 
-                newDepth += doDeeperSearch - doShallowerSearch;
+                newDepth += doDeeperSearch - doShallowerSearch + iirReduction;
 
                 if (newDepth > d)
                     value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
@@ -1429,6 +1433,9 @@ moves_loop:  // When in check, search starts here
             // If expected reduction is high, we reduce search depth here
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
                                    newDepth - (r > 5234) - (r > 5487 && newDepth > 2), !cutNode);
+
+            if (iirReduction && value >= beta && !is_decisive(value))
+                value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth + iirReduction, !cutNode);
         }
 
         // Step 20. For PV nodes only, do a full PV search on the first move
@@ -1556,6 +1563,8 @@ moves_loop:  // When in check, search starts here
                     // (*Scaler) Infrequent and small updates scale well
                     ss->cutoffCnt += (extension < 2) || PvNode;
                     assert(value >= beta);  // Fail high
+                    depth += iirReduction;
+                    iirReduction = 0;
                     break;
                 }
 
@@ -1637,7 +1646,37 @@ moves_loop:  // When in check, search starts here
     }
 
     if (PvNode)
+    {
         bestValue = std::min(bestValue, maxValue);
+
+        // Verify principal variation at full depth if reduced by internal iterative reductions
+        if (iirReduction && bestMove != Move::none() && !rootNode && !is_decisive(bestValue)
+            && !threads.stop.load(std::memory_order_relaxed))
+        {
+            do_move(pos, bestMove, st, pos.gives_check(bestMove), pos.capture_stage(bestMove), ss);
+            (ss + 1)->pv = &pv;
+            (ss + 1)->pv->clear();
+
+            Value v =
+              -search<PV>(pos, ss + 1, -beta, -originalAlpha, depth + iirReduction - 1, false);
+            undo_move(pos, bestMove);
+
+            if (v > originalAlpha)
+            {
+                bestValue = std::min(v, maxValue);
+                ss->pv->update(bestMove, (ss + 1)->pv);
+            }
+            else
+            {
+                bestValue = v;
+                bestMove  = Move::none();
+                ss->pv->clear();
+            }
+        }
+
+        depth += iirReduction;
+        iirReduction = 0;
+    }
 
     // If no good move is found and the previous position was ttPv, then the previous
     // opponent move is probably good and the new position is added to the search tree.
