@@ -146,7 +146,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
-        else if (mainThreadTimeMs >= 100 && mainThreadNodes > 0)
+        else if (mainThreadTimeMs > 0 && mainThreadNodes > 0)
         {
             double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
             effectiveNPS   = mainNPS * threadScalingFactor;
