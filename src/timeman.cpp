@@ -221,22 +221,26 @@ void TimeManagement::init(Search::LimitsType& limits,
         // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
-        // 5. Early ply discount via smooth hyperbolic tangent (tanh)
-        // Unified asymmetric rational opening denominator D(y) based on dimensionless net cash flow:
-        // y = (totalEffectiveTime - limits.time) / limits.time = (M - 1) * effectiveInc / limits.time
-        // Asymmetrically tapers toward lower floor (D ~ 12.8) in deep deficit (SD), gently differentiates
-        // neutral-ish deficit (0.5% inc, D ~ 14.05) from SD, smoothly anchors break-even at D0 = 14.70,
-        // and expands through 1.0% (D ~ 16.89) and 2.0% (D ~ 19.39) before saturating at ceiling (D ~ 22.90).
-        constexpr double w0     = 0.50;
-        constexpr double D0     = 14.70;
-        constexpr double S0     = 10.93;
-        constexpr double alpha  = 3.5439;
-        constexpr double beta   = -2.2105;
+        // 5. Early ply discount via progressive exponential decay
+        // w(ply) = 1.0 - exp(-c_exp * ply) * r0 * g(kappa, ply)
+        // Calibrated with c_exp = 0.0847 so that exactly 2.0% discount remains at Move 20 (ply 38).
+        // Continuous replenishment ratio kappa = totalEffectiveTime / limits.time[us].
+        // cg is modulated with ply: starts constrained at cg0 = 3.00 on Move 1, smoothly decaying
+        // toward cg_min = 0.60 to open up reduction in surplus increment while preserving Move 1 safety.
+        constexpr double r0      = 0.50;
+        constexpr double c_exp   = 0.0847;
+        constexpr double alpha   = 0.35;
+        constexpr double cg_0    = 3.00;
+        constexpr double cg_min  = 0.60;
+        constexpr double kp      = 0.10;
 
-        double y = (totalEffectiveTime - double(limits.time[us])) / double(std::max(TimePoint(1), limits.time[us]));
+        double kappa   = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
+        double cg_ply  = cg_min + (cg_0 - cg_min) / (1.0 + kp * double(ply));
+        double delta_g = alpha * (kappa - 1.0) / (kappa + cg_ply);
+        double g_kappa = 1.0 + delta_g;
 
-        double D_ply             = D0 + (S0 * y) / (1.0 + alpha * std::abs(y) + beta * y);
-        double w_ply             = w0 + (1.0 - w0) * std::tanh(double(ply) / D_ply);
+        double f_ply             = std::exp(-c_exp * double(ply));
+        double w_ply             = 1.0 - f_ply * r0 * g_kappa;
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
@@ -244,17 +248,18 @@ void TimeManagement::init(Search::LimitsType& limits,
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
-        // 7. Protect search extensions from blowing up clock when remaining time is critical
+        // 7. Quadratic safety buffer zone: scale down smoothly as clock drops
+        // scale = 1.0 - (1.0 - w)^2 has zero derivative at the threshold (no premature reduction),
+        // and monotonically scales down to zero as clock empties, guaranteeing maximumTime <= 0.50 * limits.time.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double protectThreshold = 2.0 * double(nominalMaximum);
-        if (protectThreshold > 0.0 && double(limits.time[us]) < protectThreshold)
+        double safetyThreshold = 4.0 * double(nominalMaximum);
+        if (safetyThreshold > 0.0 && double(limits.time[us]) < safetyThreshold)
         {
-            constexpr double c = 0.25;
-            double u     = std::clamp(double(limits.time[us]) / protectThreshold, 0.0, 1.0);
-            double scale = (u * (1.0 + c)) / (u + c);
+            double w     = std::clamp(double(limits.time[us]) / safetyThreshold, 0.0, 1.0);
+            double scale = 1.0 - (1.0 - w) * (1.0 - w);
             optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
-            maximumTime  = std::max(TimePoint(1), TimePoint(double(nominalMaximum) * scale));
+            maximumTime  = std::max(optimumTime,  TimePoint(double(nominalMaximum) * scale));
         }
 
         // 8. Hard safety caps
