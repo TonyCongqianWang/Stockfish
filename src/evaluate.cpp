@@ -37,10 +37,21 @@
 
 namespace Stockfish {
 
-static int simple_eval(const Position& pos) {
+static int pawn_value(int npm) {
+    return 5750000 / (11034 + npm);
+}
+
+static int simple_eval(const Position& pos, int pv) {
     const Color c = pos.side_to_move();
-    return PawnValue * (pos.count<PAWN>(c) - pos.count<PAWN>(~c)) + pos.non_pawn_material(c)
+    return pv * (pos.count<PAWN>(c) - pos.count<PAWN>(~c)) + pos.non_pawn_material(c)
          - pos.non_pawn_material(~c);
+}
+
+// Algebraic WDL margin (Win - Loss) normalized to [-1024, 1024]
+static int wdl_margin(int v, int a, int b) {
+    int tp = (v + a) * 1024 / (std::abs(v + a) + b);
+    int tn = (v - a) * 1024 / (std::abs(v - a) + b);
+    return (tp + tn) / 2;
 }
 
 Value scale_evaluation(Value nnue, int optimism, const Position& pos);
@@ -58,22 +69,34 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 
 // Applies search-dependent scaling (optimism and rule50) to the raw NNUE eval
 Value scale_evaluation(Value nnue, int optimism, const Position& pos) {
-    Value se = simple_eval(pos);
+    int npm = pos.non_pawn_material();
+    int pv  = pawn_value(npm);
+    int se  = simple_eval(pos, pv);
 
-    // Normalize the raw evaluations to [-1024, 1024] to measure their correlation.
-    int se_norm   = (se * 1024) / (std::abs(se) + 1024);
-    int nnue_norm = (nnue * 1024) / (std::abs(nnue) + 1024);
-    // When NNUE and material agree (positive alignment), the position is straightforward;
-    // otherwise (negative alignment) it involves complex compensation. In a representative
-    // sample, alignment averages -1 or so, i.e. it is well-centered in [-2048, 2048].
-    int alignment = (se_norm * nnue_norm) / 512;
+    int material = pv * pos.count<PAWN>() + npm;
 
-    // When winning, we favor easy positions, and vice versa
-    int base_eval = nnue + (nnue * alignment) / 65536 + (optimism * alignment) / 16384;
+    // Scale NNUE into search evaluation space (matches the UCI WDL domain)
+    Value nnue_v = nnue * i64(90649 + material) / 90649;
 
-    // Scale the combined evaluation by total material
-    int material = 521 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = base_eval * i64(90649 + material) / 90649;
+    // Exact inverse scaling for simple eval
+    int se_scaled = int(se * i64(90649) / (90649 + material));
+
+    // Algebraic WDL parameters in search space
+    constexpr int a_nnue = 310;
+    int a_se = 310 + (pos.count<PAWN>() == 0) * (7 * std::max(0, 8000 - npm)) / 80;
+    constexpr int b = 70;
+
+    int se_margin   = wdl_margin(se_scaled, a_se, b);
+    int nnue_margin = wdl_margin(nnue_v, a_nnue, b);
+
+    // Alignment measures directional concordance; margin distance measures dynamic complexity
+    int alignment  = (se_margin * nnue_margin) / 512;
+    int complexity = std::abs(se_margin - nnue_margin) - 256;
+
+    int se_adjust = alignment + complexity;
+
+    // When winning, we favor easy positions and dynamic tension over flat draws, and vice versa
+    int v = nnue_v + (i64(nnue_v) * se_adjust) / 49152 + (i64(optimism) * se_adjust) / 12288;
 
     // Damp down the evaluation linearly when shuffling
     v -= v * pos.rule50_count() / 189;
