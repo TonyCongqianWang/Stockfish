@@ -771,7 +771,7 @@ Value Search::Worker::search(
     Depth extension, newDepth;
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
-    bool  capture, ttCapture;
+    bool  capture, ttCapture, iidPv = false;
     int   priorReduction;
     Piece movedPiece;
 
@@ -1074,11 +1074,27 @@ Value Search::Worker::search(
 
     improving |= ss->staticEval >= beta;
 
-    // Step 11. Internal iterative reductions
-    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
+    // Step 11. Internal iterative reductions / scout search
+    // At sufficient depth, reduce depth for Cut nodes without a TTMove.
+    // For PV nodes, perform a fast scout search to obtain a candidate move.
+    if (cutNode && !ss->followPV && depth >= 6 && !ttData.move)
         depth--;
+
+    if (PvNode && !ss->followPV && depth >= 6 && !ttData.move)
+    {
+        search<PV>(pos, ss, alpha, beta, depth - 4, false);
+
+        auto [scoutHit, scoutData, scoutWriter] = tt.probe(posKey);
+        if (scoutHit && scoutData.move)
+        {
+            ttData.move = scoutData.move;
+            ttCapture   = pos.capture_stage(ttData.move);
+            iidPv       = true;
+        }
+
+        if (ss->pv)
+            ss->pv->clear();
+    }
 
     // Step 12. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
@@ -1558,6 +1574,9 @@ moves_loop:  // When in check, search starts here
                     assert(value >= beta);  // Fail high
                     break;
                 }
+
+                if (iidPv)
+                    break;
 
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 3 && depth < 12 && !is_decisive(value))
