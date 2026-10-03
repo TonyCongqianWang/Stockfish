@@ -125,20 +125,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // Calculate thread scaling factor once at the start of the game
         if (threadScalingFactor < 0)
-        {
-            if (threadsCount > 1)
-            {
-                double gameTimeSec = (scaledTime >= 1000)
-                                       ? (double(scaledTime) / 1000.0)
-                                       : (double(timeLeft / scaleFactor) / 1000.0);
-                double nodeBudgetMnodes = std::max(0.5, gameTimeSec);
-                double a = std::clamp(12.4429 * std::pow(nodeBudgetMnodes / 100.0, -0.377), 1.0, 80.0);
-                double equivNodesPct = (100.0 - a) + a * std::pow(threadsCount, 2.0 / 3.0);
-                threadScalingFactor  = (100.0 * threadsCount) / equivNodesPct;
-            }
-            else
-                threadScalingFactor = 1.0;
-        }
+            threadScalingFactor = std::pow(threadsCount, 0.631);
 
         // Calculate effective NPS based on main thread performance scaled by thread count
         const double referenceNPS = 412'000.0;
