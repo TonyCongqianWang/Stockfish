@@ -221,24 +221,27 @@ void TimeManagement::init(Search::LimitsType& limits,
         // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
-        // 5. Early ply discount via anchored exponential decay
-        // w(ply) = 1.0 - exp(-c(kappa) * ply) * r0 * (1.0 + delta_g(kappa))
-        // Calibrated dynamically against proven Take 47 baselines:
-        // SD exits quickly (c ~ 0.107) while 2% increment extends discount (c ~ 0.078) to bank incoming cash flow.
-        constexpr double r0      = 0.50;
-        constexpr double c0      = 0.095;
-        constexpr double delta_c = 0.080;
-        constexpr double ck      = 1.0;
-        constexpr double alpha   = 0.15;
-        constexpr double cg      = 1.0;
+        // 5. Early ply discount via decoupled multiplicative components
+        // Base early discount is strictly dependent on ply with constant decay rate c_exp.
+        // Dynamic kappa adjustment C(kappa, ply) gently modulates around 1.0 with widening amplitude.
+        constexpr double r0    = 0.50;
+        constexpr double c_exp = 0.060;
+        constexpr double p     = 1.15;
+        constexpr double W0    = 0.25;
+        constexpr double kp    = 10.0;
+        constexpr double S0    = 0.55;
+        constexpr double alpha = 2.80;
+        constexpr double beta  = -1.60;
 
-        double kappa   = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
-        double c_exp   = c0 - delta_c * (kappa - 1.0) / (kappa + ck);
-        double delta_g = alpha * (kappa - 1.0) / (kappa + cg);
-        double g_kappa = 1.0 + delta_g;
+        double kappa = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
+        double y     = kappa - 1.0;
+        double denom = 1.0 + alpha * std::abs(y) + beta * y;
+        double asym  = (S0 * y) / denom;
 
-        double f_ply             = std::exp(-c_exp * double(ply));
-        double w_ply             = 1.0 - f_ply * r0 * g_kappa;
+        double W             = W0 + (1.0 - W0) * (double(ply) / (double(ply) + kp));
+        double C_kappa       = 1.0 + W * asym;
+        double base_discount = r0 * std::exp(-c_exp * std::pow(double(ply), p));
+        double w_ply         = 1.0 - base_discount * C_kappa;
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
