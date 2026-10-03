@@ -221,22 +221,20 @@ void TimeManagement::init(Search::LimitsType& limits,
         // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
-        // 5. Early ply discount via progressive exponential decay
-        // w(ply) = 1.0 - exp(-c_exp * ply) * r0 * g(kappa, ply)
-        // Calibrated with c_exp = 0.0847 so that exactly 2.0% discount remains at Move 20 (ply 38).
-        // Continuous replenishment ratio kappa = totalEffectiveTime / limits.time[us].
-        // cg is modulated with ply: starts constrained at cg0 = 3.00 on Move 1, smoothly decaying
-        // toward cg_min = 0.60 to open up reduction in surplus increment while preserving Move 1 safety.
+        // 5. Early ply discount via anchored exponential decay
+        // w(ply) = 1.0 - exp(-c(kappa) * ply) * r0 * (1.0 + delta_g(kappa))
+        // Calibrated dynamically against proven Take 47 baselines:
+        // SD exits quickly (c ~ 0.107) while 2% increment extends discount (c ~ 0.078) to bank incoming cash flow.
         constexpr double r0      = 0.50;
-        constexpr double c_exp   = 0.0847;
-        constexpr double alpha   = 0.35;
-        constexpr double cg_0    = 3.00;
-        constexpr double cg_min  = 0.60;
-        constexpr double kp      = 0.10;
+        constexpr double c0      = 0.095;
+        constexpr double delta_c = 0.080;
+        constexpr double ck      = 1.0;
+        constexpr double alpha   = 0.15;
+        constexpr double cg      = 1.0;
 
         double kappa   = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
-        double cg_ply  = cg_min + (cg_0 - cg_min) / (1.0 + kp * double(ply));
-        double delta_g = alpha * (kappa - 1.0) / (kappa + cg_ply);
+        double c_exp   = c0 - delta_c * (kappa - 1.0) / (kappa + ck);
+        double delta_g = alpha * (kappa - 1.0) / (kappa + cg);
         double g_kappa = 1.0 + delta_g;
 
         double f_ply             = std::exp(-c_exp * double(ply));
@@ -248,15 +246,17 @@ void TimeManagement::init(Search::LimitsType& limits,
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
-        // 7. Quadratic safety buffer zone: scale down smoothly as clock drops
+        // 7. Quadratic safety buffer zone: scale down smoothly as timeBank empties
+        // Uses timeBank (which already deducts safetyReserve and incoming increment)
+        // with threshold = 2.0 * nominalMaximum to avoid premature hoarding.
         // scale = 1.0 - (1.0 - w)^2 has zero derivative at the threshold (no premature reduction),
-        // and monotonically scales down to zero as clock empties, guaranteeing maximumTime <= 0.50 * limits.time.
+        // and monotonically scales down to zero as bank empties, guaranteeing maximumTime <= 0.50 * limits.time.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double safetyThreshold = 4.0 * double(nominalMaximum);
-        if (safetyThreshold > 0.0 && double(limits.time[us]) < safetyThreshold)
+        double safetyThreshold = 2.0 * double(nominalMaximum);
+        if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
-            double w     = std::clamp(double(limits.time[us]) / safetyThreshold, 0.0, 1.0);
+            double w     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
             double scale = 1.0 - (1.0 - w) * (1.0 - w);
             optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
             maximumTime  = std::max(optimumTime,  TimePoint(double(nominalMaximum) * scale));
