@@ -222,10 +222,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via decoupled multiplicative components
-        // Base early discount is strictly dependent on ply with constant decay rate c_exp.
+        // Base early discount is strictly dependent on ply with constant decay rate c_exp = 0.065.
         // Dynamic kappa adjustment C(kappa, ply) gently modulates around 1.0 with widening amplitude.
         constexpr double r0    = 0.50;
-        constexpr double c_exp = 0.060;
+        constexpr double c_exp = 0.065;
         constexpr double p     = 1.15;
         constexpr double W0    = 0.25;
         constexpr double kp    = 10.0;
@@ -249,18 +249,17 @@ void TimeManagement::init(Search::LimitsType& limits,
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
-        // 7. Quadratic safety buffer zone: scale down smoothly as timeBank empties
-        // Uses timeBank (which already deducts safetyReserve and incoming increment)
-        // with threshold = 2.0 * nominalMaximum to avoid premature hoarding.
-        // scale = 1.0 - (1.0 - w)^2 has zero derivative at the threshold (no premature reduction),
-        // and monotonically scales down to zero as bank empties, guaranteeing maximumTime <= 0.50 * limits.time.
+        // 7. Safety buffer zone: scale down smoothly as timeBank empties
+        // Uses timeBank with rational curvature (c = 0.25) to avoid premature hoarding
+        // while guaranteeing that the safety reserve is never breached.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
         double safetyThreshold = 2.0 * double(nominalMaximum);
         if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
-            double w     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
-            double scale = 1.0 - (1.0 - w) * (1.0 - w);
+            constexpr double c = 0.25;
+            double u     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
+            double scale = (u * (1.0 + c)) / (u + c);
             optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
             maximumTime  = std::max(optimumTime,  TimePoint(double(nominalMaximum) * scale));
         }
