@@ -327,6 +327,8 @@ bool Search::Worker::iterative_deepening() {
     int  searchAgainCounter = 0;
     int  failHighRecovery   = 0;
     bool uciPvSent          = false;
+    iterIirImpact           = 0;
+    disableIirThisIter      = false;
 
     lowPlyHistory.fill(102);
 
@@ -358,8 +360,13 @@ bool Search::Worker::iterative_deepening() {
 
         usize pvFirst = pvLast = 0;
 
-        if (!threads.increaseDepth)
+        const bool heavyIir = (iterIirImpact >= 40);
+        iterIirImpact       = 0;
+
+        if (!threads.increaseDepth || heavyIir)
             searchAgainCounter++;
+
+        disableIirThisIter = heavyIir;
 
         // MultiPV loop: we perform a full root search for each PV line
         for (pvIdx = 0; pvIdx < multiPV; ++pvIdx)
@@ -395,9 +402,9 @@ bool Search::Worker::iterative_deepening() {
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
-                // effective increment for every four searchAgain steps (see issue #2717).
+                // effective increment for every 32 searchAgain steps (see issue #2717).
                 Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
+                                                    - 31 * (searchAgainCounter + 1) / 32);
                 rootDelta           = beta - alpha;
                 bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
@@ -726,6 +733,8 @@ void Search::Worker::clear() {
         reductions[i] = int(2872 / 128.0 * std::log(i));
 
     refreshTable.clear(network[numaAccessToken]);
+    iterIirImpact      = 0;
+    disableIirThisIter = false;
 }
 
 
@@ -782,8 +791,9 @@ Value Search::Worker::search(
     ss->inCheck   = pos.checkers();
     priorCapture  = pos.captured_piece();
     Color us      = pos.side_to_move();
-    ss->moveCount = 0;
-    bestValue     = -VALUE_INFINITE;
+    ss->moveCount      = 0;
+    ss->distanceFromPv = PvNode ? 0 : (ss - 1)->distanceFromPv + 1;
+    bestValue          = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
 
     ss->followPV = rootNode
@@ -1075,10 +1085,24 @@ Value Search::Worker::search(
     improving |= ss->staticEval >= beta;
 
     // Step 11. Internal iterative reductions
-    // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
-    // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
-        depth--;
+    // At sufficient depth, reduce depth for Cut/PV nodes without a TTMove.
+    // If heavy IIR was detected in the previous iteration, IIR is disabled near the PV.
+    if (!(disableIirThisIter && ss->distanceFromPv <= 1) && !ttData.move)
+    {
+        if (cutNode && depth >= 7)
+        {
+            depth -= 2;
+            if (ss->distanceFromPv == 1)
+                iterIirImpact += 2 * depth;
+            else if (ss->distanceFromPv == 2)
+                iterIirImpact += 1 * depth;
+        }
+        else if (PvNode && !ss->followPV && depth >= 6)
+        {
+            depth -= 2;
+            iterIirImpact += 4 * depth;
+        }
+    }
 
     // Step 12. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
