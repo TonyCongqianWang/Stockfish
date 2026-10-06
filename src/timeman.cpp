@@ -198,10 +198,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Early ply reduction on front-loading overdraft factor (tau - 1.0)
         // Modulates overdraft above uniform draw (1.0) using exponential-with-power curve,
         // naturally differentiating long TCs from short TCs and sudden death from increments.
-        constexpr double w0_od = 0.40;
-        constexpr double c_od  = 0.12;
-        constexpr double p_od  = 1.10;
-        double w_od = 1.0 - (1.0 - w0_od) * std::exp(-c_od * std::pow(double(ply), p_od));
+        constexpr double w0_od = 0.35;
+        constexpr double c_exp = 0.035;
+        constexpr double p_exp = 1.15;
+        double w_od = 1.0 - (1.0 - w0_od) * std::exp(-c_exp * std::pow(double(ply), p_exp));
 
         double tau = 1.0 + deltaTau * p_s * w_od;
 
@@ -231,11 +231,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount on total move budget
-        // Pure exponential-with-power discount decoupled from kappa/asymmetry heuristics.
+        // Pure exponential-with-power discount sharing identical decay parameters with overdraft curve.
         constexpr double w0_tot = 0.50;
-        constexpr double c_tot  = 0.072;
-        constexpr double p_tot  = 1.18;
-        double w_ply = 1.0 - (1.0 - w0_tot) * std::exp(-c_tot * std::pow(double(ply), p_tot));
+        double w_ply = 1.0 - (1.0 - w0_tot) * std::exp(-c_exp * std::pow(double(ply), p_exp));
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
