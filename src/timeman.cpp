@@ -222,13 +222,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
         // 5. Early ply discount via decoupled multiplicative components
-        // Base early discount is strictly dependent on ply with constant decay rate c_exp = 0.065.
-        // Dynamic kappa adjustment C(kappa, ply) gently modulates around 1.0 with widening amplitude.
+        // Base early discount is strictly dependent on ply with constant decay rate c_exp = 0.070, p = 1.18.
+        // Dynamic kappa adjustment C(kappa, ply) uses clean affine ply widening W = a + b * ply.
         constexpr double r0    = 0.50;
-        constexpr double c_exp = 0.065;
-        constexpr double p     = 1.15;
-        constexpr double W0    = 0.25;
-        constexpr double kp    = 10.0;
+        constexpr double c_exp = 0.070;
+        constexpr double p     = 1.18;
+        constexpr double a     = 0.30;
+        constexpr double b     = 0.015;
         constexpr double S0    = 0.55;
         constexpr double alpha = 2.80;
         constexpr double beta  = -1.60;
@@ -238,7 +238,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         double denom = 1.0 + alpha * std::abs(y) + beta * y;
         double asym  = (S0 * y) / denom;
 
-        double W             = W0 + (1.0 - W0) * (double(ply) / (double(ply) + kp));
+        double W             = a + b * double(ply);
         double C_kappa       = 1.0 + W * asym;
         double base_discount = r0 * std::exp(-c_exp * std::pow(double(ply), p));
         double w_ply         = 1.0 - base_discount * C_kappa;
@@ -250,16 +250,16 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
         // 7. Safety buffer zone: scale down smoothly as timeBank empties
-        // Uses timeBank with rational curvature (c = 0.25) to avoid premature hoarding
-        // while guaranteeing that the safety reserve is never breached.
+        // Uses timeBank with threshold = 1.25 * nominalMaximum and cubic curvature (1 - (1 - u)^3)
+        // guaranteeing zero slope (no kinks) at the threshold while preserving endgame search depth.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double safetyThreshold = 2.0 * double(nominalMaximum);
+        double safetyThreshold = 1.25 * double(nominalMaximum);
         if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
-            constexpr double c = 0.25;
             double u     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
-            double scale = (u * (1.0 + c)) / (u + c);
+            double v     = 1.0 - u;
+            double scale = 1.0 - v * v * v;
             optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
             maximumTime  = std::max(optimumTime,  TimePoint(double(nominalMaximum) * scale));
         }
