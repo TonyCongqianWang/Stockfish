@@ -198,8 +198,8 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Early ply reduction on front-loading overdraft factor (tau - 1.0)
         // Modulates overdraft above uniform draw (1.0) using exponential-with-power curve,
         // naturally differentiating long TCs from short TCs and sudden death from increments.
-        constexpr double w0_od = 0.35;
-        constexpr double c_exp = 0.035;
+        constexpr double w0_od = 0.65;
+        constexpr double c_exp = 0.040;
         constexpr double p_exp = 1.15;
         double w_od = 1.0 - (1.0 - w0_od) * std::exp(-c_exp * std::pow(double(ply), p_exp));
 
@@ -232,7 +232,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 5. Early ply discount on total move budget
         // Pure exponential-with-power discount sharing identical decay parameters with overdraft curve.
-        constexpr double w0_tot = 0.50;
+        constexpr double w0_tot = 0.65;
         double w_ply = 1.0 - (1.0 - w0_tot) * std::exp(-c_exp * std::pow(double(ply), p_exp));
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
