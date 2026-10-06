@@ -123,6 +123,7 @@ struct Stack {
     Value                       staticEval;
     int                         statScore;
     int                         moveCount;
+    int                         distanceFromPv;
     bool                        inCheck;
     bool                        ttPv;
     bool                        ttHit;
@@ -380,6 +381,8 @@ class Worker {
     usize              pvIdx, pvLast;
     RelaxedAtomic<u64> nodes, tbHits, bestMoveChanges;
     int                selDepth, nmpMinPly;
+    int                iterIirImpact      = 0;
+    bool               disableIirThisIter = false;
 
     Value optimism[COLOR_NB];
 
