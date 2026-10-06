@@ -194,7 +194,16 @@ void TimeManagement::init(Search::LimitsType& limits,
             s = 1.0 / (1.0 + std::exp(-k * (tauRawActual - x0)));
 
         double p_s = c1 * s + (1.0 - c1) * (s * s);
-        double tau = 1.0 + deltaTau * p_s;
+
+        // Early ply reduction on front-loading overdraft factor (tau - 1.0)
+        // Modulates overdraft above uniform draw (1.0) using exponential-with-power curve,
+        // naturally differentiating long TCs from short TCs and sudden death from increments.
+        constexpr double w0_od = 0.40;
+        constexpr double c_od  = 0.12;
+        constexpr double p_od  = 1.10;
+        double w_od = 1.0 - (1.0 - w0_od) * std::exp(-c_od * std::pow(double(ply), p_od));
+
+        double tau = 1.0 + deltaTau * p_s * w_od;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -221,27 +230,12 @@ void TimeManagement::init(Search::LimitsType& limits,
         // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
         double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
 
-        // 5. Early ply discount via decoupled multiplicative components
-        // Base early discount is strictly dependent on ply with constant decay rate c_exp = 0.070, p = 1.18.
-        // Dynamic kappa adjustment C(kappa, ply) uses clean affine ply widening W = a + b * ply.
-        constexpr double r0    = 0.50;
-        constexpr double c_exp = 0.070;
-        constexpr double p     = 1.18;
-        constexpr double a     = 0.30;
-        constexpr double b     = 0.015;
-        constexpr double S0    = 0.55;
-        constexpr double alpha = 2.80;
-        constexpr double beta  = -1.60;
-
-        double kappa = totalEffectiveTime / double(std::max(TimePoint(1), limits.time[us]));
-        double y     = kappa - 1.0;
-        double denom = 1.0 + alpha * std::abs(y) + beta * y;
-        double asym  = (S0 * y) / denom;
-
-        double W             = a + b * double(ply);
-        double C_kappa       = 1.0 + W * asym;
-        double base_discount = r0 * std::exp(-c_exp * std::pow(double(ply), p));
-        double w_ply         = 1.0 - base_discount * C_kappa;
+        // 5. Early ply discount on total move budget
+        // Pure exponential-with-power discount decoupled from kappa/asymmetry heuristics.
+        constexpr double w0_tot = 0.50;
+        constexpr double c_tot  = 0.072;
+        constexpr double p_tot  = 1.18;
+        double w_ply = 1.0 - (1.0 - w0_tot) * std::exp(-c_tot * std::pow(double(ply), p_tot));
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
 
         // 6. Dynamic maxScale ceiling
