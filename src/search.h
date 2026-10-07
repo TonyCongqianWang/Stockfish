@@ -130,6 +130,7 @@ struct Stack {
     int                         cutoffCnt;
     int                         reduction;
     int                         priorNMPFailHigh;
+    int                         distanceFromPv;
 };
 
 
@@ -380,6 +381,8 @@ class Worker {
     usize              pvIdx, pvLast;
     RelaxedAtomic<u64> nodes, tbHits, bestMoveChanges;
     int                selDepth, nmpMinPly;
+    int                iterIirImpact = 0;
+    int                effectiveBase = 8;
 
     Value optimism[COLOR_NB];
 
