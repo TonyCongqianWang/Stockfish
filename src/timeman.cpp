@@ -194,16 +194,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             s = 1.0 / (1.0 + std::exp(-k * (tauRawActual - x0)));
 
         double p_s = c1 * s + (1.0 - c1) * (s * s);
-
-        // Early ply reduction on front-loading overdraft factor (tau - 1.0)
-        // Modulates overdraft above uniform draw (1.0) using exponential-with-power curve,
-        // naturally differentiating long TCs from short TCs and sudden death from increments.
-        constexpr double w0_od = 0.65;
-        constexpr double c_exp = 0.040;
-        constexpr double p_exp = 1.15;
-        double w_od = 1.0 - (1.0 - w0_od) * std::exp(-c_exp * std::pow(double(ply), p_exp));
-
-        double tau = 1.0 + deltaTau * p_s * w_od;
+        double tau = 1.0 + deltaTau * p_s;
 
         // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
@@ -226,15 +217,23 @@ void TimeManagement::init(Search::LimitsType& limits,
             bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
-        // 4. Base move budget combining time bank draw and net increment cash flow,
-        // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
-        double baseMoveBudget = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
+        // 4. Early ply discounts for bank draw and increment cash flow
+        // Bank draw floor scales with front-loading intensity p_s so discounted Move 1 draw
+        // percentage increases strictly monotonically across time controls.
+        // Increment cash flow floor independently prevents early overspending in high increment.
+        constexpr double c_exp = 0.040;
+        constexpr double p_exp = 1.15;
+        double w0_bank = 0.78 - 0.30 * p_s;
+        constexpr double w0_inc  = 0.48;
 
-        // 5. Early ply discount on total move budget
-        // Pure exponential-with-power discount sharing identical decay parameters with overdraft curve.
-        constexpr double w0_tot = 0.65;
-        double w_ply = 1.0 - (1.0 - w0_tot) * std::exp(-c_exp * std::pow(double(ply), p_exp));
-        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget * w_ply));
+        double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
+        double w_bank = 1.0 - (1.0 - w0_bank) * decay;
+        double w_inc  = 1.0 - (1.0 - w0_inc) * decay;
+
+        // 5. Clean split base move budget combining discounted bank draw and discounted usable increment,
+        // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
+        double baseMoveBudget = std::max(0.0, (bankDraw * w_bank + std::max(0.0, effectiveInc) * w_inc) * sdScale);
+        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget));
 
         // 6. Dynamic maxScale ceiling
         double maxConstant       = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
