@@ -223,7 +223,7 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Increment cash flow floor independently prevents early overspending in high increment.
         constexpr double c_exp = 0.040;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.78 - 0.30 * p_s;
+        double w0_bank = 0.55 - 0.20 * p_s;
         constexpr double w0_inc  = 0.48;
 
         double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
