@@ -327,6 +327,9 @@ bool Search::Worker::iterative_deepening() {
     int  searchAgainCounter = 0;
     int  failHighRecovery   = 0;
     bool uciPvSent          = false;
+    iterIirImpact           = 0;
+    accumIirImpact          = 0;
+    effectiveBase           = 6;
 
     lowPlyHistory.fill(102);
 
@@ -339,6 +342,11 @@ bool Search::Worker::iterative_deepening() {
            && !(limits.depth && mainThread && rootDepth >= limits.depth))
     {
         rootDepth++;
+
+        accumIirImpact = (accumIirImpact + 3 * iterIirImpact) / 4;
+        int penalty    = std::clamp(accumIirImpact / 1536, 0, 5);
+        effectiveBase  = 6 + penalty;
+        iterIirImpact  = 0;
 
         // Age out PV variability metric and signal the start of a new iteration
         if (mainThread)
@@ -726,6 +734,9 @@ void Search::Worker::clear() {
         reductions[i] = int(2872 / 128.0 * std::log(i));
 
     refreshTable.clear(network[numaAccessToken]);
+    iterIirImpact  = 0;
+    accumIirImpact = 0;
+    effectiveBase  = 6;
 }
 
 
@@ -779,12 +790,13 @@ Value Search::Worker::search(
     SearchedList quietsSearched;
 
     // Step 1. Initialize node
-    ss->inCheck   = pos.checkers();
-    priorCapture  = pos.captured_piece();
-    Color us      = pos.side_to_move();
-    ss->moveCount = 0;
-    bestValue     = -VALUE_INFINITE;
-    maxValue      = VALUE_INFINITE;
+    ss->inCheck        = pos.checkers();
+    priorCapture       = pos.captured_piece();
+    Color us           = pos.side_to_move();
+    ss->moveCount      = 0;
+    ss->distanceFromPv = PvNode ? 0 : (ss - 1)->distanceFromPv + 1;
+    bestValue          = -VALUE_INFINITE;
+    maxValue           = VALUE_INFINITE;
 
     ss->followPV = rootNode
                 || ((ss - 1)->followPV
@@ -1077,8 +1089,17 @@ Value Search::Worker::search(
     // Step 11. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move)
+    if (!ss->followPV && !allNode && !ttData.move
+        && depth >= std::max(3, effectiveBase - ss->distanceFromPv))
+    {
         depth--;
+        if (ss->distanceFromPv == 0)
+            iterIirImpact += 256;
+        else if (ss->distanceFromPv == 1)
+            iterIirImpact += 16;
+        else if (ss->distanceFromPv == 2)
+            iterIirImpact += 1;
+    }
 
     // Step 12. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
