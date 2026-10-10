@@ -334,6 +334,7 @@ bool Search::Worker::iterative_deepening() {
 
     int  searchAgainCounter = 0;
     int  failHighRecovery   = 0;
+    int  lastWidenedDelta   = 0;
     bool uciPvSent          = false;
 
     lowPlyHistory.fill(102);
@@ -387,7 +388,12 @@ bool Search::Worker::iterative_deepening() {
 
             // Reset aspiration window starting size
             delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
-            Value avg = rootMoves[pvIdx].averageScore;
+            if (failHighRecovery > 0)
+                delta = std::max(delta, lastWidenedDelta);
+
+            Value avg = (failHighRecovery > 0 && rootMoves[pvIdx].score != -VALUE_INFINITE)
+                          ? rootMoves[pvIdx].score
+                          : rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
@@ -398,8 +404,6 @@ bool Search::Worker::iterative_deepening() {
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
             int failedHighCnt = 0;
-            if (!pvIdx)
-                failHighRecovery = std::max(0, failHighRecovery - 2);
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
@@ -455,8 +459,19 @@ bool Search::Worker::iterative_deepening() {
             }
 
             // Gradually increase depth after reduced depth search
-            if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
+            if (!threads.stop && !pvIdx)
+            {
+                if (failedHighCnt > 0)
+                {
+                    failHighRecovery += (failedHighCnt + 1) / 2;
+                    lastWidenedDelta  = delta;
+                }
+                else
+                {
+                    failHighRecovery = std::max(0, failHighRecovery - 1);
+                    lastWidenedDelta = 0;
+                }
+            }
 
             if (threads.stop && pvIdx)
             {
