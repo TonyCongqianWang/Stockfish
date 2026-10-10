@@ -295,11 +295,6 @@ class SearchManager {
                    Depth                     depth);
 
     Stockfish::TimeManagement tm;
-    TimePoint                 initialTimeLeft     = -1;
-    double                    threadScalingFactor = -1.0;
-    u64                       mainThreadNodes     = 0;
-    TimePoint                 mainThreadTimeMs    = 0;
-    int                       benchmarkedMoves    = 0;
     int                       callsCnt;
     std::atomic_bool          ponder;
 

@@ -172,6 +172,17 @@ void UCIEngine::loop() {
 
             engine.save_network(file);
         }
+        else if (token == "--machine-speed-adjustment" || token == "machine-speed-adjustment"
+                 || token == "--speed-adjustment" || token == "speed-adjustment")
+        {
+            double factor;
+            if (is >> factor)
+            {
+                int perMille = int(std::round(factor * 1000.0));
+                std::istringstream ss("name MachineSpeedAdjustment value " + std::to_string(perMille));
+                setoption(ss);
+            }
+        }
         else if (token == "--help" || token == "help" || token == "--license" || token == "license")
             sync_cout
               << "\nStockfish is a powerful chess engine for playing and analyzing."

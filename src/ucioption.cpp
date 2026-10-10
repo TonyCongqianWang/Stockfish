@@ -53,6 +53,9 @@ void OptionsMap::setoption(std::istringstream& is) {
     while (is >> token)
         value += (value.empty() ? "" : " ") + token;
 
+    if (name == "Machine Speed Adjustment" || name == "Speed Adjustment" || name == "SpeedAdjustment")
+        name = "MachineSpeedAdjustment";
+
     if (options_map.count(name))
         options_map[name] = value;
     else

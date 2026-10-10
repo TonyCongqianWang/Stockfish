@@ -270,13 +270,8 @@ void ThreadPool::clear() {
     main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
     main_manager()->previousTimeReduction    = 0.85;
 
-    main_manager()->callsCnt            = 0;
-    main_manager()->bestPreviousScore   = VALUE_INFINITE;
-    main_manager()->initialTimeLeft     = -1;
-    main_manager()->threadScalingFactor = -1.0;
-    main_manager()->mainThreadNodes     = 0;
-    main_manager()->mainThreadTimeMs    = 0;
-    main_manager()->benchmarkedMoves    = 0;
+    main_manager()->callsCnt          = 0;
+    main_manager()->bestPreviousScore = VALUE_INFINITE;
     main_manager()->tm.clear();
 }
 
