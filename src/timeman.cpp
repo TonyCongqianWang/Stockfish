@@ -34,11 +34,27 @@ TimePoint TimeManagement::maximum() const { return maximumTime; }
 void TimeManagement::clear() {
     availableNodes    = -1;  // When in 'nodes as time' mode
     previousMovesToGo = 0;
+    initialTimeLeft   = -1;
+    mainThreadNodes   = 0;
+    mainThreadTimeMs  = 0;
+    benchmarkedMoves  = 0;
 }
 
 void TimeManagement::advance_nodes_time(i64 nodes) {
     assert(useNodesTime);
     availableNodes = std::max(i64(0), availableNodes - nodes);
+}
+
+void TimeManagement::update_benchmark(u64 nodes, TimePoint elapsed, const OptionsMap& options) {
+    if (useNodesTime || int(options["MachineSpeedAdjustment"]) > 0)
+        return;
+
+    if (benchmarkedMoves < 5 && (benchmarkedMoves < 3 || mainThreadTimeMs < 200))
+    {
+        mainThreadNodes  += nodes;
+        mainThreadTimeMs += elapsed;
+        benchmarkedMoves++;
+    }
 }
 
 // Called at the beginning of the search and calculates
@@ -48,11 +64,7 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
-                          const OptionsMap&   options,
-                          TimePoint&          initialTimeLeft,
-                          double&             threadScalingFactor,
-                          u64                 mainThreadNodes,
-                          TimePoint           mainThreadTimeMs) {
+                          const OptionsMap&   options) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     // If we have no time, we don't need to fully initialize TM.
@@ -121,32 +133,31 @@ void TimeManagement::init(Search::LimitsType& limits,
     // game time for the current move, so also cap to a percentage of available game time.
     if (limits.movestogo == 0)
     {
-        int threadsCount = std::max(1, int(options["Threads"]));
+        int    threadsCount        = std::max(1, int(options["Threads"]));
+        double threadScalingFactor = std::sqrt(threadsCount);
 
-        // Calculate thread scaling factor once at the start of the game
-        if (threadScalingFactor < 0)
-            threadScalingFactor = std::pow(threadsCount, 0.5);
+        const double referenceNPS          = 467'000.0;
+        double       speedAdjustmentFactor = 1.0;
 
-        // Calculate effective NPS based on main thread performance scaled by thread count
-        const double referenceNPS = 467'000.0;
-        double       effectiveNPS = referenceNPS * threadScalingFactor;
-
-        if (useNodesTime)
-            effectiveNPS = double(npmsec) * 1000.0;
-        else if (mainThreadTimeMs > 0 && mainThreadNodes > 0)
+        int machineSpeedAdjustment = int(options["MachineSpeedAdjustment"]);
+        if (machineSpeedAdjustment > 0)
+            speedAdjustmentFactor = double(machineSpeedAdjustment) / 1000.0;
+        else if (!useNodesTime && mainThreadTimeMs > 0 && mainThreadNodes > 0)
         {
-            double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
-            effectiveNPS   = mainNPS * threadScalingFactor;
+            double mainNPS        = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
+            speedAdjustmentFactor = mainNPS / referenceNPS;
         }
 
-        double effectiveGameSec = (double(scaledTime) / 1000.0) * (effectiveNPS / referenceNPS);
+        double totalScale = speedAdjustmentFactor * threadScalingFactor;
+
+        double effectiveGameSec = (double(scaledTime) / 1000.0) * totalScale;
 
         // Capture initial time left (with increments, without move overhead) at game start
         if (initialTimeLeft < 0)
             initialTimeLeft =
               std::max(TimePoint(1), (limits.time[us] + limits.inc[us] * (mtg - 1)) / scaleFactor);
 
-        double effectiveInitialTime = double(initialTimeLeft) * (effectiveNPS / referenceNPS);
+        double effectiveInitialTime = double(initialTimeLeft) * totalScale;
         double originalTimeAdjust   = 0.3272 * std::log10(std::max(1.0, effectiveInitialTime)) - 0.4141;
 
         // Calculate time constants based on effective game time.
