@@ -221,10 +221,10 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Bank draw floor scales with front-loading intensity p_s so discounted Move 1 draw
         // percentage increases strictly monotonically across time controls.
         // Increment cash flow floor independently prevents early overspending in high increment.
-        constexpr double c_exp = 0.018;
+        constexpr double c_exp = 0.035;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.55 - 0.20 * p_s;
-        constexpr double w0_inc  = 0.48;
+        double w0_bank = 0.60 - 0.20 * p_s;
+        constexpr double w0_inc  = 0.50;
 
         double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
         double w_bank = 1.0 - (1.0 - w0_bank) * decay;
