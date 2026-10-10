@@ -170,17 +170,17 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // Remaining game duration across our physically anchored horizon M.
-        // Dimensionally grounded total effective time without artificial overdraft inflation (delta = 0.0).
+        // Dimensionally grounded total effective time without artificial overdraft inflation.
         double totalExpectedMs    = double(limits.time[us]) + (M - 1.0) * effectiveInc;
         double totalEffectiveTime = std::max(1.0, totalExpectedMs);
         double remainingGameMs    = totalEffectiveTime / double(scaleFactor);
         double remainingGameSec   = std::max(0.01, remainingGameMs / 1000.0);
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
-        double tauRaw           = std::log10(std::max(1.0, effectiveGameSec));
+        double logSecClamped    = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
-        // Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
+        // 2. Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
         // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
         // Provides steepened transition (dtau/dx ~ 1.00 - 1.35 across 5s-15s) with elevated bullet SD floor (tau ~ 1.34)
         // and generous headroom for VVLTC (tau ~ 4.25) and Classical TCs without premature saturation.
@@ -196,13 +196,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         double p_s = c1 * s + (1.0 - c1) * (s * s);
         double tau = 1.0 + deltaTau * p_s;
 
-        // 2. Time Bank & Nominal Draw with Discrete Renewal Horizon
+        // 3. Time Bank & Nominal Draw with Discrete Renewal Horizon
         // Time bank deducts safety reserve and the current move's incoming increment
         TimePoint safetyReserve = moveOverhead * 10;
         TimePoint timeBank =
           std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
 
-        // 3. Multiplicative bank factor without matFrac (dynamic horizon M governs game phase)
+        // Multiplicative bank factor governed by dynamic horizon M
         double bankDraw = double(timeBank) * (tau / (M + tau));
 
         // Decrease time bank draw if behind in time.
@@ -230,13 +230,15 @@ void TimeManagement::init(Search::LimitsType& limits,
         double w_bank = 1.0 - (1.0 - w0_bank) * decay;
         double w_inc  = 1.0 - (1.0 - w0_inc) * decay;
 
-        // 5. Clean split base move budget combining discounted bank draw and discounted usable increment,
-        // gently scaled down in low-clock sudden death to avoid sudden cash flow wipeout.
-        double baseMoveBudget = std::max(0.0, (bankDraw * w_bank + std::max(0.0, effectiveInc) * w_inc) * sdScale);
-        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(baseMoveBudget));
+        // 5. Clean split move budget:
+        // Physical incoming increment is discounted by w_inc, bank draw is discounted by w_bank,
+        // and physical moveOverhead is deducted completely untouched without any discount.
+        double moveBudget =
+          std::max(0.0, (bankDraw * w_bank + double(limits.inc[us]) * w_inc - double(moveOverhead)) * sdScale);
+        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(moveBudget));
 
         // 6. Dynamic maxScale ceiling
-        double maxConstant       = std::max(3.3744 + 3.0608 * tauRaw, 3.1441);
+        double maxConstant       = std::max(3.3744 + 3.0608 * logSecClamped, 3.1441);
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
