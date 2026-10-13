@@ -387,8 +387,9 @@ bool Search::Worker::iterative_deepening() {
             // Reset UCI info selDepth for each depth and each PV line
             selDepth = 0;
 
-            Depth targetDepth = std::max(1, rootDepth - failHighRecovery
-                                                - 3 * (searchAgainCounter + 1) / 4);
+            Depth targetDepth = std::max(std::max(1, highestDepth - 4),
+                                         rootDepth - failHighRecovery
+                                           - 3 * (searchAgainCounter + 1) / 4);
             const bool newFrontier = targetDepth > highestDepth;
             if (newFrontier)
             {
@@ -422,8 +423,9 @@ bool Search::Worker::iterative_deepening() {
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                - 3 * (searchAgainCounter + 1) / 4);
+                adjustedDepth = std::max(std::max(1, highestDepth - 4),
+                                         rootDepth - failedHighCnt - failHighRecovery
+                                           - 3 * (searchAgainCounter + 1) / 4);
                 bestValue     = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
@@ -462,7 +464,16 @@ bool Search::Worker::iterative_deepening() {
                 {
                     alpha = std::max(beta - delta, alpha);
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
-                    ++failedHighCnt;
+
+                    usize divergencePly = 0;
+                    const auto& curPv  = rootMoves[pvIdx].pv;
+                    const auto& prevPv = rootMoves[pvIdx].previousPV;
+                    while (divergencePly < curPv.size() && divergencePly < prevPv.size()
+                           && curPv[divergencePly] == prevPv[divergencePly])
+                        ++divergencePly;
+
+                    if (divergencePly < usize(adjustedDepth))
+                        ++failedHighCnt;
                 }
                 else
                     break;
