@@ -214,23 +214,43 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 4. Early ply discounts for bank draw and increment cash flow
-        // Bank draw floor scales with front-loading intensity p_s so discounted Move 1 draw
-        // percentage increases strictly monotonically across time controls.
-        // Increment cash flow floor independently prevents early overspending in high increment.
+        // Bank draw and income initial reductions both follow the calibrated gentle p_s slope.
+        // The two variables are kept separate for independent tuning.
         constexpr double c_exp = 0.070;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.70 - 0.10 * p_s;
-        constexpr double w0_inc  = 0.50;
+        double w0_bank = 0.55 - 0.10 * p_s;
+        double w0_inc  = w0_bank;
 
         double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
         double w_bank = 1.0 - (1.0 - w0_bank) * decay;
         double w_inc  = 1.0 - (1.0 - w0_inc) * decay;
 
-        // 5. Clean split move budget:
-        // Physical incoming increment is discounted by w_inc, bank draw is discounted by w_bank,
-        // and physical moveOverhead is deducted completely untouched without any discount.
-        double moveBudget =
-          std::max(0.0, (bankDraw * w_bank + double(limits.inc[us]) * w_inc - double(moveOverhead)) * sdScale);
+        // 5. Option 1: Physical cash flow accounting with exact bank draw netting
+        // Step 1: Flow accounting (Operating Income)
+        // Only reduce positive income. If effectiveInc <= 0, there is no positive income stream to discount.
+        double spentInc = 0.0;
+        double savedInc = 0.0;
+        if (effectiveInc > 0.0)
+        {
+            spentInc = effectiveInc * w_inc;
+            savedInc = effectiveInc - spentInc;
+        }
+
+        // Step 2: Stock accounting (Bank Draw)
+        // Calculate how much we are actually taking from the bank after offsetting with income surplus.
+        // In SD (effectiveInc <= 0), overhead is an expense drawn from the bank alongside search.
+        double netBankDraw = bankDraw - savedInc;
+        if (effectiveInc <= 0.0)
+            netBankDraw += effectiveInc;
+
+        // Step 3: Exact bank reduction
+        // Only reduce if we are actually taking from the bank (netBankDraw > 0).
+        // If giving to the bank (netBankDraw <= 0), do not reduce.
+        double actualBankDraw = netBankDraw;
+        if (netBankDraw > 0.0)
+            actualBankDraw = netBankDraw * w_bank;
+
+        double moveBudget = std::max(0.0, (spentInc + actualBankDraw) * sdScale);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(moveBudget));
 
         // 6. Dynamic maxScale ceiling
