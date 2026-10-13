@@ -336,6 +336,7 @@ bool Search::Worker::iterative_deepening() {
     int   failHighRecovery   = 0;
     int   lastWidenedDelta   = 0;
     Depth highestDepth       = 0;
+    int   stallingIterations = 0;
     bool  uciPvSent          = false;
 
     lowPlyHistory.fill(102);
@@ -387,14 +388,17 @@ bool Search::Worker::iterative_deepening() {
             // Reset UCI info selDepth for each depth and each PV line
             selDepth = 0;
 
-            Depth targetDepth = std::max(std::max(1, highestDepth - 4),
+            int reductionCap = std::max(0, 6 - 2 * stallingIterations);
+            Depth targetDepth = std::max(std::max(1, highestDepth - reductionCap),
                                          rootDepth - failHighRecovery
                                            - 3 * (searchAgainCounter + 1) / 4);
             const bool newFrontier = targetDepth > highestDepth;
             if (newFrontier)
             {
-                highestDepth     = targetDepth;
-                lastWidenedDelta = 0;
+                highestDepth       = targetDepth;
+                lastWidenedDelta   = 0;
+                stallingIterations = 0;
+                reductionCap       = 6;
             }
 
             // Reset aspiration window starting size
@@ -423,7 +427,7 @@ bool Search::Worker::iterative_deepening() {
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                adjustedDepth = std::max(std::max(1, highestDepth - 4),
+                adjustedDepth = std::max(std::max(1, highestDepth - reductionCap),
                                          rootDepth - failedHighCnt - failHighRecovery
                                            - 3 * (searchAgainCounter + 1) / 4);
                 bestValue     = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
@@ -494,6 +498,9 @@ bool Search::Worker::iterative_deepening() {
 
                 Depth nextTargetDepth = adjustedDepth + step;
                 failHighRecovery      = std::max(0, (rootDepth + 1) - nextTargetDepth);
+
+                if (!newFrontier)
+                    stallingIterations++;
             }
 
             if (threads.stop && pvIdx)
