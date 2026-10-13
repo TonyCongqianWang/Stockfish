@@ -333,7 +333,6 @@ bool Search::Worker::iterative_deepening() {
     multiPV = std::min(multiPV, rootMoves.size());
 
     int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
     bool uciPvSent          = false;
 
     lowPlyHistory.fill(102);
@@ -400,16 +399,19 @@ bool Search::Worker::iterative_deepening() {
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
-            int failedHighCnt = 0;
-            if (!pvIdx)
-                failHighRecovery = std::max(0, failHighRecovery - 2);
+            Depth targetDepth   = rootDepth;
+            Depth adjustedDepth = rootDepth;
+            int   failedHighCnt = 0;
+            int   reductionCap  = 10;
+
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
-                bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+                adjustedDepth = std::max(std::max(1, targetDepth - reductionCap),
+                                         targetDepth - failedHighCnt
+                                           - 3 * (searchAgainCounter + 1) / 4);
+                bestValue     = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -433,13 +435,14 @@ bool Search::Worker::iterative_deepening() {
                     main_manager()->output_pv(*this, threads, tt, rootDepth);
 
                 // In case of failing low/high increase aspiration window and re-search,
-                // otherwise exit the loop.
+                // otherwise check if we need to catch up before exiting.
                 if (bestValue <= alpha)
                 {
                     beta  = alpha;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
-                    failedHighCnt = 0;
+                    // Gradually recover depth after reduced depth search
+                    failedHighCnt = std::max(0, failedHighCnt - 1);
                     if (mainThread)
                         mainThread->stopOnPonderhit = false;
                 }
@@ -447,19 +450,39 @@ bool Search::Worker::iterative_deepening() {
                 {
                     alpha = std::max(beta - delta, alpha);
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
+
                     ++failedHighCnt;
+
+                    // Adaptive reduction cap tightening per fail-high sub-iteration
+                    reductionCap = std::max(0, reductionCap - 1);
                 }
                 else
+                {
+                    // Score resolved within window [alpha, beta]!
+                    // If we completed at a reduced depth, catch up until within 1 of rootDepth.
+                    if (adjustedDepth < rootDepth - 1)
+                    {
+                        int gap       = rootDepth - adjustedDepth;
+                        int step      = std::min(gap, std::max(2, (gap + 1) / 2));
+                        targetDepth   = adjustedDepth + step;
+                        adjustedDepth = targetDepth;
+
+                        avg   = rootMoves[pvIdx].score;
+                        delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
+                        alpha = std::max(avg - delta, -VALUE_INFINITE);
+                        beta  = std::min(avg + delta, VALUE_INFINITE);
+
+                        failedHighCnt = 0;
+                        continue;
+                    }
+
                     break;
+                }
 
                 delta += 47 * delta / 128;
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
-
-            // Gradually increase depth after reduced depth search
-            if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
 
             if (threads.stop && pvIdx)
             {
