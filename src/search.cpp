@@ -211,10 +211,7 @@ void Search::Worker::start_searching() {
         return;
     }
 
-    main_manager()->tm.init(limits, rootPos, options,
-                            main_manager()->threadScalingFactor,
-                            main_manager()->mainThreadNodes,
-                            main_manager()->mainThreadTimeMs);
+    main_manager()->tm.init(limits, rootPos, options);
     tt.new_search();
     main_manager()->updates.onStart();
 
@@ -251,14 +248,9 @@ void Search::Worker::start_searching() {
         main_manager()->tm.advance_nodes_time(threads.nodes_searched()
                                               - limits.inc[rootPos.side_to_move()]);
 
-    if (!limits.depth && limits.time[rootPos.side_to_move()] > 0
-        && main_manager()->benchmarkedMoves < 5
-        && (main_manager()->benchmarkedMoves < 3 || main_manager()->mainThreadTimeMs < 200))
-    {
-        main_manager()->mainThreadNodes  += this->nodes;
-        main_manager()->mainThreadTimeMs += main_manager()->tm.elapsed_time();
-        main_manager()->benchmarkedMoves++;
-    }
+    if (!limits.depth && limits.time[rootPos.side_to_move()] > 0)
+        main_manager()->tm.update_benchmark(this->nodes, main_manager()->tm.elapsed_time(),
+                                            options);
 
     Worker* bestThread = this;
     Skill   skill =

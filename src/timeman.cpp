@@ -35,11 +35,27 @@ TimePoint TimeManagement::maximum() const { return maximumTime; }
 void TimeManagement::clear() {
     availableNodes    = -1;  // When in 'nodes as time' mode
     previousMovesToGo = 0;
+    initialTimeLeft   = -1;
+    mainThreadNodes   = 0;
+    mainThreadTimeMs  = 0;
+    benchmarkedMoves  = 0;
 }
 
 void TimeManagement::advance_nodes_time(i64 nodes) {
     assert(useNodesTime);
     availableNodes = std::max(i64(0), availableNodes - nodes);
+}
+
+void TimeManagement::update_benchmark(u64 nodes, TimePoint elapsed, const OptionsMap& options) {
+    if (useNodesTime || int(options["MachineSpeedAdjustment"]) > 0)
+        return;
+
+    if (benchmarkedMoves < 5 && (benchmarkedMoves < 3 || mainThreadTimeMs < 200))
+    {
+        mainThreadNodes  += nodes;
+        mainThreadTimeMs += elapsed;
+        benchmarkedMoves++;
+    }
 }
 
 // Called at the beginning of the search and calculates
@@ -48,10 +64,7 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 //      2) x moves in y seconds (+ z increment)
 void TimeManagement::init(Search::LimitsType& limits,
                           const Position&     pos,
-                          const OptionsMap&   options,
-                          double&             threadScalingFactor,
-                          u64                 mainThreadNodes,
-                          TimePoint           mainThreadTimeMs) {
+                          const OptionsMap&   options) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     Color us  = pos.side_to_move();
@@ -109,43 +122,26 @@ void TimeManagement::init(Search::LimitsType& limits,
         double effectiveInc = double(limits.inc[us] - moveOverhead);
 
         // Effective worker computation speed (nodes per second)
-        int threadsCount = std::max(1, int(options["Threads"]));
+        int    threadsCount         = std::max(1, int(options["Threads"]));
+        double threadScalingFactor  = std::sqrt(threadsCount);
 
-        // Calculate thread scaling factor once at the start of the game
-        if (threadScalingFactor < 0)
+        const double referenceNPS          = 467'000.0;
+        double       speedAdjustmentFactor = 1.0;
+
+        int machineSpeedAdjustment = int(options["MachineSpeedAdjustment"]);
+        if (machineSpeedAdjustment > 0)
+            speedAdjustmentFactor = double(machineSpeedAdjustment) / 1000.0;
+        else if (!useNodesTime && mainThreadTimeMs > 0 && mainThreadNodes > 0)
         {
-            if (threadsCount > 1)
-            {
-                const TimePoint scaledTime = std::max(TimePoint(1), limits.time[us] / scaleFactor);
-                int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
-                if (scaledTime < 1000 && limits.movestogo == 0)
-                    mtg = int(scaledTime * 0.05);
-                TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
-                                                              - moveOverhead * (2 + mtg));
-
-                double gameTimeSec = (scaledTime >= 1000)
-                                       ? (double(scaledTime) / 1000.0)
-                                       : (double(timeLeft / scaleFactor) / 1000.0);
-                double nodeBudgetMnodes = std::max(0.5, gameTimeSec);
-                double a = std::clamp(12.4429 * std::pow(nodeBudgetMnodes / 100.0, -0.377), 1.0, 80.0);
-                double equivNodesPct = (100.0 - a) + a * std::pow(threadsCount, 2.0 / 3.0);
-                threadScalingFactor  = (100.0 * threadsCount) / equivNodesPct;
-            }
-            else
-                threadScalingFactor = 1.0;
+            double mainNPS        = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
+            speedAdjustmentFactor = mainNPS / referenceNPS;
         }
 
-        // Calculate effective NPS based on main thread performance scaled by thread count
-        const double referenceNPS = 412'000.0;
-        double       effectiveNPS = referenceNPS * threadScalingFactor;
+        double totalScale   = speedAdjustmentFactor * threadScalingFactor;
+        double effectiveNPS = referenceNPS * totalScale;
 
         if (useNodesTime)
             effectiveNPS = double(npmsec) * 1000.0;
-        else if (mainThreadTimeMs > 0 && mainThreadNodes > 0)
-        {
-            double mainNPS = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
-            effectiveNPS   = mainNPS * threadScalingFactor;
-        }
 
         // 1. Physically grounded move horizon:
         // A move costs communication latency (moveOverhead) PLUS the minimum computational effort
@@ -221,9 +217,9 @@ void TimeManagement::init(Search::LimitsType& limits,
         // Bank draw floor scales with front-loading intensity p_s so discounted Move 1 draw
         // percentage increases strictly monotonically across time controls.
         // Increment cash flow floor independently prevents early overspending in high increment.
-        constexpr double c_exp = 0.035;
+        constexpr double c_exp = 0.070;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.60 - 0.20 * p_s;
+        double w0_bank = 0.70 - 0.10 * p_s;
         constexpr double w0_inc  = 0.50;
 
         double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
