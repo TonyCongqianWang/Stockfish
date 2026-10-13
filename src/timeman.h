@@ -27,6 +27,7 @@
 namespace Stockfish {
 
 class OptionsMap;
+class Position;
 enum Color : u8;
 
 namespace Search {
@@ -38,10 +39,8 @@ struct LimitsType;
 class TimeManagement {
    public:
     void init(Search::LimitsType& limits,
-              Color               us,
-              int                 ply,
-              const OptionsMap&   options,
-              double&             originalTimeAdjust);
+              const Position&     pos,
+              const OptionsMap&   options);
 
     TimePoint optimum() const;
     TimePoint maximum() const;
@@ -53,6 +52,7 @@ class TimeManagement {
 
     void clear();
     void advance_nodes_time(i64 nodes);
+    void update_benchmark(u64 nodes, TimePoint elapsed, const OptionsMap& options);
 
    private:
     static constexpr TimePoint NoBound = std::numeric_limits<TimePoint>::max() / 2;
@@ -66,6 +66,12 @@ class TimeManagement {
     i64  availableNodes    = -1;
     int  previousMovesToGo = 0;
     i64  cyclicBudget      = 0;
+
+    // Related to NPS-based time scaling:
+    TimePoint initialTimeLeft  = -1;
+    u64       mainThreadNodes  = 0;
+    TimePoint mainThreadTimeMs = 0;
+    int       benchmarkedMoves = 0;
 };
 
 }  // namespace Stockfish

@@ -22,6 +22,7 @@
 #include <cassert>
 #include <cmath>
 
+#include "position.h"
 #include "search.h"
 #include "types.h"
 #include "ucioption.h"
@@ -34,6 +35,10 @@ TimePoint TimeManagement::maximum() const { return maximumTime; }
 void TimeManagement::clear() {
     availableNodes    = -1;  // When in 'nodes as time' mode
     previousMovesToGo = 0;
+    initialTimeLeft   = -1;
+    mainThreadNodes   = 0;
+    mainThreadTimeMs  = 0;
+    benchmarkedMoves  = 0;
 }
 
 void TimeManagement::advance_nodes_time(i64 nodes) {
@@ -41,16 +46,29 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
     availableNodes = std::max(i64(0), availableNodes - nodes);
 }
 
+void TimeManagement::update_benchmark(u64 nodes, TimePoint elapsed, const OptionsMap& options) {
+    if (useNodesTime || int(options["MachineSpeedAdjustment"]) > 0)
+        return;
+
+    if (benchmarkedMoves < 5 && (benchmarkedMoves < 3 || mainThreadTimeMs < 200))
+    {
+        mainThreadNodes  += nodes;
+        mainThreadTimeMs += elapsed;
+        benchmarkedMoves++;
+    }
+}
+
 // Called at the beginning of the search and calculates
 // the bounds of time allowed for the current game ply. We currently support:
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
 void TimeManagement::init(Search::LimitsType& limits,
-                          Color               us,
-                          int                 ply,
-                          const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          const Position&     pos,
+                          const OptionsMap&   options) {
     TimePoint npmsec = TimePoint(options["nodestime"]);
+
+    Color us  = pos.side_to_move();
+    int   ply = pos.game_ply();
 
     // If we have no time, we don't need to fully initialize TM.
     // startTime is used by movetime and useNodesTime is used in elapsed calls.
@@ -67,10 +85,6 @@ void TimeManagement::init(Search::LimitsType& limits,
     }
 
     TimePoint moveOverhead = TimePoint(options["Move Overhead"]);
-
-    // optScale is a percentage of available time to use for the current move.
-    // maxScale is a multiplier applied to optimumTime.
-    double optScale, maxScale;
 
     // If we have to play in 'nodes as time' mode, then convert from time
     // to nodes, and use resulting values in time management formulas.
@@ -98,68 +112,184 @@ void TimeManagement::init(Search::LimitsType& limits,
 
     // These numbers are used where multiplications, divisions,
     // or comparisons with constants are involved.
-    const i64       scaleFactor = useNodesTime ? npmsec : 1;
-    const TimePoint scaledTime  = std::max(TimePoint(1), limits.time[us] / scaleFactor);
+    const i64 scaleFactor = useNodesTime ? npmsec : 1;
 
-    // Maximum move horizon
-    int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
-
-    // If less than one second, gradually reduce mtg.
-    // In cyclic time controls we keep the actual movestogo as horizon.
-    if (scaledTime < 1000 && limits.movestogo == 0)
-        mtg = int(scaledTime * 0.05);
-
-    // Make sure timeLeft is > 0 since we may use it as a divisor
-    TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
-                                                  - moveOverhead * (2 + mtg));
-
-    // x basetime (+ z increment)
-    // If there is a healthy increment, timeLeft can exceed the actual available
-    // game time for the current move, so also cap to a percentage of available game time.
+    // Sudden death (no moves to go specified)
     if (limits.movestogo == 0)
     {
-        // Extra time according to timeLeft
-        if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3272 * std::log10(timeLeft) - 0.4141;
+        // Net per-move increment cash flow after accounting for communication/execution overhead.
+        // Allowed to be negative in sudden death / low increment formats, naturally deducting overhead.
+        double effectiveInc = double(limits.inc[us] - moveOverhead);
 
-        // Calculate time constants based on current time left.
-        double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
-        double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
+        // Effective worker computation speed (nodes per second)
+        int    threadsCount         = std::max(1, int(options["Threads"]));
+        double threadScalingFactor  = std::sqrt(threadsCount);
 
-        optScale = std::min(0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant,
-                            0.19404 * limits.time[us] / timeLeft)
-                 * originalTimeAdjust;
+        const double referenceNPS          = 467'000.0;
+        double       speedAdjustmentFactor = 1.0;
 
-        maxScale = std::min(6.873, maxConstant + ply / 12.352);
+        int machineSpeedAdjustment = int(options["MachineSpeedAdjustment"]);
+        if (machineSpeedAdjustment > 0)
+            speedAdjustmentFactor = double(machineSpeedAdjustment) / 1000.0;
+        else if (!useNodesTime && mainThreadTimeMs > 0 && mainThreadNodes > 0)
+        {
+            double mainNPS        = (double(mainThreadNodes) * 1000.0) / double(mainThreadTimeMs);
+            speedAdjustmentFactor = mainNPS / referenceNPS;
+        }
+
+        double totalScale   = speedAdjustmentFactor * threadScalingFactor;
+        double effectiveNPS = referenceNPS * totalScale;
+
+        if (useNodesTime)
+            effectiveNPS = double(npmsec) * 1000.0;
+
+        // 1. Physically grounded move horizon:
+        // A move costs communication latency (moveOverhead) PLUS the minimum computational effort
+        // to complete root moves evaluation and initial tactical checks (~2500 nodes).
+        double minSearchMs = (2500.0 * 1000.0) / effectiveNPS;
+        double netDrain    = minSearchMs - effectiveInc;
+
+        double M_pieces = std::max(8.0, 10.0 + 2.0 * pos.count<ALL_PIECES>());
+        double M        = M_pieces;
+        double sdScale  = 1.0;
+
+        if (netDrain > 0.0)
+        {
+            double turnoverThreshold = M_pieces * netDrain;
+            if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
+            {
+                double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
+                constexpr double c_sd = 0.40;
+                sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
+                M       = 2.0 + (M_pieces - 2.0) * u;
+            }
+        }
+
+        // Remaining game duration across our physically anchored horizon M.
+        // Dimensionally grounded total effective time without artificial overdraft inflation.
+        double totalExpectedMs    = double(limits.time[us]) + (M - 1.0) * effectiveInc;
+        double totalEffectiveTime = std::max(1.0, totalExpectedMs);
+        double remainingGameMs    = totalEffectiveTime / double(scaleFactor);
+        double remainingGameSec   = std::max(0.01, remainingGameMs / 1000.0);
+
+        double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
+        double logSecClamped    = std::log10(std::max(1.0, effectiveGameSec));
+        double tauRawActual     = std::log10(effectiveGameSec);
+
+        // 2. Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
+        // P(s) = c1 * s + (1.0 - c1) * s^2 where s in [0, 1]
+        // Provides steepened transition (dtau/dx ~ 1.00 - 1.35 across 5s-15s) with elevated bullet SD floor (tau ~ 1.34)
+        // and generous headroom for VVLTC (tau ~ 4.25) and Classical TCs without premature saturation.
+        constexpr double deltaTau = 3.80;
+        constexpr double k        = 1.55;
+        constexpr double x0       = 1.25;
+        constexpr double c1       = 0.60;
+
+        double s = 0.0;
+        if (tauRawActual > -2.0)
+            s = 1.0 / (1.0 + std::exp(-k * (tauRawActual - x0)));
+
+        double p_s = c1 * s + (1.0 - c1) * (s * s);
+        double tau = 1.0 + deltaTau * p_s;
+
+        // 3. Time Bank & Nominal Draw with Discrete Renewal Horizon
+        // Time bank deducts safety reserve and the current move's incoming increment
+        TimePoint safetyReserve = moveOverhead * 10;
+        TimePoint timeBank =
+          std::max(TimePoint(0), limits.time[us] - safetyReserve - TimePoint(std::max(0.0, effectiveInc)));
+
+        // Multiplicative bank factor governed by dynamic horizon M
+        double bankDraw = double(timeBank) * (tau / (M + tau));
+
+        // Decrease time bank draw if behind in time.
+        // This is skipped if the nodestime option is used because we can't calculate
+        // the opponent nodes budget in a deterministic way.
+        // We apply timeAdvantage strictly to bankDraw to conserve bank without
+        // starving the engine below its incoming per-move increment cash flow.
+        if (!useNodesTime)
+        {
+            double timeAdvantage =
+              (double(limits.time[us]) - double(limits.time[~us])) / (1.0 + double(limits.time[us]) + double(limits.time[~us]));
+            bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
+        }
+
+        // 4. Early ply discounts for bank draw and increment cash flow
+        // Bank draw floor scales with front-loading intensity p_s so discounted Move 1 draw
+        // percentage increases strictly monotonically across time controls.
+        // Increment cash flow floor independently prevents early overspending in high increment.
+        constexpr double c_exp = 0.070;
+        constexpr double p_exp = 1.15;
+        double w0_bank = 0.70 - 0.10 * p_s;
+        constexpr double w0_inc  = 0.50;
+
+        double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
+        double w_bank = 1.0 - (1.0 - w0_bank) * decay;
+        double w_inc  = 1.0 - (1.0 - w0_inc) * decay;
+
+        // 5. Clean split move budget:
+        // Physical incoming increment is discounted by w_inc, bank draw is discounted by w_bank,
+        // and physical moveOverhead is deducted completely untouched without any discount.
+        double moveBudget =
+          std::max(0.0, (bankDraw * w_bank + double(limits.inc[us]) * w_inc - double(moveOverhead)) * sdScale);
+        TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(moveBudget));
+
+        // 6. Dynamic maxScale ceiling
+        double maxConstant       = std::max(3.3744 + 3.0608 * logSecClamped, 3.1441);
+        double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
+        TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
+
+        // 7. Safety buffer zone: scale down smoothly as timeBank empties
+        // Uses timeBank with threshold = 1.25 * nominalMaximum and cubic curvature (1 - (1 - u)^3)
+        // guaranteeing zero slope (no kinks) at the threshold while preserving endgame search depth.
+        optimumTime = nominalOptimum;
+        maximumTime = nominalMaximum;
+        double safetyThreshold = 1.25 * double(nominalMaximum);
+        if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
+        {
+            double u     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
+            double v     = 1.0 - u;
+            double scale = 1.0 - v * v * v;
+            optimumTime  = std::max(TimePoint(1), TimePoint(double(nominalOptimum) * scale));
+            maximumTime  = std::max(optimumTime,  TimePoint(double(nominalMaximum) * scale));
+        }
+
+        // 8. Hard safety caps
+        TimePoint maxClockCap = std::max(TimePoint(1), TimePoint(0.8097 * limits.time[us] - moveOverhead));
+        optimumTime           = std::min(optimumTime, maxClockCap);
+        maximumTime           = std::max(optimumTime, std::min(maxClockCap, maximumTime));
     }
 
-    // x moves in y seconds (+ z increment)
+    // Cyclic time controls (x moves in y seconds + z increment)
     else
     {
-        optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
-        maxScale = 1.3 + 0.11 * mtg;
-    }
+        int mtg = std::min(limits.movestogo, 50);
 
-    // Decrease time usage if behind in time.
-    // This is skipped in two cases:
-    // - if the nodestime option is used we can't calculate the opponent nodes budget in a deterministic way.
-    // - if we use a cyclic time management (like 40/10) calculating time advantage for the last move (movestogo = 1)
-    //   can be vastly off, because if the opponent had done his last move before us his time budget includes already
-    //   the next cycle time increment but our not. This leads to a unnecessary big decrease in time usage which favors blunders.
-    // Warning: don't remove this conditions.
-    if (!useNodesTime && limits.movestogo != 1)
-    {
-        double timeAdvantage =
-          (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
-        optScale *= 1 + 0.9 * std::min(timeAdvantage, 0.0);
-    }
+        // Make sure timeLeft is > 0 since we may use it as a divisor
+        TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
+                                                      - moveOverhead * (2 + mtg));
 
-    // Limit the maximum possible time for this move
-    optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
-    maximumTime =
-      TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
-                                                       maxScale * optimumTime)));
+        double optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
+        double maxScale = 1.3 + 0.11 * mtg;
+
+        // Decrease time usage if behind in time.
+        // This is skipped in two cases:
+        // - if the nodestime option is used we can't calculate the opponent nodes budget in a deterministic way.
+        // - if we use a cyclic time management (like 40/10) calculating time advantage for the last move (movestogo = 1)
+        //   can be vastly off, because if the opponent had done his last move before us his time budget includes already
+        //   the next cycle time increment but our not. This leads to an unnecessary big decrease in time usage which favors blunders.
+        // Warning: don't remove these conditions.
+        if (!useNodesTime && limits.movestogo != 1)
+        {
+            double timeAdvantage =
+              (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
+            optScale *= 1 + 0.9 * std::min(timeAdvantage, 0.0);
+        }
+
+        optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
+        maximumTime =
+          TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
+                                                           maxScale * optimumTime)));
+    }
 
     if (options["Ponder"])
         optimumTime += optimumTime / 4;
