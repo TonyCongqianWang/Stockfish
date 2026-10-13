@@ -332,9 +332,11 @@ bool Search::Worker::iterative_deepening() {
 
     multiPV = std::min(multiPV, rootMoves.size());
 
-    int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
-    bool uciPvSent          = false;
+    int   searchAgainCounter = 0;
+    int   failHighRecovery   = 0;
+    int   lastWidenedDelta   = 0;
+    Depth highestDepth       = 0;
+    bool  uciPvSent          = false;
 
     lowPlyHistory.fill(102);
 
@@ -385,11 +387,25 @@ bool Search::Worker::iterative_deepening() {
             // Reset UCI info selDepth for each depth and each PV line
             selDepth = 0;
 
+            Depth targetDepth = std::max(1, rootDepth - failHighRecovery
+                                                - 3 * (searchAgainCounter + 1) / 4);
+            const bool newFrontier = targetDepth > highestDepth;
+            if (newFrontier)
+            {
+                highestDepth     = targetDepth;
+                lastWidenedDelta = 0;
+            }
+
             // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
-            Value avg = rootMoves[pvIdx].averageScore;
-            alpha     = std::max(avg - delta, -VALUE_INFINITE);
-            beta      = std::min(avg + delta, VALUE_INFINITE);
+            delta = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
+            if (!newFrontier)
+                delta = std::max(delta, lastWidenedDelta);
+
+            Value avg = (!newFrontier && rootMoves[pvIdx].score != -VALUE_INFINITE)
+                          ? rootMoves[pvIdx].score
+                          : rootMoves[pvIdx].averageScore;
+            alpha = std::max(avg - delta, -VALUE_INFINITE);
+            beta  = std::min(avg + delta, VALUE_INFINITE);
 
             // Do not tune these values. They are not intended for playing strength.
             seekMate = std::abs(rootMoves[pvIdx].score) >= 750 + 220000 / (rootDepth * rootDepth);
@@ -400,16 +416,15 @@ bool Search::Worker::iterative_deepening() {
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
-            int failedHighCnt = 0;
-            if (!pvIdx)
-                failHighRecovery = std::max(0, failHighRecovery - 2);
+            int   failedHighCnt = 0;
+            Depth adjustedDepth = targetDepth;
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
-                bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+                adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
+                                                - 3 * (searchAgainCounter + 1) / 4);
+                bestValue     = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -458,8 +473,17 @@ bool Search::Worker::iterative_deepening() {
             }
 
             // Gradually increase depth after reduced depth search
-            if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
+            if (!threads.stop && !pvIdx)
+            {
+                if (failedHighCnt > 0)
+                    lastWidenedDelta = delta;
+
+                int gap  = highestDepth - adjustedDepth;
+                int step = gap > 0 ? std::min(gap + 1, std::max(2, (gap + 1) / 2)) : 1;
+
+                Depth nextTargetDepth = adjustedDepth + step;
+                failHighRecovery      = std::max(0, (rootDepth + 1) - nextTargetDepth);
+            }
 
             if (threads.stop && pvIdx)
             {
