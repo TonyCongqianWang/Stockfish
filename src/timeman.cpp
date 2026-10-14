@@ -214,12 +214,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         }
 
         // 4. Early ply discounts for bank draw and increment cash flow
-        // Bank draw and income initial reductions both follow the calibrated gentle p_s slope.
-        // The two variables are kept separate for independent tuning.
+        // Balanced bank vs income discounts: calibrated to optimize SD & 0.5% while preserving 1.0% sweet spot.
         constexpr double c_exp = 0.070;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.55 - 0.10 * p_s;
-        double w0_inc  = w0_bank;
+        double w0_bank = 0.49 - 0.10 * p_s;
+        double w0_inc  = 0.63 - 0.10 * p_s;
 
         double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
         double w_bank = 1.0 - (1.0 - w0_bank) * decay;
@@ -244,9 +243,9 @@ void TimeManagement::init(Search::LimitsType& limits,
             netBankDraw += effectiveInc;
 
         // Step 3: Exact bank reduction
-        // Only reduce if we are actually taking from the bank (netBankDraw > 0).
-        // If giving to the bank (netBankDraw <= 0), do not reduce.
-        double actualBankDraw = netBankDraw;
+        // Only take from bank if we have a net withdrawal (netBankDraw > 0).
+        // If giving to the bank (netBankDraw <= 0), bank withdrawal is zero (surplus stays in clock).
+        double actualBankDraw = 0.0;
         if (netBankDraw > 0.0)
             actualBankDraw = netBankDraw * w_bank;
 
