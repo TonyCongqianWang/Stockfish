@@ -213,43 +213,17 @@ void TimeManagement::init(Search::LimitsType& limits,
             bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
-        // 4. Early ply discounts for bank draw and increment cash flow
-        // Balanced bank vs income discounts: calibrated to optimize SD & 0.5% while preserving 1.0% sweet spot.
-        constexpr double c_exp = 0.070;
+        // 4. Early ply decay factor
+        constexpr double c_exp = 0.043;
         constexpr double p_exp = 1.15;
-        double w0_bank = 0.49 - 0.10 * p_s;
-        double w0_inc  = 0.63 - 0.10 * p_s;
+        double decay = std::exp(-c_exp * std::pow(double(ply), p_exp));
 
-        double decay  = std::exp(-c_exp * std::pow(double(ply), p_exp));
-        double w_bank = 1.0 - (1.0 - w0_bank) * decay;
-        double w_inc  = 1.0 - (1.0 - w0_inc) * decay;
+        // 5. Total move budget discounting with branchless bank portion layering
+        double baseBudget       = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
+        double discountedBudget = baseBudget * (1.0 - 0.40 * decay);
+        double bankPortion      = discountedBudget - effectiveInc;
+        double moveBudget       = std::max(0.0, discountedBudget - std::max(0.0, (0.20 * decay) * bankPortion));
 
-        // 5. Option 1: Physical cash flow accounting with exact bank draw netting
-        // Step 1: Flow accounting (Operating Income)
-        // Only reduce positive income. If effectiveInc <= 0, there is no positive income stream to discount.
-        double spentInc = 0.0;
-        double savedInc = 0.0;
-        if (effectiveInc > 0.0)
-        {
-            spentInc = effectiveInc * w_inc;
-            savedInc = effectiveInc - spentInc;
-        }
-
-        // Step 2: Stock accounting (Bank Draw)
-        // Calculate how much we are actually taking from the bank after offsetting with income surplus.
-        // In SD (effectiveInc <= 0), overhead is an expense drawn from the bank alongside search.
-        double netBankDraw = bankDraw - savedInc;
-        if (effectiveInc <= 0.0)
-            netBankDraw += effectiveInc;
-
-        // Step 3: Exact bank reduction
-        // Only take from bank if we have a net withdrawal (netBankDraw > 0).
-        // If giving to the bank (netBankDraw <= 0), bank withdrawal is zero (surplus stays in clock).
-        double actualBankDraw = 0.0;
-        if (netBankDraw > 0.0)
-            actualBankDraw = netBankDraw * w_bank;
-
-        double moveBudget = std::max(0.0, (spentInc + actualBankDraw) * sdScale);
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(moveBudget));
 
         // 6. Dynamic maxScale ceiling
@@ -258,11 +232,11 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
         // 7. Safety buffer zone: scale down smoothly as timeBank empties
-        // Uses timeBank with threshold = 1.25 * nominalMaximum and cubic curvature (1 - (1 - u)^3)
+        // Uses timeBank with threshold = 1.50 * nominalMaximum and cubic curvature (1 - (1 - u)^3)
         // guaranteeing zero slope (no kinks) at the threshold while preserving endgame search depth.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double safetyThreshold = 1.25 * double(nominalMaximum);
+        double safetyThreshold = 1.50 * double(nominalMaximum);
         if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
             double u     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
