@@ -447,9 +447,7 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
         return false;
-    const u32 legacyHash =
-      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
-    if (hashValue != Network::hash && hashValue != legacyHash)
+    if (hashValue != Network::hash)
         return false;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
@@ -458,23 +456,7 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
-    if (hashValue == Network::hash)
-    {
-        read_little_endian<uint8_t>(stream, router, RouterTableSize);
-    }
-    else
-    {
-        // Backward-compatibility fallback for legacy net without router table
-        for (int p = 0; p < 16; ++p)
-            for (int q = 0; q < 2; ++q)
-                for (int k1 = 0; k1 < 33; ++k1)
-                    for (int k2 = 0; k2 < 65; ++k2)
-                    {
-                        int idx = make_router_index(p, q, k1, k2);
-                        int b   = (p / 2) * 4 + (q ? 2 : 0);
-                        router[idx] = static_cast<uint8_t>(b % LayerStacks);
-                    }
-    }
+    read_little_endian<uint8_t>(stream, router, RouterTableSize);
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
