@@ -150,14 +150,64 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
-    const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
+    const Color stm = pos.side_to_move();
+
+    // Perspective 1 (STM):
+    const int ourPieces = std::clamp(pos.count<ALL_PIECES>(stm) - 1, 0, 15);
+    const int ourQueen  = pos.pieces(stm, QUEEN) ? 1 : 0;
+    const Square ourKsq = pos.square<KING>(stm);
+    const Square ourKsqOriented = Square(int(ourKsq) ^ (56 * int(stm)));
+    const bool ourCastling = pos.can_castle(stm == WHITE ? WHITE_CASTLING : BLACK_CASTLING);
+    int ourKingBucket;
+    if (ourCastling && ourKsqOriented == SQ_E1)
+        ourKingBucket = 32;
+    else
+    {
+        const int r = int(ourKsqOriented) / 8;
+        const int f = int(ourKsqOriented) % 8;
+        ourKingBucket = r * 4 + (f < 4 ? f : 7 - f);
+    }
+
+    const Square enemyKsq = pos.square<KING>(~stm);
+    const Square enemyKsqOriented = Square(int(enemyKsq) ^ (56 * int(stm)));
+    const bool enemyCastling = pos.can_castle(stm == WHITE ? BLACK_CASTLING : WHITE_CASTLING);
+    int enemyKingBucket;
+    if (enemyCastling && enemyKsqOriented == SQ_E8)
+        enemyKingBucket = 64;
+    else
+        enemyKingBucket = int(enemyKsqOriented);
+
+    const int c_us = make_router_index(ourPieces, ourQueen, ourKingBucket, enemyKingBucket);
+    const int e1   = router[c_us];
+
+    // Perspective 2 (Non-STM):
+    const int theirPieces = std::clamp(pos.count<ALL_PIECES>(~stm) - 1, 0, 15);
+    const int theirQueen  = pos.pieces(~stm, QUEEN) ? 1 : 0;
+    const Square theirKsqOriented = Square(int(enemyKsq) ^ (56 * int(~stm)));
+    int theirKingBucket;
+    if (enemyCastling && theirKsqOriented == SQ_E1)
+        theirKingBucket = 32;
+    else
+    {
+        const int r = int(theirKsqOriented) / 8;
+        const int f = int(theirKsqOriented) % 8;
+        theirKingBucket = r * 4 + (f < 4 ? f : 7 - f);
+    }
+
+    const Square ourKsqOrientedThem = Square(int(ourKsq) ^ (56 * int(~stm)));
+    int ourKingBucketThem;
+    if (ourCastling && ourKsqOrientedThem == SQ_E8)
+        ourKingBucketThem = 64;
+    else
+        ourKingBucketThem = int(ourKsqOrientedThem);
+
+    const int c_them = make_router_index(theirPieces, theirQueen, theirKingBucket, ourKingBucketThem);
+    const int e2     = router[c_them];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
-    return static_cast<Value>(positional / OutputScale);
+    i32 pos1, pos2;
+    NetworkArchitecture::propagate_pair(network[e1], network[e2], transformedFeatures, nnzInfo, pos1, pos2);
+    return static_cast<Value>((pos1 + pos2) / OutputScale);
 }
 
 
@@ -214,13 +264,63 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
-    const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
+    const Color stm = pos.side_to_move();
+
+    // Perspective 1 (STM):
+    const int ourPieces = std::clamp(pos.count<ALL_PIECES>(stm) - 1, 0, 15);
+    const int ourQueen  = pos.pieces(stm, QUEEN) ? 1 : 0;
+    const Square ourKsq = pos.square<KING>(stm);
+    const Square ourKsqOriented = Square(int(ourKsq) ^ (56 * int(stm)));
+    const bool ourCastling = pos.can_castle(stm == WHITE ? WHITE_CASTLING : BLACK_CASTLING);
+    int ourKingBucket;
+    if (ourCastling && ourKsqOriented == SQ_E1)
+        ourKingBucket = 32;
+    else
+    {
+        const int r = int(ourKsqOriented) / 8;
+        const int f = int(ourKsqOriented) % 8;
+        ourKingBucket = r * 4 + (f < 4 ? f : 7 - f);
+    }
+
+    const Square enemyKsq = pos.square<KING>(~stm);
+    const Square enemyKsqOriented = Square(int(enemyKsq) ^ (56 * int(stm)));
+    const bool enemyCastling = pos.can_castle(stm == WHITE ? BLACK_CASTLING : WHITE_CASTLING);
+    int enemyKingBucket;
+    if (enemyCastling && enemyKsqOriented == SQ_E8)
+        enemyKingBucket = 64;
+    else
+        enemyKingBucket = int(enemyKsqOriented);
+
+    const int c_us = make_router_index(ourPieces, ourQueen, ourKingBucket, enemyKingBucket);
+    const int e1   = router[c_us];
+
+    // Perspective 2 (Non-STM):
+    const int theirPieces = std::clamp(pos.count<ALL_PIECES>(~stm) - 1, 0, 15);
+    const int theirQueen  = pos.pieces(~stm, QUEEN) ? 1 : 0;
+    const Square theirKsqOriented = Square(int(enemyKsq) ^ (56 * int(~stm)));
+    int theirKingBucket;
+    if (enemyCastling && theirKsqOriented == SQ_E1)
+        theirKingBucket = 32;
+    else
+    {
+        const int r = int(theirKsqOriented) / 8;
+        const int f = int(theirKsqOriented) % 8;
+        theirKingBucket = r * 4 + (f < 4 ? f : 7 - f);
+    }
+
+    const Square ourKsqOrientedThem = Square(int(ourKsq) ^ (56 * int(~stm)));
+    int ourKingBucketThem;
+    if (ourCastling && ourKsqOrientedThem == SQ_E8)
+        ourKingBucketThem = 64;
+    else
+        ourKingBucketThem = int(ourKsqOrientedThem);
+
+    const int c_them = make_router_index(theirPieces, theirQueen, theirKingBucket, ourKingBucketThem);
+    const int e2     = router[c_them];
 
     NnueEvalTrace t{};
-    t.correctBucket = bucket;
+    t.correctBucket  = e1;
+    t.correctBucket2 = e2;
 
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
@@ -300,6 +400,8 @@ usize Network::get_content_hash() const {
     hash_combine(h, featureTransformer);
     for (auto&& layerstack : network)
         hash_combine(h, layerstack);
+    for (usize i = 0; i < RouterTableSize; ++i)
+        hash_combine(h, router[i]);
     return h;
 }
 
@@ -345,7 +447,9 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
         return false;
-    if (hashValue != Network::hash)
+    const u32 legacyHash =
+      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
+    if (hashValue != Network::hash && hashValue != legacyHash)
         return false;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
@@ -353,6 +457,23 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     {
         if (!Detail::read_parameters(stream, network[i]))
             return false;
+    }
+    if (hashValue == Network::hash)
+    {
+        read_little_endian<uint8_t>(stream, router, RouterTableSize);
+    }
+    else
+    {
+        // Backward-compatibility fallback for legacy net without router table
+        for (int p = 0; p < 16; ++p)
+            for (int q = 0; q < 2; ++q)
+                for (int k1 = 0; k1 < 33; ++k1)
+                    for (int k2 = 0; k2 < 65; ++k2)
+                    {
+                        int idx = make_router_index(p, q, k1, k2);
+                        int b   = (p / 2) * 4 + (q ? 2 : 0);
+                        router[idx] = static_cast<uint8_t>(b % LayerStacks);
+                    }
     }
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
@@ -368,6 +489,7 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
+    write_little_endian<uint8_t>(stream, router, RouterTableSize);
     return bool(stream);
 }
 

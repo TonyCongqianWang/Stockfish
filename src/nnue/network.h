@@ -96,11 +96,18 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
 
+    // Downstream Top-2 MoE router table
+    uint8_t router[RouterTableSize];
+
     bool initialized = false;
+
+    static constexpr int make_router_index(int ourPieces, int ourQueen, int ourKing, int enemyKing) {
+        return ((ourPieces * 2 + ourQueen) * 33 + ourKing) * 65 + enemyKing;
+    }
 
     // Hash value of evaluation function structure
     static constexpr u32 hash =
-      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
+      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value() ^ RouterHash;
 
     friend struct AccumulatorCaches;
 };

@@ -47,6 +47,8 @@ constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
 constexpr IndexType LayerStacks = 32;
+constexpr IndexType RouterTableSize = 68640;
+constexpr u32       RouterHash      = 0x546F7032u;
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
@@ -138,6 +140,21 @@ struct NetworkArchitecture {
 
         i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
         return outputValue;
+    }
+
+    static void propagate_pair(const NetworkArchitecture& net1,
+                               const NetworkArchitecture& net2,
+                               const TransformedFeatureType* transformedFeatures,
+                               const NNZInfo<L1>&            nnzInfo,
+                               i32&                          pos1,
+                               i32&                          pos2) {
+        if (&net1 == &net2)
+        {
+            pos1 = pos2 = net1.propagate(transformedFeatures, nnzInfo);
+            return;
+        }
+        pos1 = net1.propagate(transformedFeatures, nnzInfo);
+        pos2 = net2.propagate(transformedFeatures, nnzInfo);
     }
 
     usize get_content_hash() const {
