@@ -456,7 +456,7 @@ bool Search::Worker::iterative_deepening() {
 
             // Gradually increase depth after reduced depth search
             if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
+                failHighRecovery = (std::min(failHighRecovery, 2) + failHighRecovery + failedHighCnt) / 2 + 2;
 
             if (threads.stop && pvIdx)
             {
