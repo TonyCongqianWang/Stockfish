@@ -96,6 +96,10 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
 
+    // Dynamic bias routing
+    alignas(CacheLineSize) uint16_t dynamicBiasRouter[RouterTableSize];
+    alignas(CacheLineSize) int32_t dynamicBiasTable[NumBiasExperts][BiasDimension];
+
     bool initialized = false;
 
     // Hash value of evaluation function structure

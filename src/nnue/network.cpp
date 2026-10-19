@@ -138,6 +138,27 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
     return saved;
 }
 
+inline int get_material_context(const Position& pos) {
+    const Color stm  = pos.side_to_move();
+    const Color them = ~stm;
+
+    const int p_us = std::min(pos.count<PAWN>(stm), 8);
+    const int n_us = std::min(pos.count<KNIGHT>(stm), 2);
+    const int b_us = std::min(pos.count<BISHOP>(stm), 2);
+    const int r_us = std::min(pos.count<ROOK>(stm), 2);
+    const int q_us = std::min(pos.count<QUEEN>(stm), 1);
+
+    const int p_them = std::min(pos.count<PAWN>(them), 8);
+    const int n_them = std::min(pos.count<KNIGHT>(them), 2);
+    const int b_them = std::min(pos.count<BISHOP>(them), 2);
+    const int r_them = std::min(pos.count<ROOK>(them), 2);
+    const int q_them = std::min(pos.count<QUEEN>(them), 1);
+
+    const int mat_us   = (((p_us * 3 + n_us) * 3 + b_us) * 3 + r_us) * 2 + q_us;
+    const int mat_them = (((p_them * 3 + n_them) * 3 + b_them) * 3 + r_them) * 2 + q_them;
+    return mat_us * 486 + mat_them;
+}
+
 Value Network::evaluate(const Position&    pos,
                         AccumulatorStack&  accumulatorStack,
                         AccumulatorCaches& cache) const {
@@ -156,7 +177,12 @@ Value Network::evaluate(const Position&    pos,
     const int   bucket      = pcBucket * 4 + queenBucket;
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
+
+    const int      c_mat     = get_material_context(pos);
+    const uint16_t expert_id = dynamicBiasRouter[c_mat];
+    const int32_t* dynBias   = dynamicBiasTable[expert_id];
+
+    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo, dynBias);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -193,7 +219,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks;
+        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks
+                   + sizeof(dynamicBiasRouter) + sizeof(dynamicBiasTable);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -225,9 +252,13 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
 
+    const int      c_mat     = get_material_context(pos);
+    const uint16_t expert_id = dynamicBiasRouter[c_mat];
+    const int32_t* dynBias   = dynamicBiasTable[expert_id];
+
     for (IndexType b = 0; b < LayerStacks; ++b)
     {
-        const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
+        const auto positional = network[b].propagate(transformedFeatures, nnzInfo, dynBias);
         t.positional[b]       = static_cast<Value>(positional / OutputScale);
     }
 
@@ -276,7 +307,11 @@ void Network::load_internal(EvalFile& evalFile) {
 }
 
 
-void Network::initialize() { initialized = true; }
+void Network::initialize() {
+    initialized = true;
+    std::memset(dynamicBiasRouter, 0, sizeof(dynamicBiasRouter));
+    std::memset(dynamicBiasTable, 0, sizeof(dynamicBiasTable));
+}
 
 
 bool Network::save(std::ostream& stream, const std::string& netDescription) const {
@@ -300,6 +335,8 @@ usize Network::get_content_hash() const {
     hash_combine(h, featureTransformer);
     for (auto&& layerstack : network)
         hash_combine(h, layerstack);
+    hash_combine(h, get_raw_data_hash(dynamicBiasRouter));
+    hash_combine(h, get_raw_data_hash(dynamicBiasTable));
     return h;
 }
 
@@ -354,6 +391,28 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
+
+    if (stream.peek() != std::ios::traits_type::eof())
+    {
+        u32 routerHeader = read_little_endian<u32>(stream);
+        if (routerHeader == RouterHash)
+        {
+            read_little_endian<u16>(stream, reinterpret_cast<u16*>(dynamicBiasRouter),
+                                    RouterTableSize);
+            read_little_endian<i32>(stream, reinterpret_cast<i32*>(dynamicBiasTable),
+                                    NumBiasExperts * BiasDimension);
+        }
+        else
+        {
+            return false;
+        }
+    }
+    else
+    {
+        std::memset(dynamicBiasRouter, 0, sizeof(dynamicBiasRouter));
+        std::memset(dynamicBiasTable, 0, sizeof(dynamicBiasTable));
+    }
+
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
@@ -368,6 +427,11 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
+    write_little_endian<u32>(stream, RouterHash);
+    write_little_endian<u16>(stream, reinterpret_cast<const u16*>(dynamicBiasRouter),
+                             RouterTableSize);
+    write_little_endian<i32>(stream, reinterpret_cast<const i32*>(dynamicBiasTable),
+                             NumBiasExperts * BiasDimension);
     return bool(stream);
 }
 
