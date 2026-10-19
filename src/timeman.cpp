@@ -173,7 +173,6 @@ void TimeManagement::init(Search::LimitsType& limits,
         double remainingGameSec   = std::max(0.01, remainingGameMs / 1000.0);
 
         double effectiveGameSec = remainingGameSec * (effectiveNPS / referenceNPS);
-        double logSecClamped    = std::log10(std::max(1.0, effectiveGameSec));
         double tauRawActual     = std::log10(effectiveGameSec);
 
         // 2. Front-loading intensity tau via calibrated sigmoid (k = 1.55, x0 = 1.25) into 2nd-order polynomial:
@@ -213,21 +212,30 @@ void TimeManagement::init(Search::LimitsType& limits,
             bankDraw *= (1.0 + 0.3 * std::min(timeAdvantage, 0.0));
         }
 
-        // 4. Early ply decay factor
-        constexpr double c_exp = 0.043;
-        constexpr double p_exp = 1.15;
-        double decay = std::exp(-c_exp * std::pow(double(ply), p_exp));
+        // 4. Dual early ply decay factors
+        // - decayBank: steeper recovery for bank draw (fast recovery for SD / low inc)
+        // - decayInc: flatter profile for increment discount (lingering longer to bank high inc)
+        constexpr double c_bank = 0.065;
+        constexpr double p_bank = 1.20;
+        double decayBank = std::exp(-c_bank * std::pow(double(ply), p_bank));
 
-        // 5. Total move budget discounting with branchless bank portion layering
-        double baseBudget       = std::max(0.0, (bankDraw + effectiveInc) * sdScale);
-        double discountedBudget = baseBudget * (1.0 - 0.40 * decay);
-        double bankPortion      = discountedBudget - effectiveInc;
-        double moveBudget       = std::max(0.0, discountedBudget - std::max(0.0, (0.20 * decay) * bankPortion));
+        constexpr double c_inc  = 0.022;
+        constexpr double p_inc  = 1.00;
+        double decayInc  = std::exp(-c_inc * std::pow(double(ply), p_inc));
+
+        // 5. Branchless component discounting (zero kinks)
+        constexpr double r_bank = 0.50;
+        constexpr double r_inc  = 0.26;
+
+        double bankComponent = bankDraw * (1.0 - r_bank * decayBank);
+        double incComponent  = effectiveInc * (1.0 - r_inc * decayInc);
+        double moveBudget    = std::max(0.0, (bankComponent + incComponent) * sdScale);
 
         TimePoint nominalOptimum = std::max(TimePoint(1), TimePoint(moveBudget));
 
-        // 6. Dynamic maxScale ceiling
-        double maxConstant       = std::max(3.3744 + 3.0608 * logSecClamped, 3.1441);
+        // 6. Dynamic maxScale ceiling grounded to current remaining clock
+        double logTimeInSec      = std::log10(std::max(0.001, double(limits.time[us]) / (1000.0 * double(scaleFactor))));
+        double maxConstant       = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
         double maxScale          = std::min(6.873, maxConstant + ply / 12.352);
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
