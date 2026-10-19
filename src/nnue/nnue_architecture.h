@@ -42,11 +42,14 @@ using PairFeatureSet   = Features::PP_3Wide;
 using PSQFeatureSet    = Features::K32Q2;
 
 // Number of input feature dimensions after conversion
-constexpr IndexType L1 = 1024;
-constexpr int       L2 = 32;
-constexpr int       L3 = 32;
+constexpr IndexType L1                = 1024;
+constexpr int       L2                = 32;
+constexpr int       L3                = 32;
+constexpr IndexType FT_DynamicBiasDim = 256;
+constexpr IndexType FT_Outputs        = L1 + FT_DynamicBiasDim;
 
-constexpr IndexType LayerStacks = 32;
+constexpr IndexType LayerStacks   = 32;
+constexpr IndexType BiasDimension = FT_DynamicBiasDim / 2;
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
@@ -93,41 +96,65 @@ struct NetworkArchitecture {
     }
 
     i32 propagate(const TransformedFeatureType* transformedFeatures,
-                  const NNZInfo<L1>&            nnzInfo) const {
+                  const NNZInfo<L1>&            nnzInfo,
+                  const int32_t*                dynBias) const {
         struct alignas(CacheLineSize) Buffer {
             alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_sqr;
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_lin;
             alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
               concat_buffer[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 32)];
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_sqr;
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_lin;
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
         };
 
         Buffer buffer;
 
         fc_0.propagate(transformedFeatures, buffer.fc_0_out, nnzInfo);
+
+        static_assert(FC_0_OUTPUTS >= 2);
+        const i32 skip_0 = buffer.fc_0_out[FC_0_OUTPUTS - 2] - buffer.fc_0_out[FC_0_OUTPUTS - 1];
+
+        const int32_t* b1_sqr = dynBias;
+        const int32_t* b1_lin = dynBias + FC_0_OUTPUTS;
+        for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
+        {
+            buffer.fc_0_sqr[i] = buffer.fc_0_out[i] + b1_sqr[i];
+            buffer.fc_0_lin[i] = buffer.fc_0_out[i] + b1_lin[i];
+        }
+
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_0.propagate_pair(buffer.fc_0_out, buffer.concat_buffer,
+        ac_sqr_0.propagate_pair(buffer.fc_0_sqr, buffer.fc_0_lin, buffer.concat_buffer,
                                 buffer.concat_buffer + FC_0_OUTPUTS);
 #else
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.concat_buffer);
-        ac_0.propagate(buffer.fc_0_out, buffer.concat_buffer + FC_0_OUTPUTS);
+        ac_sqr_0.propagate(buffer.fc_0_sqr, buffer.concat_buffer);
+        ac_0.propagate(buffer.fc_0_lin, buffer.concat_buffer + FC_0_OUTPUTS);
 #endif
 
         fc_1.propagate(buffer.concat_buffer, buffer.fc_1_out);
+
+        const int32_t* b2_sqr = dynBias + FC_0_OUTPUTS * 2;
+        const int32_t* b2_lin = dynBias + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS;
+        for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
+        {
+            buffer.fc_1_sqr[i] = buffer.fc_1_out[i] + b2_sqr[i];
+            buffer.fc_1_lin[i] = buffer.fc_1_out[i] + b2_lin[i];
+        }
+
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_1.propagate_pair(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2,
+        ac_sqr_1.propagate_pair(buffer.fc_1_sqr, buffer.fc_1_lin,
+                                buffer.concat_buffer + FC_0_OUTPUTS * 2,
                                 buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
 #else
-        ac_sqr_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2);
-        ac_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_1.propagate(buffer.fc_1_sqr, buffer.concat_buffer + FC_0_OUTPUTS * 2);
+        ac_1.propagate(buffer.fc_1_lin, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
 #endif
 
         fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
 
-        static_assert(FC_0_OUTPUTS >= 2);
-        i32 fwdOut = buffer.fc_2_out[0];
-        i32 skip_0 = buffer.fc_0_out[FC_0_OUTPUTS - 2] - buffer.fc_0_out[FC_0_OUTPUTS - 1];
-        fwdOut += skip_0;
+        i32 fwdOut = buffer.fc_2_out[0] + skip_0;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale

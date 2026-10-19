@@ -73,6 +73,13 @@ class SqrClippedReLU {
     // pack lane order because the next layer's weights were already reverse pre-permuted to match
     // by AffineTransform::get_weight_index_scrambled().
     void propagate_pair(const InputType* input, OutputType* squared, OutputType* clipped) const {
+        propagate_pair(input, input, squared, clipped);
+    }
+
+    void propagate_pair(const InputType* input_sqr,
+                        const InputType* input_lin,
+                        OutputType*      squared,
+                        OutputType*      clipped) const {
         static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 8,
                       "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 8");
         static_assert(InputDimensions % 32 == 0,
@@ -82,7 +89,8 @@ class SqrClippedReLU {
         constexpr int       SimdShiftAmount = WeightScaleBitsLocal * 2 + 7 - 16;
 
     #if defined(USE_AVX512)
-        const auto in      = reinterpret_cast<const __m512i*>(input);
+        const auto inSqr   = reinterpret_cast<const __m512i*>(input_sqr);
+        const auto inLin   = reinterpret_cast<const __m512i*>(input_lin);
         auto       sqrOut  = reinterpret_cast<__m256i*>(squared);
         auto       clipOut = reinterpret_cast<__m256i*>(clipped);
 
@@ -90,19 +98,22 @@ class SqrClippedReLU {
 
         for (IndexType i = 0; i < NumChunks; ++i)
         {
-            const __m512i words = _mm512_packs_epi32(_mm512_load_si512(&in[i * 2 + 0]),
-                                                     _mm512_load_si512(&in[i * 2 + 1]));
+            const __m512i wordsSqr = _mm512_packs_epi32(_mm512_load_si512(&inSqr[i * 2 + 0]),
+                                                        _mm512_load_si512(&inSqr[i * 2 + 1]));
             const __m512i sqrWords =
-              _mm512_srli_epi16(_mm512_mulhi_epi16(words, words), SimdShiftAmount);
+              _mm512_srli_epi16(_mm512_mulhi_epi16(wordsSqr, wordsSqr), SimdShiftAmount);
             _mm256_store_si256(&sqrOut[i], _mm512_cvtsepi16_epi8(sqrWords));
 
+            const __m512i wordsLin = _mm512_packs_epi32(_mm512_load_si512(&inLin[i * 2 + 0]),
+                                                        _mm512_load_si512(&inLin[i * 2 + 1]));
             const __m512i clipWords =
-              _mm512_srli_epi16(_mm512_max_epi16(words, zero), WeightScaleBitsLocal);
+              _mm512_srli_epi16(_mm512_max_epi16(wordsLin, zero), WeightScaleBitsLocal);
             _mm256_store_si256(&clipOut[i], _mm512_cvtsepi16_epi8(clipWords));
         }
 
     #elif defined(USE_AVX2)
-        const auto in      = reinterpret_cast<const __m256i*>(input);
+        const auto inSqr   = reinterpret_cast<const __m256i*>(input_sqr);
+        const auto inLin   = reinterpret_cast<const __m256i*>(input_lin);
         auto       sqrOut  = reinterpret_cast<__m256i*>(squared);
         auto       clipOut = reinterpret_cast<__m256i*>(clipped);
 
@@ -110,22 +121,27 @@ class SqrClippedReLU {
 
         for (IndexType i = 0; i < NumChunks; ++i)
         {
-            const __m256i words0 = _mm256_packs_epi32(_mm256_load_si256(&in[i * 4 + 0]),
-                                                      _mm256_load_si256(&in[i * 4 + 1]));
-            const __m256i words1 = _mm256_packs_epi32(_mm256_load_si256(&in[i * 4 + 2]),
-                                                      _mm256_load_si256(&in[i * 4 + 3]));
+            const __m256i wordsSqr0 = _mm256_packs_epi32(_mm256_load_si256(&inSqr[i * 4 + 0]),
+                                                         _mm256_load_si256(&inSqr[i * 4 + 1]));
+            const __m256i wordsSqr1 = _mm256_packs_epi32(_mm256_load_si256(&inSqr[i * 4 + 2]),
+                                                         _mm256_load_si256(&inSqr[i * 4 + 3]));
 
             const __m256i sqr0 =
-              _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), SimdShiftAmount);
+              _mm256_srli_epi16(_mm256_mulhi_epi16(wordsSqr0, wordsSqr0), SimdShiftAmount);
             const __m256i sqr1 =
-              _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), SimdShiftAmount);
+              _mm256_srli_epi16(_mm256_mulhi_epi16(wordsSqr1, wordsSqr1), SimdShiftAmount);
             const __m256i sqrPacked = _mm256_packs_epi16(sqr0, sqr1);
             _mm256_store_si256(&sqrOut[i], sqrPacked);
 
+            const __m256i wordsLin0 = _mm256_packs_epi32(_mm256_load_si256(&inLin[i * 4 + 0]),
+                                                         _mm256_load_si256(&inLin[i * 4 + 1]));
+            const __m256i wordsLin1 = _mm256_packs_epi32(_mm256_load_si256(&inLin[i * 4 + 2]),
+                                                         _mm256_load_si256(&inLin[i * 4 + 3]));
+
             const __m256i clip0 =
-              _mm256_srli_epi16(_mm256_max_epi16(words0, zero), WeightScaleBitsLocal);
+              _mm256_srli_epi16(_mm256_max_epi16(wordsLin0, zero), WeightScaleBitsLocal);
             const __m256i clip1 =
-              _mm256_srli_epi16(_mm256_max_epi16(words1, zero), WeightScaleBitsLocal);
+              _mm256_srli_epi16(_mm256_max_epi16(wordsLin1, zero), WeightScaleBitsLocal);
             const __m256i clipPacked = _mm256_packs_epi16(clip0, clip1);
             _mm256_store_si256(&clipOut[i], clipPacked);
         }
