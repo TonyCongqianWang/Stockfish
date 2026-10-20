@@ -96,13 +96,16 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
 
-    // Downstream Top-2 MoE router table
-    uint8_t router[RouterTableSize];
+    // Downstream Top-2 MoE dual router table (810,810 uint16)
+    alignas(CacheLineSize) uint16_t router[RouterTableSize];
+
+    // Dynamic bias table (512 experts x 128 int32)
+    alignas(CacheLineSize) int32_t dynamicBiasTable[NumBiasExperts][BiasDimension];
 
     bool initialized = false;
 
-    static constexpr int make_router_index(int ourPieces, int ourQueen, int ourKing, int enemyKing) {
-        return ((ourPieces * 2 + ourQueen) * 33 + ourKing) * 65 + enemyKing;
+    static constexpr int make_router_index(int mat_id, int ourKing, int enemyKing) {
+        return (mat_id * 33 + ourKing) * 65 + enemyKing;
     }
 
     // Hash value of evaluation function structure
