@@ -159,7 +159,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
             {
                 double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
-                constexpr double c_sd = 0.40;
+                double c_sd = 0.40 - 0.05 * std::tanh(effectiveInc / std::max(1.0, double(moveOverhead)));
                 sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
                 M       = 2.0 + (M_pieces - 2.0) * u;
             }
@@ -219,13 +219,13 @@ void TimeManagement::init(Search::LimitsType& limits,
         constexpr double p_bank = 1.20;
         double decayBank = std::exp(-c_bank * std::pow(double(ply), p_bank));
 
-        constexpr double c_inc  = 0.022;
+        constexpr double c_inc  = 0.016;
         constexpr double p_inc  = 1.00;
         double decayInc  = std::exp(-c_inc * std::pow(double(ply), p_inc));
 
         // 5. Branchless component discounting (zero kinks)
-        constexpr double r_bank = 0.50;
-        constexpr double r_inc  = 0.26;
+        double r_bank = 0.52 + 0.05 * p_s;
+        constexpr double r_inc  = 0.20;
 
         double bankComponent = bankDraw * (1.0 - r_bank * decayBank);
         double incComponent  = effectiveInc * (1.0 - r_inc * decayInc);
