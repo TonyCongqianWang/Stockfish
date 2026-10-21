@@ -382,8 +382,9 @@ bool Search::Worker::iterative_deepening() {
             // Reset UCI info selDepth for each depth and each PV line
             selDepth = 0;
 
-            // Reset aspiration window starting size
-            delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10193;
+            // Reset aspiration window starting size, retrieved from depth-based EMA with overshoot and thread adjustment
+            int deltaRetrieved = aspirationDeltaEMA[std::min(rootDepth, MAX_PLY - 1)] / 128;
+            delta              = std::max(5, deltaRetrieved + deltaRetrieved / 4 + int(threadIdx % 8));
             Value avg = rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
@@ -457,6 +458,21 @@ bool Search::Worker::iterative_deepening() {
             // Gradually increase depth after reduced depth search
             if (failedHighCnt > 0 && !pvIdx)
                 failHighRecovery = (failedHighCnt + 1) / 2 + 2;
+
+            // Update depth-based EMA using perfect_delta (prediction error of the window)
+            if (rootDepth > 1 && !threads.stop && avg != -VALUE_INFINITE && std::abs(avg) < VALUE_INFINITE)
+            {
+                int perfectDelta = std::abs(bestValue - avg);
+                perfectDelta     = std::min(perfectDelta, std::max(20, delta * 2));  // Clamp outlier tactical swings
+                int d            = std::min(rootDepth, MAX_PLY - 1);
+
+                // Update the entire array with slow decay 1/32 (auto-vectorized by AVX2/LTO)
+                for (int i = 1; i < MAX_PLY; ++i)
+                    aspirationDeltaEMA[i] = (aspirationDeltaEMA[i] * 31 + perfectDelta * 128) / 32;
+
+                // Update the matching depth again with 1/4 decay (double update)
+                aspirationDeltaEMA[d] = (aspirationDeltaEMA[d] * 3 + perfectDelta * 128) / 4;
+            }
 
             if (threads.stop && pvIdx)
             {
@@ -725,6 +741,7 @@ void Search::Worker::clear() {
                         h.fill(-586);
 
     ttMoveHistory = 0;
+    std::fill(std::begin(aspirationDeltaEMA), std::end(aspirationDeltaEMA), 6 * 128);
 
     for (auto& to : continuationCorrectionHistory)
         for (auto& h : to)
@@ -1481,22 +1498,14 @@ moves_loop:  // When in check, search starts here
             constexpr u64 MinWeight      = 12;  // 37.5% minimum weight
             constexpr u64 MaxWeight      = 24;  // 75% maximum weight
 
-            u64 w     = std::clamp((Scale * N * ChiDenominator)
-                                     / (N * ChiDenominator + ChiNumerator * E_prev),
-                                   MinWeight, MaxWeight);
-            u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+            u64 w = std::clamp((Scale * N * ChiDenominator)
+                                 / (N * ChiDenominator + ChiNumerator * E_prev),
+                               MinWeight, MaxWeight);
 
             if (rm.averageScore == -VALUE_INFINITE)
                 rm.averageScore = value;
             else
                 rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
-
-            if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
-            else
-                rm.meanSquaredScore =
-                  Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
 
             // PV move or new best move?
             if (moveCount == 1 || value > alpha)
