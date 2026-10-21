@@ -159,7 +159,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
             {
                 double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
-                double c_sd = 0.40 - 0.05 * std::tanh(effectiveInc / std::max(1.0, double(moveOverhead)));
+                double c_sd = 0.45 - 0.15 * std::tanh(0.1 * effectiveInc / std::max(1.0, double(moveOverhead)));
                 sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
                 M       = 2.0 + (M_pieces - 2.0) * u;
             }
@@ -219,12 +219,12 @@ void TimeManagement::init(Search::LimitsType& limits,
         constexpr double p_bank = 1.20;
         double decayBank = std::exp(-c_bank * std::pow(double(ply), p_bank));
 
-        constexpr double c_inc  = 0.016;
-        constexpr double p_inc  = 1.00;
+        constexpr double c_inc  = 0.035;
+        constexpr double p_inc  = 1.15;
         double decayInc  = std::exp(-c_inc * std::pow(double(ply), p_inc));
 
         // 5. Branchless component discounting (zero kinks)
-        double r_bank = 0.52 + 0.05 * p_s;
+        double r_bank = 0.54 + 0.093 * p_s / (0.25 + p_s);
         constexpr double r_inc  = 0.20;
 
         double bankComponent = bankDraw * (1.0 - r_bank * decayBank);
@@ -240,11 +240,14 @@ void TimeManagement::init(Search::LimitsType& limits,
         TimePoint nominalMaximum = std::max(nominalOptimum, TimePoint(nominalOptimum * maxScale));
 
         // 7. Safety buffer zone: scale down smoothly as timeBank empties
-        // Uses timeBank with threshold = 1.50 * nominalMaximum and cubic curvature (1 - (1 - u)^3)
-        // guaranteeing zero slope (no kinks) at the threshold while preserving endgame search depth.
+        // Uses timeBank with threshold = safetyCoeff * nominalMaximum and cubic curvature (1 - (1 - u)^3)
+        // In sudden death / low inc, safetyCoeff = 1.50 to prevent flagging.
+        // As increment grows, cash flow guarantees safety, scaling smoothly towards 0.50.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double safetyThreshold = 1.50 * double(nominalMaximum);
+        double incRatio = std::max(0.0, effectiveInc) / std::max(1.0, double(moveOverhead));
+        double safetyCoeff = 1.50 - 1.00 * std::tanh(0.15 * incRatio);
+        double safetyThreshold = safetyCoeff * double(nominalMaximum);
         if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
             double u     = std::clamp(double(timeBank) / safetyThreshold, 0.0, 1.0);
