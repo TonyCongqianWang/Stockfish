@@ -46,7 +46,7 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks = 32;
+constexpr IndexType LayerStacks = 64;
 constexpr IndexType RouterTableSize = 810810;
 constexpr u32       RouterHash      = 0x4475616Cu;
 constexpr IndexType NumBiasExperts  = 256;
