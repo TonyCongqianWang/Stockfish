@@ -159,7 +159,7 @@ void TimeManagement::init(Search::LimitsType& limits,
             if (double(limits.time[us]) < turnoverThreshold && turnoverThreshold > 0.0)
             {
                 double u = std::clamp(double(limits.time[us]) / turnoverThreshold, 0.0, 1.0);
-                double c_sd = 0.45 - 0.15 * std::tanh(0.1 * effectiveInc / std::max(1.0, double(moveOverhead)));
+                double c_sd = 0.40 - 0.05 * std::tanh(effectiveInc / netDrain);
                 sdScale = (u * (1.0 + c_sd)) / (u + c_sd);
                 M       = 2.0 + (M_pieces - 2.0) * u;
             }
@@ -225,7 +225,7 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 5. Branchless component discounting (zero kinks)
         double r_bank = 0.54 + 0.093 * p_s / (0.25 + p_s);
-        constexpr double r_inc  = 0.20;
+        constexpr double r_inc  = 0.15;
 
         double bankComponent = bankDraw * (1.0 - r_bank * decayBank);
         double incComponent  = effectiveInc * (1.0 - r_inc * decayInc);
@@ -241,12 +241,12 @@ void TimeManagement::init(Search::LimitsType& limits,
 
         // 7. Safety buffer zone: scale down smoothly as timeBank empties
         // Uses timeBank with threshold = safetyCoeff * nominalMaximum and cubic curvature (1 - (1 - u)^3)
-        // In sudden death / low inc, safetyCoeff = 1.50 to prevent flagging.
-        // As increment grows, cash flow guarantees safety, scaling smoothly towards 0.50.
+        // In Sudden Death (effectiveInc < 0), safetyCoeff increases up to ~1.52 to prevent flagging.
+        // Anchored to known good baseline of ~1.25 at 4% inc, scaling smoothly towards 0.50 at infinite inc.
         optimumTime = nominalOptimum;
         maximumTime = nominalMaximum;
-        double incRatio = std::max(0.0, effectiveInc) / std::max(1.0, double(moveOverhead));
-        double safetyCoeff = 1.50 - 1.00 * std::tanh(0.15 * incRatio);
+        double incRatio = effectiveInc / std::max(1.0, double(nominalOptimum));
+        double safetyCoeff = 1.45 - 0.95 * std::tanh(0.50 * incRatio);
         double safetyThreshold = safetyCoeff * double(nominalMaximum);
         if (safetyThreshold > 0.0 && double(timeBank) < safetyThreshold)
         {
