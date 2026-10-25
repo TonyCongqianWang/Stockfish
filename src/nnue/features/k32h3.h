@@ -16,10 +16,10 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//Definition of input features K32Q2 of NNUE evaluation function
+//Definition of input features K32H3 of NNUE evaluation function
 
-#ifndef NNUE_FEATURES_K32Q2_H_INCLUDED
-#define NNUE_FEATURES_K32Q2_H_INCLUDED
+#ifndef NNUE_FEATURES_K32H3_H_INCLUDED
+#define NNUE_FEATURES_K32H3_H_INCLUDED
 
 #include "../../misc.h"
 #include "../../types.h"
@@ -27,9 +27,9 @@
 
 namespace Stockfish::Eval::NNUE::Features {
 
-// Feature K32Q2: Combination of the position of own king (32 buckets), opponent queen presence (2 states),
+// Feature K32H3: Combination of the position of own king (32 buckets), opponent heavy pieces (queen, rook, neither),
 // and piece-square positions. Position mirrored such that king is always on e..h files.
-class K32Q2 {
+class K32H3 {
 
     // Unique number for each piece type on each square
     enum {
@@ -58,13 +58,12 @@ class K32Q2 {
 
    public:
     // Hash value embedded in the evaluation file
-    static constexpr u32 HashValue = 0x32b5e284u;
+    static constexpr u32 HashValue = 0x32b5e385u;
 
-    // Number of feature dimensions (45,056 piece-squares)
-    static constexpr IndexType Dimensions =
-      static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB);
+    // Number of feature dimensions (67,584 piece-squares)
+    static constexpr IndexType Dimensions = 32 * 3 * static_cast<IndexType>(PS_NB);
 
-#define B(v) (v * 2 * PS_NB)
+#define B(v) (v * 3 * PS_NB)
     // clang-format off
     static constexpr IndexType KingBuckets[SQUARE_NB] = {
         B(28), B(29), B(30), B(31), B(31), B(30), B(29), B(28),
@@ -94,7 +93,7 @@ class K32Q2 {
 
     // Maximum number of simultaneously active features.
     static constexpr IndexType MaxActiveDimensions = 32;
-    using IndexList                                = ValueList<u16, MaxActiveDimensions>;
+    using IndexList                                = ValueList<u32, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
 
 #if defined(USE_AVX512ICL)
@@ -105,20 +104,19 @@ class K32Q2 {
                               Bitboard                            addedBB,
                               Color                               perspective,
                               Square                              ksq,
-                              bool                                opponentHasQueen,
+                              int                                 heavyBucket,
                               IndexList&                          removed,
                               IndexList&                          added);
 #endif
 
     // Index of a feature for a given king position and another piece on some square
-    static IndexType
-    make_index(Color perspective, Square s, Piece pc, Square ksq, bool opponentHasQueen);
+    static IndexType make_index(Color perspective, Square s, Piece pc, Square ksq, int heavyBucket);
 
     // Get a list of indices for recently changed features
     static void append_changed_indices(Color           perspective,
                                        Square          ksq,
                                        const DiffType& diff,
-                                       bool            opponentHasQueen,
+                                       int             heavyBucket,
                                        IndexList&      removed,
                                        IndexList&      added);
 
@@ -129,4 +127,4 @@ class K32Q2 {
 
 }  // namespace Stockfish::Eval::NNUE::Features
 
-#endif  // #ifndef NNUE_FEATURES_K32Q2_H_INCLUDED
+#endif  // #ifndef NNUE_FEATURES_K32H3_H_INCLUDED

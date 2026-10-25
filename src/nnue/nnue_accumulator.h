@@ -80,12 +80,10 @@ struct AccumulatorCaches {
                     entry.clear(network.featureTransformer.biases);
     }
 
-    auto&       operator[](bool opponentHasQueen) { return entries[opponentHasQueen ? 1 : 0]; }
-    const auto& operator[](bool opponentHasQueen) const {
-        return entries[opponentHasQueen ? 1 : 0];
-    }
+    auto&       operator[](int heavyBucket) { return entries[heavyBucket]; }
+    const auto& operator[](int heavyBucket) const { return entries[heavyBucket]; }
 
-    std::array<std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>, 2> entries;
+    std::array<std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>, 3> entries;
 };
 
 

@@ -68,35 +68,27 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Static lookup table mapping (T, P, Q, BP) -> mat_id in [0, 377]
-constexpr auto init_mat_id_table = []() {
-    std::array<std::array<std::array<std::array<uint16_t, 2>, 2>, 9>, 16> table{};
-    uint16_t current_id = 0;
-    for (int t = 0; t < 16; ++t) {
-        for (int p = 0; p <= std::min(8, t); ++p) {
-            for (int q = 0; q < 2; ++q) {
-                if (q == 1 && t - p < 1) continue;
-                for (int bp = 0; bp < 2; ++bp) {
-                    if (bp == 1 && (t - p - q < 2)) continue;
-                    table[t][p][q][bp] = current_id++;
-                }
-            }
-        }
-    }
+// Legal material states (non-king pieces, pawns, cascading material category).
+constexpr auto MAT_ID_TABLE = [] {
+    std::array<std::array<std::array<uint16_t, 4>, 9>, 16> table{};
+    uint16_t                                               id = 0;
+    for (int t = 0; t < 16; ++t)
+        for (int p = 0; p <= std::min(8, t); ++p)
+            for (int h = 0; h < 4; ++h)
+                if (t - p >= (h < 2 ? 1 : h == 2 ? 2 : 0))
+                    table[t][p][h] = id++;
     return table;
-};
-
-const auto MAT_ID_TABLE = init_mat_id_table();
+}();
 
 inline uint16_t get_material_id(const Position& pos, Color c) {
-    const int T = std::clamp(pos.count<ALL_PIECES>(c) - 1, 0, 15);
-    const int P = std::clamp(pos.count<PAWN>(c), 0, std::min(8, T));
-    const int Q = (T - P >= 1 && pos.pieces(c, QUEEN)) ? 1 : 0;
+    const int      t = std::clamp(pos.count<ALL_PIECES>(c) - 1, 0, 15);
+    const int      p = std::clamp(pos.count<PAWN>(c), 0, std::min(8, t));
     const Bitboard b = pos.pieces(c, BISHOP);
-    const int BP = (T - P - Q >= 2 &&
-                    (b & 0x55AA55AA55AA55AAULL) != 0 &&
-                    (b & ~0x55AA55AA55AA55AAULL) != 0) ? 1 : 0;
-    return MAT_ID_TABLE[T][P][Q][BP];
+    const int      h = t - p >= 1 && pos.pieces(c, QUEEN)                                        ? 0
+                     : t - p >= 1 && pos.pieces(c, ROOK)                                         ? 1
+                     : t - p >= 2 && (b & 0x55AA55AA55AA55AAULL) && (b & ~0x55AA55AA55AA55AAULL) ? 2
+                                                                                                 : 3;
+    return MAT_ID_TABLE[t][p][h];
 }
 
 }  // namespace
@@ -215,7 +207,7 @@ Value Network::evaluate(const Position&    pos,
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
     const uint16_t packed_1 = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int b1 = (packed_1 >> 6) & 0xFF;
+    const int      b1         = (packed_1 >> 6) & 0x3F;
     const int32_t* dyn_bias_1 = dynamicBiasTable[b1];
 
     // Perspective 2 (Non-STM):
@@ -241,13 +233,13 @@ Value Network::evaluate(const Position&    pos,
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
     const uint16_t packed_2 = router[c_them];
     const int e2 = packed_2 & 0x3F;
-    const int b2 = (packed_2 >> 6) & 0xFF;
+    const int      b2         = (packed_2 >> 6) & 0x3F;
     const int32_t* dyn_bias_2 = dynamicBiasTable[b2];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    i32 pos1, pos2;
-    NetworkArchitecture::propagate_pair(network[e1], network[e2], transformedFeatures, nnzInfo, dyn_bias_1, dyn_bias_2, pos1, pos2);
-    return static_cast<Value>((pos1 + pos2) / OutputScale);
+    const auto positional =
+      network[e1].propagate(transformedFeatures, nnzInfo, network[e2], dyn_bias_1, dyn_bias_2);
+    return static_cast<Value>(positional / OutputScale);
 }
 
 
@@ -334,8 +326,7 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
     const uint16_t packed_1 = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int b1 = (packed_1 >> 6) & 0xFF;
-    const int32_t* dyn_bias_1 = dynamicBiasTable[b1];
+    const int      b1       = (packed_1 >> 6) & 0x3F;
 
     // Perspective 2 (Non-STM):
     const uint16_t mat_id_them = get_material_id(pos, ~stm);
@@ -360,19 +351,21 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
     const uint16_t packed_2 = router[c_them];
     const int e2 = packed_2 & 0x3F;
+    const int      b2       = (packed_2 >> 6) & 0x3F;
 
     NnueEvalTrace t{};
-    t.correctBucket  = e1;
-    t.correctBucket2 = e2;
-
+    t.weightExperts = {e1, e2};
+    t.biasExperts   = {b1, b2};
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-
-    for (IndexType b = 0; b < LayerStacks; ++b)
-    {
-        const auto positional = network[b].propagate(transformedFeatures, nnzInfo, dyn_bias_1);
-        t.positional[b]       = static_cast<Value>(positional / OutputScale);
-    }
+    const int weights[4][2] = {{e1, e2}, {e1, e1}, {e2, e2}, {e2, e1}};
+    const int biases[4][2]  = {{b1, b2}, {b1, b1}, {b2, b2}, {b2, b1}};
+    for (int i = 0; i < 4; ++i)
+        t.positional[i] =
+          static_cast<Value>(network[weights[i][0]].propagate(
+                               transformedFeatures, nnzInfo, network[weights[i][1]],
+                               dynamicBiasTable[biases[i][0]], dynamicBiasTable[biases[i][1]])
+                             / OutputScale);
 
     return t;
 }

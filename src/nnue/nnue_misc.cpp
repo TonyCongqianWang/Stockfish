@@ -65,27 +65,15 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     auto t = network.trace_evaluate(pos, *accumulators, caches);
 
-    ss << "NNUE network contributions (Normalized, "
-       << (pos.side_to_move() == WHITE ? "White to move)" : "Black to move)") << std::endl
-       << "+------------+------------+\n"
-       << "|   Bucket   | Evaluation |\n"
-       << "+------------+------------+\n";
-
-    for (usize bucket = 0; bucket < LayerStacks; ++bucket)
+    ss << "NNUE routes (weight / bias): A = " << t.weightExperts[0] << " / " << t.biasExperts[0]
+       << ", B = " << t.weightExperts[1] << " / " << t.biasExperts[1] << '\n';
+    constexpr const char* labels[] = {"A + B (actual)", "A + A", "B + B", "B + A (symmetry)"};
+    for (int i = 0; i < 4; ++i)
     {
-        ss << "|  " << std::left << std::setw(10) << bucket << std::right << "|  ";
-        format_cp_aligned_dot(t.positional[bucket], ss, pos);
-        ss << "   |";
-        if (bucket == t.correctBucket && bucket == t.correctBucket2)
-            ss << " <-- active head 1 & 2";
-        else if (bucket == t.correctBucket)
-            ss << " <-- active head 1";
-        else if (bucket == t.correctBucket2)
-            ss << " <-- active head 2";
+        ss << std::left << std::setw(20) << labels[i] << std::right;
+        format_cp_aligned_dot(t.positional[i], ss, pos);
         ss << '\n';
     }
-
-    ss << "+------------+------------+\n";
 
     return ss.str();
 }

@@ -96,10 +96,10 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
 
-    // Downstream Top-2 MoE dual router table (810,810 uint16)
+    // Downstream Top-2 MoE dual router table (849,420 uint16)
     alignas(CacheLineSize) uint16_t router[RouterTableSize];
 
-    // Dynamic bias table (256 experts x 128 int32)
+    // Dynamic bias table (64 experts x 128 int32)
     alignas(CacheLineSize) int32_t dynamicBiasTable[NumBiasExperts][BiasDimension];
 
     bool initialized = false;
@@ -109,8 +109,8 @@ class Network {
     }
 
     // Hash value of evaluation function structure
-    static constexpr u32 hash =
-      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value() ^ get_router_hash();
+    static constexpr u32 hash = FeatureTransformer::get_hash_value()
+                              ^ NetworkArchitecture::get_hash_value() ^ get_router_hash();
 
     friend struct AccumulatorCaches;
 };
