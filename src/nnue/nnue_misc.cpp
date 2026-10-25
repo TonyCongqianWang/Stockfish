@@ -76,8 +76,12 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
         ss << "|  " << std::left << std::setw(10) << bucket << std::right << "|  ";
         format_cp_aligned_dot(t.positional[bucket], ss, pos);
         ss << "   |";
-        if (bucket == t.correctBucket)
-            ss << " <-- this bucket is used";
+        if (bucket == t.correctBucket && bucket == t.correctBucket2)
+            ss << " <-- active head 1 & 2";
+        else if (bucket == t.correctBucket)
+            ss << " <-- active head 1";
+        else if (bucket == t.correctBucket2)
+            ss << " <-- active head 2";
         ss << '\n';
     }
 
