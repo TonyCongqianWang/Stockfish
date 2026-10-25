@@ -45,22 +45,16 @@ constexpr std::array<usize, Len> invert_permutation(const std::array<usize, Len>
     return inverse;
 }
 
-// Divide a byte region of size TotalSize to chunks of size
-// BlockSize, and permute the blocks by a given order
-template<usize BlockSize, typename T, usize N, usize OrderSize>
-void permute(std::array<T, N>& data, const std::array<usize, OrderSize>& order) {
-    constexpr usize TotalSize = N * sizeof(T);
-
-    static_assert(TotalSize % (BlockSize * OrderSize) == 0,
-                  "ChunkSize * OrderSize must perfectly divide TotalSize");
+template<usize BlockSize, usize OrderSize>
+void permute_bytes(std::byte* bytes, usize totalSize, const std::array<usize, OrderSize>& order) {
+    static_assert(BlockSize > 0 && OrderSize > 0);
+    assert(totalSize % (BlockSize * OrderSize) == 0);
 
     constexpr usize ProcessChunkSize = BlockSize * OrderSize;
 
     std::array<std::byte, ProcessChunkSize> buffer{};
 
-    std::byte* const bytes = reinterpret_cast<std::byte*>(data.data());
-
-    for (usize i = 0; i < TotalSize; i += ProcessChunkSize)
+    for (usize i = 0; i < totalSize; i += ProcessChunkSize)
     {
         std::byte* const values = &bytes[i];
 
@@ -76,10 +70,17 @@ void permute(std::array<T, N>& data, const std::array<usize, OrderSize>& order) 
     }
 }
 
+// Divide a byte region of size TotalSize to chunks of size
+// BlockSize, and permute the blocks by a given order
+template<usize BlockSize, typename T, usize N, usize OrderSize>
+void permute(std::array<T, N>& data, const std::array<usize, OrderSize>& order) {
+    permute_bytes<BlockSize>(reinterpret_cast<std::byte*>(data.data()), N * sizeof(T), order);
+}
+
 // Input feature converter
 class FeatureTransformer {
-    // Number of output dimensions for one side
-    static constexpr IndexType HalfDimensions = L1;
+    // Number of accumulator dimensions for one side
+    static constexpr IndexType HalfDimensions = FT_Outputs;
 
    public:
     // Output type
@@ -101,7 +102,7 @@ class FeatureTransformer {
     using ThreatAndPpWeightArray = std::array<ThreatWeightType, ThreatAndPpWeightSize>;
 
     // Size of forward propagation buffer
-    static constexpr usize BufferSize = OutputDimensions * sizeof(OutputType);
+    static constexpr usize BufferSize = L1 * sizeof(OutputType);
 
     // Store the order by which 128-bit blocks of a 1024-bit data must
     // be permuted so that calling packus on adjacent vectors of 16-bit
@@ -164,10 +165,14 @@ class FeatureTransformer {
     }
 
     void permute_weights() {
-        permute<16>(biases, PackusEpi16Order);
-        permute<8>(weights, PackusEpi16Order);
-
-        permute<8>(threatAndPpWeights, PackusEpi16Order);
+        permute_bytes<16>(reinterpret_cast<std::byte*>(biases.data()), L1 * sizeof(BiasType),
+                          PackusEpi16Order);
+        for (IndexType r = 0; r < PsqDimensions; ++r)
+            permute_bytes<8>(reinterpret_cast<std::byte*>(&weights[r * HalfDimensions]), L1,
+                             PackusEpi16Order);
+        for (IndexType r = 0; r < ThreatAndPpDimensions; ++r)
+            permute_bytes<8>(reinterpret_cast<std::byte*>(&threatAndPpWeights[r * HalfDimensions]),
+                             L1, PackusEpi16Order);
 
 #if defined(USE_PAIRED_WIDENING_ADD)
         // With 128-bit vectors the order is the identity
@@ -188,9 +193,14 @@ class FeatureTransformer {
         }
 #endif
 
-        permute<16>(biases, InversePackusEpi16Order);
-        permute<8>(weights, InversePackusEpi16Order);
-        permute<8>(threatAndPpWeights, InversePackusEpi16Order);
+        permute_bytes<16>(reinterpret_cast<std::byte*>(biases.data()), L1 * sizeof(BiasType),
+                          InversePackusEpi16Order);
+        for (IndexType r = 0; r < PsqDimensions; ++r)
+            permute_bytes<8>(reinterpret_cast<std::byte*>(&weights[r * HalfDimensions]), L1,
+                             InversePackusEpi16Order);
+        for (IndexType r = 0; r < ThreatAndPpDimensions; ++r)
+            permute_bytes<8>(reinterpret_cast<std::byte*>(&threatAndPpWeights[r * HalfDimensions]),
+                             L1, InversePackusEpi16Order);
     }
 
     ThreatWeightType* threatWeightData() { return threatAndPpWeights.data(); }
@@ -240,11 +250,12 @@ class FeatureTransformer {
     }
 
     // Convert input features
-    void transform(const Position&                             pos,
-                   AccumulatorStack&                           accumulatorStack,
-                   AccumulatorCaches&                          cache,
-                   OutputType*                                 output,
-                   [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) const {
+    void transform(const Position&               pos,
+                   AccumulatorStack&             accumulatorStack,
+                   AccumulatorCaches&            cache,
+                   OutputType*                   output,
+                   [[maybe_unused]] NNZInfo<L1>& nnzInfo,
+                   int32_t*                      dynBias) const {
         accumulatorStack.evaluate(pos, *this, cache);
         const auto& accumulatorState = accumulatorStack.latest();
 
@@ -253,31 +264,34 @@ class FeatureTransformer {
 
         for (IndexType p = 0; p < 2; ++p)
             transform_perspective(accumulation[perspectives[p]], output, p, nnzInfo);
+
+        compute_dynamic_biases(accumulation[perspectives[0]], accumulation[perspectives[1]],
+                               dynBias);
     }
 
    private:
-    static void transform_perspective(const std::array<i16, HalfDimensions>&      accumulation,
-                                      OutputType*                                 output,
-                                      IndexType                                   perspective,
-                                      [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) {
+    static void transform_perspective(const std::array<i16, HalfDimensions>& accumulation,
+                                      OutputType*                            output,
+                                      IndexType                              perspective,
+                                      [[maybe_unused]] NNZInfo<L1>&          nnzInfo) {
 
         using namespace SIMD;
-        const IndexType offset = (HalfDimensions / 2) * perspective;
+        const IndexType offset = (L1 / 2) * perspective;
 
 #if defined(VECTOR)
 
         [[maybe_unused]] auto cursor = nnzInfo.make_cursor(perspective);
 
         constexpr IndexType OutputChunkSize = MaxChunkSize;
-        static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
-        constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
+        static_assert((L1 / 2) % OutputChunkSize == 0);
+        constexpr IndexType NumOutputChunks = L1 / 2 / OutputChunkSize;
 
         [[maybe_unused]] const vec_t   Zero  = vec_zero();
         [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
         [[maybe_unused]] constexpr int shift = 7;
 
         const vec_t* in0 = reinterpret_cast<const vec_t*>(&accumulation[0]);
-        const vec_t* in1 = reinterpret_cast<const vec_t*>(&accumulation[HalfDimensions / 2]);
+        const vec_t* in1 = reinterpret_cast<const vec_t*>(&accumulation[L1 / 2]);
         vec_t*       out = reinterpret_cast<vec_t*>(output + offset);
 
         // Per the NNUE architecture, here we want to multiply pairs of
@@ -381,12 +395,12 @@ class FeatureTransformer {
         else
             vid16 = __riscv_vid_v_u16m2(VL);
 
-        for (usize vl; j < HalfDimensions / 2; j += vl)
+        for (usize vl; j < L1 / 2; j += vl)
         {
-            vl = __riscv_vsetvl_e16m2(HalfDimensions / 2 - j);
+            vl = __riscv_vsetvl_e16m2(L1 / 2 - j);
 
             vint16m2_t acc0 = __riscv_vle16_v_i16m2(&accumulation[j], vl);
-            vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accumulation[j + HalfDimensions / 2], vl);
+            vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accumulation[j + L1 / 2], vl);
 
             acc0 = __riscv_vmax(acc0, 0, vl);
             acc1 = __riscv_vmax(acc1, 0, vl);
@@ -412,10 +426,10 @@ class FeatureTransformer {
 
 #else
 
-        for (IndexType j = 0; j < HalfDimensions / 2; ++j)
+        for (IndexType j = 0; j < L1 / 2; ++j)
         {
             BiasType sum0 = accumulation[j];
-            BiasType sum1 = accumulation[j + HalfDimensions / 2];
+            BiasType sum1 = accumulation[j + L1 / 2];
 
             sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
             sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
@@ -423,6 +437,66 @@ class FeatureTransformer {
             output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
 
+#endif
+    }
+
+    static void compute_dynamic_biases(const std::array<i16, HalfDimensions>& acc_us,
+                                       const std::array<i16, HalfDimensions>& acc_them,
+                                       int32_t*                               dynBias) {
+#if defined(USE_AVX2)
+        const __m256i zero   = _mm256_setzero_si256();
+        const __m256i maxVal = _mm256_set1_epi16(255);
+
+        const auto* u_us   = reinterpret_cast<const __m256i*>(&acc_us[L1]);
+        const auto* u_them = reinterpret_cast<const __m256i*>(&acc_them[L1]);
+        const auto* v_us   = reinterpret_cast<const __m256i*>(&acc_us[L1 + BiasDimension]);
+        const auto* v_them = reinterpret_cast<const __m256i*>(&acc_them[L1 + BiasDimension]);
+        auto*       out    = reinterpret_cast<__m256i*>(dynBias);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            __m256i u =
+              _mm256_sub_epi16(_mm256_load_si256(&u_us[i]), _mm256_load_si256(&u_them[i]));
+            u = _mm256_max_epi16(u, zero);
+            u = _mm256_min_epi16(u, maxVal);
+
+            __m256i v =
+              _mm256_sub_epi16(_mm256_load_si256(&v_us[i]), _mm256_load_si256(&v_them[i]));
+
+            __m256i u_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(u));
+            __m256i u_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(u, 1));
+            __m256i v_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
+            __m256i v_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(v, 1));
+
+            __m256i prod_lo = _mm256_mullo_epi32(u_lo, v_lo);
+            __m256i prod_hi = _mm256_mullo_epi32(u_hi, v_hi);
+
+            if (i < 4)
+            {
+                prod_lo = _mm256_srai_epi32(prod_lo, 2);
+                prod_hi = _mm256_srai_epi32(prod_hi, 2);
+            }
+            else
+            {
+                prod_lo = _mm256_srai_epi32(prod_lo, 3);
+                prod_hi = _mm256_srai_epi32(prod_hi, 3);
+            }
+
+            _mm256_store_si256(&out[i * 2 + 0], prod_lo);
+            _mm256_store_si256(&out[i * 2 + 1], prod_hi);
+        }
+#else
+        for (IndexType i = 0; i < BiasDimension; ++i)
+        {
+            int32_t u =
+              static_cast<int32_t>(acc_us[L1 + i]) - static_cast<int32_t>(acc_them[L1 + i]);
+            int32_t v = static_cast<int32_t>(acc_us[L1 + BiasDimension + i])
+                      - static_cast<int32_t>(acc_them[L1 + BiasDimension + i]);
+            u               = std::clamp(u, 0, 255);
+            int32_t   prod  = u * v;
+            const int shift = (i < 64) ? 2 : 3;
+            dynBias[i]      = prod >> shift;
+        }
 #endif
     }
 
