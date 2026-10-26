@@ -50,7 +50,7 @@ constexpr int       L3 = 32;
 constexpr IndexType LayerStacks = 64;
 constexpr IndexType RouterTableSize = 849420;
 constexpr u32       RouterHash      = 0x4D6F4534u;
-constexpr IndexType NumBiasExperts  = 64;
+constexpr IndexType NumBiasExperts  = 256;
 constexpr IndexType BiasDimension   = 128;
 
 static constexpr u32 get_router_hash() {

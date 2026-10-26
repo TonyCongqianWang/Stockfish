@@ -207,7 +207,7 @@ Value Network::evaluate(const Position&    pos,
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
     const uint16_t packed_1 = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int      b1         = (packed_1 >> 6) & 0x3F;
+    const int      b1         = (packed_1 >> 6) & 0xFF;
     const int32_t* dyn_bias_1 = dynamicBiasTable[b1];
 
     // Perspective 2 (Non-STM):
@@ -233,7 +233,7 @@ Value Network::evaluate(const Position&    pos,
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
     const uint16_t packed_2 = router[c_them];
     const int e2 = packed_2 & 0x3F;
-    const int      b2         = (packed_2 >> 6) & 0x3F;
+    const int      b2         = (packed_2 >> 6) & 0xFF;
     const int32_t* dyn_bias_2 = dynamicBiasTable[b2];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
@@ -326,7 +326,7 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
     const uint16_t packed_1 = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int      b1       = (packed_1 >> 6) & 0x3F;
+    const int      b1       = (packed_1 >> 6) & 0xFF;
 
     // Perspective 2 (Non-STM):
     const uint16_t mat_id_them = get_material_id(pos, ~stm);
@@ -351,7 +351,7 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
     const uint16_t packed_2 = router[c_them];
     const int e2 = packed_2 & 0x3F;
-    const int      b2       = (packed_2 >> 6) & 0x3F;
+    const int      b2       = (packed_2 >> 6) & 0xFF;
 
     NnueEvalTrace t{};
     t.weightExperts = {e1, e2};
