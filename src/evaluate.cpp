@@ -19,6 +19,8 @@
 #include "evaluate.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cassert>
 #include <cmath>
 #include <cstdlib>

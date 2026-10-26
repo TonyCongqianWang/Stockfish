@@ -917,4 +917,17 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
 }
 
+void add_ghost_pawn_features(const Position& pos, const FeatureTransformer& ft,
+                             std::array<std::array<i16, L1>, COLOR_NB>& accumulation) {
+    GhostFeatureSet::IndexList indices[COLOR_NB];
+    GhostFeatureSet::append_active_indices_both(pos, indices[WHITE], indices[BLACK]);
+    for (Color c : {WHITE, BLACK})
+        for (IndexType j = 0; j < Dimensions; increment_index(j))
+        {
+            auto acc = load_tile(j, accumulation[c].data());
+            acc = apply_features<1>(j, acc, indices[c].begin(), indices[c].ssize(), &ft.ghostWeights[j]);
+            store_tile(j, accumulation[c].data(), acc);
+        }
+}
+
 }

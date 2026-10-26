@@ -27,6 +27,7 @@
 #include "features/k32q2.h"
 #include "features/full_threats.h"
 #include "features/pp_3wide.h"
+#include "features/ghost_pawn_threats.h"
 #include "layers/affine_transform.h"
 #include "layers/affine_transform_sparse_input.h"
 #include "layers/clipped_relu.h"
@@ -38,6 +39,7 @@ namespace Stockfish::Eval::NNUE {
 
 // Input features used in evaluation function
 using ThreatFeatureSet = Features::FullThreats;
+using GhostFeatureSet = Features::GhostPawnThreats;
 using PairFeatureSet   = Features::PP_3Wide;
 using PSQFeatureSet    = Features::K32Q2;
 

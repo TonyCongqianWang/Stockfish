@@ -90,7 +90,8 @@ class FeatureTransformer {
     static constexpr IndexType PairInputDimensions   = PairFeatureSet::Dimensions;
     static constexpr IndexType PsqDimensions         = PSQFeatureSet::Dimensions;
     static constexpr IndexType ThreatAndPpDimensions = ThreatInputDimensions + PairInputDimensions;
-    static constexpr IndexType InputDimensions       = PsqDimensions + ThreatAndPpDimensions;
+    static constexpr IndexType InputDimensions =
+      PsqDimensions + ThreatAndPpDimensions + GhostFeatureSet::Dimensions;
     static constexpr IndexType OutputDimensions      = HalfDimensions;
     static constexpr IndexType ThreatWeightSize      = ThreatInputDimensions * HalfDimensions;
     static constexpr IndexType PairWeightSize        = PairInputDimensions * HalfDimensions;
@@ -99,6 +100,8 @@ class FeatureTransformer {
     using BiasesArray            = std::array<BiasType, HalfDimensions>;
     using WeightArray            = std::array<WeightType, HalfDimensions * PsqDimensions>;
     using ThreatAndPpWeightArray = std::array<ThreatWeightType, ThreatAndPpWeightSize>;
+    using GhostWeightArray =
+      std::array<ThreatWeightType, GhostFeatureSet::Dimensions * HalfDimensions>;
 
     // Size of forward propagation buffer
     static constexpr usize BufferSize = OutputDimensions * sizeof(OutputType);
@@ -158,8 +161,8 @@ class FeatureTransformer {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
-        return combine_hash(
-                 {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, PSQFeatureSet::HashValue})
+        return combine_hash({ThreatFeatureSet::HashValue, PairFeatureSet::HashValue,
+                             GhostFeatureSet::HashValue, PSQFeatureSet::HashValue})
              ^ (OutputDimensions * 2);
     }
 
@@ -168,6 +171,7 @@ class FeatureTransformer {
         permute<8>(weights, PackusEpi16Order);
 
         permute<8>(threatAndPpWeights, PackusEpi16Order);
+        permute<8>(ghostWeights, PackusEpi16Order);
 
 #if defined(USE_PAIRED_WIDENING_ADD)
         // With 128-bit vectors the order is the identity
@@ -175,6 +179,7 @@ class FeatureTransformer {
         {
             permute<8>(weights, WideningPairOrder);
             permute<8>(threatAndPpWeights, WideningPairOrder);
+            permute<8>(ghostWeights, WideningPairOrder);
         }
 #endif
     }
@@ -185,12 +190,14 @@ class FeatureTransformer {
         {
             permute<8>(weights, InverseWideningPairOrder);
             permute<8>(threatAndPpWeights, InverseWideningPairOrder);
+            permute<8>(ghostWeights, InverseWideningPairOrder);
         }
 #endif
 
         permute<16>(biases, InversePackusEpi16Order);
         permute<8>(weights, InversePackusEpi16Order);
         permute<8>(threatAndPpWeights, InversePackusEpi16Order);
+        permute<8>(ghostWeights, InversePackusEpi16Order);
     }
 
     ThreatWeightType* threatWeightData() { return threatAndPpWeights.data(); }
@@ -203,6 +210,7 @@ class FeatureTransformer {
         read_little_endian(stream, threatWeightData(), ThreatWeightSize);
         read_little_endian(stream, pawnPairWeightData(), PairWeightSize);
 
+        read_little_endian(stream, ghostWeights.data(), ghostWeights.size());
         read_little_endian(stream, weights.data(), weights.size());
 
         permute_weights();
@@ -221,6 +229,7 @@ class FeatureTransformer {
         write_little_endian(stream, copy->threatWeightData(), ThreatWeightSize);
         write_little_endian(stream, copy->pawnPairWeightData(), PairWeightSize);
 
+        write_little_endian(stream, copy->ghostWeights.data(), copy->ghostWeights.size());
         write_little_endian(stream, copy->weights.data(), copy->weights.size());
 
         return !stream.fail();
@@ -233,6 +242,7 @@ class FeatureTransformer {
         hash_combine(h, get_raw_data_hash(weights));
 
         hash_combine(h, get_raw_data_hash(threatAndPpWeights));
+        hash_combine(h, get_raw_data_hash(ghostWeights));
 
         hash_combine(h, get_hash_value());
 
@@ -249,7 +259,9 @@ class FeatureTransformer {
         const auto& accumulatorState = accumulatorStack.latest();
 
         const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
-        const auto& accumulation    = accumulatorState.accumulation;
+        // Ghosts are recomputed for this position and never contaminate incremental caches.
+        alignas(CacheLineSize) auto accumulation = accumulatorState.accumulation;
+        add_ghost_pawn_features(pos, *this, accumulation);
 
         for (IndexType p = 0; p < 2; ++p)
             transform_perspective(accumulation[perspectives[p]], output, p, nnzInfo);
@@ -435,6 +447,7 @@ class FeatureTransformer {
     static_assert(PairFeatureSet::IndexBase == ThreatFeatureSet::Dimensions);
 
     alignas(CacheLineSize) ThreatAndPpWeightArray threatAndPpWeights;
+    alignas(CacheLineSize) GhostWeightArray ghostWeights;
 };
 
 }  // namespace Stockfish::Eval::NNUE
