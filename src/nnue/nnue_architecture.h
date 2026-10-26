@@ -21,10 +21,11 @@
 #ifndef NNUE_ARCHITECTURE_H_INCLUDED
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
+#include <algorithm>
 #include <cstdint>
 #include <iosfwd>
 
-#include "features/k32q2.h"
+#include "features/k32h3.h"
 #include "features/full_threats.h"
 #include "features/pp_3wide.h"
 #include "layers/affine_transform.h"
@@ -39,14 +40,22 @@ namespace Stockfish::Eval::NNUE {
 // Input features used in evaluation function
 using ThreatFeatureSet = Features::FullThreats;
 using PairFeatureSet   = Features::PP_3Wide;
-using PSQFeatureSet    = Features::K32Q2;
+using PSQFeatureSet    = Features::K32H3;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks = 32;
+constexpr IndexType LayerStacks = 64;
+constexpr IndexType RouterTableSize = 849420;
+constexpr u32       RouterHash      = 0x4D6F4534u;
+constexpr IndexType NumBiasExperts  = 256;
+constexpr IndexType BiasDimension   = 128;
+
+static constexpr u32 get_router_hash() {
+    return RouterHash ^ ((NumBiasExperts << 16) | LayerStacks);
+}
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
@@ -93,41 +102,90 @@ struct NetworkArchitecture {
     }
 
     i32 propagate(const TransformedFeatureType* transformedFeatures,
-                  const NNZInfo<L1>&            nnzInfo) const {
+                  const NNZInfo<L1>&            nnzInfo,
+                  const NetworkArchitecture&    other,
+                  const int32_t*                dynBias,
+                  const int32_t*                otherBias) const {
         struct alignas(CacheLineSize) Buffer {
             alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_sqr;
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_lin;
             alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
               concat_buffer[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 32)];
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_sqr;
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_lin;
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
         };
 
-        Buffer buffer;
+        Buffer     buffer, second;
+        const bool same    = this == &other;
+        const auto average = [](i64 a, i64 b) { return i32((a + b) / 2); };
 
         fc_0.propagate(transformedFeatures, buffer.fc_0_out, nnzInfo);
+
+        if (same)
+            std::copy_n(buffer.fc_0_out, FC_0_OUTPUTS, second.fc_0_out);
+        else
+            other.fc_0.propagate(transformedFeatures, second.fc_0_out, nnzInfo);
+
+        static_assert(FC_0_OUTPUTS >= 2);
+        const i32 skip_0 =
+          average(i64(buffer.fc_0_out[FC_0_OUTPUTS - 2]) - buffer.fc_0_out[FC_0_OUTPUTS - 1],
+                  i64(second.fc_0_out[FC_0_OUTPUTS - 2]) - second.fc_0_out[FC_0_OUTPUTS - 1]);
+
+        for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
+        {
+            buffer.fc_0_sqr[i] =
+              average(i64(buffer.fc_0_out[i]) + dynBias[i], i64(second.fc_0_out[i]) + otherBias[i]);
+            buffer.fc_0_lin[i] = average(i64(buffer.fc_0_out[i]) + dynBias[i + FC_0_OUTPUTS],
+                                         i64(second.fc_0_out[i]) + otherBias[i + FC_0_OUTPUTS]);
+        }
+        const int32_t* in_sqr_0 = buffer.fc_0_sqr;
+        const int32_t* in_lin_0 = buffer.fc_0_lin;
+
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_0.propagate_pair(buffer.fc_0_out, buffer.concat_buffer,
+        ac_sqr_0.propagate_pair(in_sqr_0, in_lin_0, buffer.concat_buffer,
                                 buffer.concat_buffer + FC_0_OUTPUTS);
 #else
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.concat_buffer);
-        ac_0.propagate(buffer.fc_0_out, buffer.concat_buffer + FC_0_OUTPUTS);
+        ac_sqr_0.propagate(in_sqr_0, buffer.concat_buffer);
+        ac_0.propagate(in_lin_0, buffer.concat_buffer + FC_0_OUTPUTS);
 #endif
 
         fc_1.propagate(buffer.concat_buffer, buffer.fc_1_out);
+
+        if (same)
+            std::copy_n(buffer.fc_1_out, FC_1_OUTPUTS, second.fc_1_out);
+        else
+            other.fc_1.propagate(buffer.concat_buffer, second.fc_1_out);
+
+        for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
+        {
+            buffer.fc_1_sqr[i] = average(i64(buffer.fc_1_out[i]) + dynBias[i + FC_0_OUTPUTS * 2],
+                                         i64(second.fc_1_out[i]) + otherBias[i + FC_0_OUTPUTS * 2]);
+            buffer.fc_1_lin[i] =
+              average(i64(buffer.fc_1_out[i]) + dynBias[i + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS],
+                      i64(second.fc_1_out[i]) + otherBias[i + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS]);
+        }
+        const int32_t* in_sqr_1 = buffer.fc_1_sqr;
+        const int32_t* in_lin_1 = buffer.fc_1_lin;
+
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_1.propagate_pair(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2,
+        ac_sqr_1.propagate_pair(in_sqr_1, in_lin_1, buffer.concat_buffer + FC_0_OUTPUTS * 2,
                                 buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
 #else
-        ac_sqr_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2);
-        ac_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_1.propagate(in_sqr_1, buffer.concat_buffer + FC_0_OUTPUTS * 2);
+        ac_1.propagate(in_lin_1, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
 #endif
 
         fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
 
-        static_assert(FC_0_OUTPUTS >= 2);
-        i32 fwdOut = buffer.fc_2_out[0];
-        i32 skip_0 = buffer.fc_0_out[FC_0_OUTPUTS - 2] - buffer.fc_0_out[FC_0_OUTPUTS - 1];
-        fwdOut += skip_0;
+        if (same)
+            second.fc_2_out[0] = buffer.fc_2_out[0];
+        else
+            other.fc_2.propagate(buffer.concat_buffer, second.fc_2_out);
+
+        i32 fwdOut = average(buffer.fc_2_out[0], second.fc_2_out[0]) + skip_0;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale
