@@ -41,15 +41,15 @@ template<bool Forward>
 void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
                                     const Square              ksq,
-                                    bool                      opponentHasQueen,
+                                    int                       psqBucket,
                                     AccumulatorState&         target_state,
                                     const AccumulatorState&   computed);
 
 void update_accumulator_incremental_both(const FeatureTransformer& featureTransformer,
                                          Square                    white_ksq,
                                          Square                    black_ksq,
-                                         bool                      whiteOppQueen,
-                                         bool                      blackOppQueen,
+                                         int                       whiteBucket,
+                                         int                       blackBucket,
                                          AccumulatorState&         target_state,
                                          const AccumulatorState&   computed);
 
@@ -65,6 +65,11 @@ void update_accumulator_hybrid(Color                     perspective,
                                AccumulatorState&         target,
                                const AccumulatorState&   computed,
                                AccumulatorCaches&        cache);
+
+// Piece-square bucket of a perspective (see PSQFeatureSet::bucket())
+int psq_bucket(const Position& pos, Color perspective) {
+    return PSQFeatureSet::bucket(pos.pieces(~perspective, QUEEN), pos.pieces(ROOK, QUEEN));
+}
 }
 
 const AccumulatorState& AccumulatorStack::latest() const noexcept { return accumulators[size - 1]; }
@@ -131,7 +136,7 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
             && pos.count<ALL_PIECES>() >= MIN_PC_COUNT_HYBRID
             && ((int(dirtyPiece.from) & 0b100) == (int(dirtyPiece.to) & 0b100))
             && dirtyPiece.add_sq == SQ_NONE  // excludes castling
-        )
+            && !dirtyPiece.heavyChange)
         {
             update_accumulator_hybrid(perspective, pos, featureTransformer, mut_latest(),
                                       accumulators[size - 2], cache);
@@ -169,11 +174,11 @@ void AccumulatorStack::forward_update_incremental(Color                     pers
     assert(begin < accumulators.size());
     assert(accumulators[begin].computed[perspective]);
 
-    const Square ksq              = pos.square<KING>(perspective);
-    const bool   opponentHasQueen = bool(pos.pieces(~perspective, QUEEN));
+    const Square ksq       = pos.square<KING>(perspective);
+    const int    psqBucket = psq_bucket(pos, perspective);
 
     for (usize next = begin + 1; next < size; next++)
-        update_accumulator_incremental<true>(perspective, featureTransformer, ksq, opponentHasQueen,
+        update_accumulator_incremental<true>(perspective, featureTransformer, ksq, psqBucket,
                                              accumulators[next], accumulators[next - 1]);
 
     assert(latest().computed[perspective]);
@@ -188,13 +193,12 @@ void AccumulatorStack::backward_update_incremental(Color                     per
     assert(end < size);
     assert(latest().computed[perspective]);
 
-    const Square ksq              = pos.square<KING>(perspective);
-    const bool   opponentHasQueen = bool(pos.pieces(~perspective, QUEEN));
+    const Square ksq       = pos.square<KING>(perspective);
+    const int    psqBucket = psq_bucket(pos, perspective);
 
     for (i64 next = i64(size) - 2; next >= i64(end); next--)
-        update_accumulator_incremental<false>(perspective, featureTransformer, ksq,
-                                              opponentHasQueen, accumulators[next],
-                                              accumulators[next + 1]);
+        update_accumulator_incremental<false>(perspective, featureTransformer, ksq, psqBucket,
+                                              accumulators[next], accumulators[next + 1]);
 
     assert(accumulators[end].computed[perspective]);
 }
@@ -209,23 +213,23 @@ void AccumulatorStack::forward_update_incremental_both(const Position&          
     assert(accumulators[white_begin].computed[WHITE]);
     assert(accumulators[black_begin].computed[BLACK]);
 
-    const Square white_ksq     = pos.square<KING>(WHITE);
-    const Square black_ksq     = pos.square<KING>(BLACK);
-    const bool   whiteOppQueen = bool(pos.pieces(BLACK, QUEEN));
-    const bool   blackOppQueen = bool(pos.pieces(WHITE, QUEEN));
-    const usize  shared_begin  = std::max(white_begin, black_begin);
+    const Square white_ksq    = pos.square<KING>(WHITE);
+    const Square black_ksq    = pos.square<KING>(BLACK);
+    const int    whiteBucket  = psq_bucket(pos, WHITE);
+    const int    blackBucket  = psq_bucket(pos, BLACK);
+    const usize  shared_begin = std::max(white_begin, black_begin);
 
     // Catch up the lagging perspective, then traverse the common suffix once.
     for (usize next = white_begin + 1; next <= shared_begin; ++next)
-        update_accumulator_incremental<true>(WHITE, featureTransformer, white_ksq, whiteOppQueen,
+        update_accumulator_incremental<true>(WHITE, featureTransformer, white_ksq, whiteBucket,
                                              accumulators[next], accumulators[next - 1]);
     for (usize next = black_begin + 1; next <= shared_begin; ++next)
-        update_accumulator_incremental<true>(BLACK, featureTransformer, black_ksq, blackOppQueen,
+        update_accumulator_incremental<true>(BLACK, featureTransformer, black_ksq, blackBucket,
                                              accumulators[next], accumulators[next - 1]);
 
     for (usize next = shared_begin + 1; next < size; ++next)
-        update_accumulator_incremental_both(featureTransformer, white_ksq, black_ksq, whiteOppQueen,
-                                            blackOppQueen, accumulators[next],
+        update_accumulator_incremental_both(featureTransformer, white_ksq, black_ksq, whiteBucket,
+                                            blackBucket, accumulators[next],
                                             accumulators[next - 1]);
 
     assert(latest().computed[WHITE]);
@@ -235,6 +239,11 @@ void AccumulatorStack::forward_update_incremental_both(const Position&          
 namespace {
 
 constexpr IndexType Dimensions = FeatureTransformer::OutputDimensions;
+
+// Piece-square weights of a bucket (see PSQFeatureSet::bucket()): bucket 0 has its own block
+const WeightType* psq_weights(const FeatureTransformer& ft, int psqBucket) {
+    return &ft.weights[(psqBucket == 0 ? PSQFeatureSet::NoHeavyOffset : 0) * Dimensions];
+}
 
 #ifdef USE_RVV
 
@@ -436,10 +445,11 @@ sf_always_inline Tile apply_feature_pair(IndexType j, Tile acc, const i8* data0,
 template<int MaxRows>
 class WeightRows {
    public:
-    void append_psq(const PSQFeatureSet::IndexList& list, const FeatureTransformer& ft) {
+    // psqWeights: the piece-square weights of the bucket (see psq_weights())
+    void append_psq(const PSQFeatureSet::IndexList& list, const WeightType* psqWeights) {
         assert(count + list.ssize() <= MaxRows);
         for (int i = 0; i < list.ssize(); ++i)
-            rows[count++] = &ft.weights[list[i] * Dimensions];
+            rows[count++] = &psqWeights[list[i] * Dimensions];
     }
 
     void append_threat(const ThreatFeatureSet::IndexList& list, const FeatureTransformer& ft) {
@@ -478,15 +488,16 @@ void apply_combined(Color                              perspective,
                     const PSQFeatureSet::IndexList&    psqAdded,
                     const PSQFeatureSet::IndexList&    psqRemoved,
                     const ThreatFeatureSet::IndexList& thrAdded,
-                    const ThreatFeatureSet::IndexList& thrRemoved) {
+                    const ThreatFeatureSet::IndexList& thrRemoved,
+                    const WeightType*                  psqWeights) {
 
     const auto& fromAcc = from.accumulation[perspective];
     auto&       toAcc   = to.accumulation[perspective];
 
     AllWeightRows removed, added;
-    removed.append_psq(psqRemoved, featureTransformer);
+    removed.append_psq(psqRemoved, psqWeights);
     removed.append_threat(thrRemoved, featureTransformer);
-    added.append_psq(psqAdded, featureTransformer);
+    added.append_psq(psqAdded, psqWeights);
     added.append_threat(thrAdded, featureTransformer);
 
     Tile acc;
@@ -506,7 +517,7 @@ template<bool Forward>
 void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
                                     const Square              ksq,
-                                    bool                      opponentHasQueen,
+                                    int                       psqBucket,
                                     AccumulatorState&         target_state,
                                     const AccumulatorState&   computed) {
 
@@ -534,8 +545,8 @@ void update_accumulator_incremental(Color                     perspective,
                                                  thrAdded, threatPpBase, pfStride);
         PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrRemoved,
                                                thrAdded, threatPpBase, pfStride);
-        PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, opponentHasQueen,
-                                              psqRemoved, psqAdded);
+        PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqBucket, psqRemoved,
+                                              psqAdded);
     }
     else
     {
@@ -543,12 +554,12 @@ void update_accumulator_incremental(Color                     perspective,
                                                  thrRemoved, threatPpBase, pfStride);
         PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrAdded,
                                                thrRemoved, threatPpBase, pfStride);
-        PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, opponentHasQueen,
-                                              psqAdded, psqRemoved);
+        PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqBucket, psqAdded,
+                                              psqRemoved);
     }
 
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
-                   thrAdded, thrRemoved);
+                   thrAdded, thrRemoved, psq_weights(featureTransformer, psqBucket));
 
     target_state.computed[perspective] = true;
 }
@@ -556,8 +567,8 @@ void update_accumulator_incremental(Color                     perspective,
 void update_accumulator_incremental_both(const FeatureTransformer& featureTransformer,
                                          Square                    white_ksq,
                                          Square                    black_ksq,
-                                         bool                      whiteOppQueen,
-                                         bool                      blackOppQueen,
+                                         int                       whiteBucket,
+                                         int                       blackBucket,
                                          AccumulatorState&         target_state,
                                          const AccumulatorState&   computed) {
 
@@ -578,15 +589,18 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
     PairFeatureSet::append_changed_indices_both(
       white_ksq, black_ksq, target_state.dirtyPawnPairs, thr_removed[WHITE], thr_added[WHITE],
       thr_removed[BLACK], thr_added[BLACK], threat_pp_base, pf_stride);
-    PSQFeatureSet::append_changed_indices(WHITE, white_ksq, target_state.dirtyPiece, whiteOppQueen,
+    PSQFeatureSet::append_changed_indices(WHITE, white_ksq, target_state.dirtyPiece, whiteBucket,
                                           psq_removed[WHITE], psq_added[WHITE]);
-    PSQFeatureSet::append_changed_indices(BLACK, black_ksq, target_state.dirtyPiece, blackOppQueen,
+    PSQFeatureSet::append_changed_indices(BLACK, black_ksq, target_state.dirtyPiece, blackBucket,
                                           psq_removed[BLACK], psq_added[BLACK]);
 
+    // Both perspectives have rooks or queens on the board, or neither does
+    assert((whiteBucket == 0) == (blackBucket == 0));
+    const WeightType* psqWeights = psq_weights(featureTransformer, whiteBucket);
     apply_combined(WHITE, featureTransformer, computed, target_state, psq_added[WHITE],
-                   psq_removed[WHITE], thr_added[WHITE], thr_removed[WHITE]);
+                   psq_removed[WHITE], thr_added[WHITE], thr_removed[WHITE], psqWeights);
     apply_combined(BLACK, featureTransformer, computed, target_state, psq_added[BLACK],
-                   psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK]);
+                   psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK], psqWeights);
 
     target_state.computed[WHITE] = true;
     target_state.computed[BLACK] = true;
@@ -737,9 +751,10 @@ void update_accumulator_hybrid(Color                     perspective,
     previousPieces[oldKsq] = make_piece(perspective, KING);
     previousPieceBB |= square_bb(oldKsq);
 
-    const bool  opponentHasQueen = bool(pos.pieces(~perspective, QUEEN));
-    const auto& oldEntry         = cache[opponentHasQueen][oldKsq][perspective];
-    auto&       newEntry         = cache[opponentHasQueen][newKsq][perspective];
+    const int   psqBucket  = psq_bucket(pos, perspective);
+    const auto& oldEntry   = cache[psqBucket][oldKsq][perspective];
+    auto&       newEntry   = cache[psqBucket][newKsq][perspective];
+    const auto* psqWeights = psq_weights(featureTransformer, psqBucket);
 
     // "Remove" means we need to remove them from the cache entry,
     // "Add" means add them to the entry to get the accumulator we want
@@ -755,33 +770,33 @@ void update_accumulator_hybrid(Color                     perspective,
 
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(oldEntry.pieces, previousPieces, oldRemovedBB, oldAddedBB,
-                                 perspective, oldKsq, opponentHasQueen, oldRemove, oldAdd);
+                                 perspective, oldKsq, psqBucket, oldRemove, oldAdd);
     PSQFeatureSet::write_indices(newEntry.pieces, currentPieces, newRemovedBB, newAddedBB,
-                                 perspective, newKsq, opponentHasQueen, newRemove, newAdd);
+                                 perspective, newKsq, psqBucket, newRemove, newAdd);
 #else
     while (oldRemovedBB)
     {
         Square sq = pop_lsb(oldRemovedBB);
-        oldRemove.push_back(PSQFeatureSet::make_index(perspective, sq, oldEntry.pieces[sq], oldKsq,
-                                                      opponentHasQueen));
+        oldRemove.push_back(
+          PSQFeatureSet::make_index(perspective, sq, oldEntry.pieces[sq], oldKsq, psqBucket));
     }
     while (oldAddedBB)
     {
         Square sq = pop_lsb(oldAddedBB);
         oldAdd.push_back(
-          PSQFeatureSet::make_index(perspective, sq, previousPieces[sq], oldKsq, opponentHasQueen));
+          PSQFeatureSet::make_index(perspective, sq, previousPieces[sq], oldKsq, psqBucket));
     }
     while (newRemovedBB)
     {
         Square sq = pop_lsb(newRemovedBB);
-        newRemove.push_back(PSQFeatureSet::make_index(perspective, sq, newEntry.pieces[sq], newKsq,
-                                                      opponentHasQueen));
+        newRemove.push_back(
+          PSQFeatureSet::make_index(perspective, sq, newEntry.pieces[sq], newKsq, psqBucket));
     }
     while (newAddedBB)
     {
         Square sq = pop_lsb(newAddedBB);
         newAdd.push_back(
-          PSQFeatureSet::make_index(perspective, sq, currentPieces[sq], newKsq, opponentHasQueen));
+          PSQFeatureSet::make_index(perspective, sq, currentPieces[sq], newKsq, psqBucket));
     }
 #endif
 
@@ -797,14 +812,14 @@ void update_accumulator_hybrid(Color                     perspective,
     auto&       toAcc   = target.accumulation[perspective];
 
     PsqWeightRows newEntryRemoved, newEntryAdded;
-    newEntryRemoved.append_psq(newRemove, featureTransformer);
-    newEntryAdded.append_psq(newAdd, featureTransformer);
+    newEntryRemoved.append_psq(newRemove, psqWeights);
+    newEntryAdded.append_psq(newAdd, psqWeights);
 
     // The old entry's removed psq features have to be added back, its added ones removed
     AllWeightRows removed, added;
-    added.append_psq(oldRemove, featureTransformer);
+    added.append_psq(oldRemove, psqWeights);
     added.append_threat(thrAdded, featureTransformer);
-    removed.append_psq(oldAdd, featureTransformer);
+    removed.append_psq(oldAdd, psqWeights);
     removed.append_threat(thrRemoved, featureTransformer);
 
     Tile acc;
@@ -846,9 +861,10 @@ void update_accumulator_refresh_cache(Color                     perspective,
                                       AccumulatorState&         accumulator,
                                       AccumulatorCaches&        cache) {
 
-    const bool               opponentHasQueen = bool(pos.pieces(~perspective, QUEEN));
-    const Square             ksq              = pos.square<KING>(perspective);
-    auto&                    entry            = cache[opponentHasQueen][ksq][perspective];
+    const int                psqBucket  = psq_bucket(pos, perspective);
+    const Square             ksq        = pos.square<KING>(perspective);
+    auto&                    entry      = cache[psqBucket][ksq][perspective];
+    const auto*              psqWeights = psq_weights(featureTransformer, psqBucket);
     PSQFeatureSet::IndexList removed, added;
 
     const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
@@ -857,19 +873,19 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
-                                 ksq, opponentHasQueen, removed, added);
+                                 ksq, psqBucket, removed, added);
 #else
     while (removedBB)
     {
         Square sq = pop_lsb(removedBB);
         removed.push_back(
-          PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq, opponentHasQueen));
+          PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq, psqBucket));
     }
     while (addedBB)
     {
         Square sq = pop_lsb(addedBB);
         added.push_back(
-          PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq, opponentHasQueen));
+          PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq, psqBucket));
     }
 #endif
 
@@ -884,8 +900,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
     PsqWeightRows entryRemoved, entryAdded;
     AllWeightRows activeThreats;
-    entryRemoved.append_psq(removed, featureTransformer);
-    entryAdded.append_psq(added, featureTransformer);
+    entryRemoved.append_psq(removed, psqWeights);
+    entryAdded.append_psq(added, psqWeights);
     activeThreats.append_threat(active, featureTransformer);
 
     Tile acc;

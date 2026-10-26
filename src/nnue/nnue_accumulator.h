@@ -80,12 +80,12 @@ struct AccumulatorCaches {
                     entry.clear(network.featureTransformer.biases);
     }
 
-    auto&       operator[](bool opponentHasQueen) { return entries[opponentHasQueen ? 1 : 0]; }
-    const auto& operator[](bool opponentHasQueen) const {
-        return entries[opponentHasQueen ? 1 : 0];
-    }
+    // One set of entries per piece-square bucket (see Features::K32Q2::bucket())
+    auto&       operator[](int psqBucket) { return entries[psqBucket]; }
+    const auto& operator[](int psqBucket) const { return entries[psqBucket]; }
 
-    std::array<std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>, 2> entries;
+    std::array<std::array<std::array<Entry, COLOR_NB>, SQUARE_NB>, Features::K32Q2::PsqBuckets>
+      entries;
 };
 
 

@@ -305,6 +305,10 @@ struct DirtyPiece {
     // castling uses add_sq and remove_sq to remove and add the rook
     Square remove_sq, add_sq;
     Piece  remove_pc, add_pc;
+
+    // The move changes whether any rook or queen is on the board (part of the piece-square
+    // feature bucket, see K32Q2::bucket())
+    bool heavyChange;
 };
 
 // Keep track of what threats change on the board (used by NNUE)
