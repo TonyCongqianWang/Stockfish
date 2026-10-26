@@ -67,10 +67,10 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     ss << "NNUE routes (weight / bias): A = " << t.weightExperts[0] << " / " << t.biasExperts[0]
        << ", B = " << t.weightExperts[1] << " / " << t.biasExperts[1] << '\n';
-    constexpr const char* labels[] = {"A + B (actual)", "A + A", "B + B", "B + A (symmetry)"};
+    constexpr const char* labels[] = {"A / B (actual)", "A / A", "B / B", "B / A (routes swapped)"};
     for (int i = 0; i < 4; ++i)
     {
-        ss << std::left << std::setw(20) << labels[i] << std::right;
+        ss << std::left << std::setw(24) << labels[i] << std::right;
         format_cp_aligned_dot(t.positional[i], ss, pos);
         ss << '\n';
     }

@@ -47,11 +47,11 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks = 64;
+constexpr IndexType LayerStacks     = 64;
 constexpr IndexType RouterTableSize = 849420;
-constexpr u32       RouterHash      = 0x4D6F4534u;
+constexpr u32       RouterHash      = 0x4D6F4535u;
 constexpr IndexType NumBiasExperts  = 256;
-constexpr IndexType BiasDimension   = 128;
+constexpr IndexType BiasDimension   = 64;
 
 static constexpr u32 get_router_hash() {
     return RouterHash ^ ((NumBiasExperts << 16) | LayerStacks);
@@ -59,16 +59,16 @@ static constexpr u32 get_router_hash() {
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
-    static constexpr int       FC_0_OUTPUTS                 = L2;
-    static constexpr int       FC_1_OUTPUTS                 = L3;
+    static constexpr int       FC_0_OUTPUTS                 = L2 / 2;
+    static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS> fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                      ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                         ac_0;
-    Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS>                        fc_1;
-    Layers::SqrClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                          ac_sqr_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                             ac_1;
-    Layers::AffineTransform<FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 1>                fc_2;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 1>                  ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 1>                     ac_0;
+    Layers::AffineTransform<FC_0_OUTPUTS * 4, FC_1_OUTPUTS>                        fc_1;
+    Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                      ac_sqr_1;
+    Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                         ac_1;
+    Layers::AffineTransform<FC_0_OUTPUTS * 4 + FC_1_OUTPUTS * 4, 1>                fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
@@ -107,85 +107,89 @@ struct NetworkArchitecture {
                   const int32_t*                dynBias,
                   const int32_t*                otherBias) const {
         struct alignas(CacheLineSize) Buffer {
-            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
-            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_sqr;
-            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_lin;
-            alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
-              concat_buffer[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 32)];
-            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
-            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_sqr;
-            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_lin;
-            alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
+            alignas(CacheLineSize) TransformedFeatureType reversedFT[L1];
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer first[2];
+            alignas(CacheLineSize) i32 firstSqr[FC_0_OUTPUTS * 2], firstLin[FC_0_OUTPUTS * 2];
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer second[2];
+            alignas(CacheLineSize) i32 secondSqr[FC_1_OUTPUTS * 2], secondLin[FC_1_OUTPUTS * 2];
+            alignas(CacheLineSize) u8 combined[(FC_0_OUTPUTS + FC_1_OUTPUTS) * 4];
+            alignas(CacheLineSize) u8 reversed[(FC_0_OUTPUTS + FC_1_OUTPUTS) * 4];
+            alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
         };
-
-        Buffer     buffer, second;
-        const bool same    = this == &other;
-        const auto average = [](i64 a, i64 b) { return i32((a + b) / 2); };
-
-        fc_0.propagate(transformedFeatures, buffer.fc_0_out, nnzInfo);
-
-        if (same)
-            std::copy_n(buffer.fc_0_out, FC_0_OUTPUTS, second.fc_0_out);
-        else
-            other.fc_0.propagate(transformedFeatures, second.fc_0_out, nnzInfo);
-
-        static_assert(FC_0_OUTPUTS >= 2);
-        const i32 skip_0 =
-          average(i64(buffer.fc_0_out[FC_0_OUTPUTS - 2]) - buffer.fc_0_out[FC_0_OUTPUTS - 1],
-                  i64(second.fc_0_out[FC_0_OUTPUTS - 2]) - second.fc_0_out[FC_0_OUTPUTS - 1]);
-
-        for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
-        {
-            buffer.fc_0_sqr[i] =
-              average(i64(buffer.fc_0_out[i]) + dynBias[i], i64(second.fc_0_out[i]) + otherBias[i]);
-            buffer.fc_0_lin[i] = average(i64(buffer.fc_0_out[i]) + dynBias[i + FC_0_OUTPUTS],
-                                         i64(second.fc_0_out[i]) + otherBias[i + FC_0_OUTPUTS]);
-        }
-        const int32_t* in_sqr_0 = buffer.fc_0_sqr;
-        const int32_t* in_lin_0 = buffer.fc_0_lin;
-
-#if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_0.propagate_pair(in_sqr_0, in_lin_0, buffer.concat_buffer,
-                                buffer.concat_buffer + FC_0_OUTPUTS);
+        Buffer buffer;
+        std::rotate_copy(transformedFeatures, transformedFeatures + L1 / 2,
+                         transformedFeatures + L1, buffer.reversedFT);
+        NNZInfo<L1> reversedNNZ;
+#if defined(USE_AVX512)
+        reversedNNZ.count = nnzInfo.count;
+        for (unsigned i = 0; i < nnzInfo.count; ++i)
+            reversedNNZ.nnz[i] = nnzInfo.nnz[i] ^ (L1 / 8);  // Four-byte chunks
+#elif defined(USE_RVV)
+        reversedNNZ.count = nnzInfo.count;
+        for (usize i = 0; i < nnzInfo.count; ++i)
+            reversedNNZ.nnz[i] = nnzInfo.nnz[i] ^ (L1 / 2);
 #else
-        ac_sqr_0.propagate(in_sqr_0, buffer.concat_buffer);
-        ac_0.propagate(in_lin_0, buffer.concat_buffer + FC_0_OUTPUTS);
+        constexpr usize HalfNNZ = sizeof(nnzInfo.bitset) / 2;
+        std::memcpy(reversedNNZ.bitset, nnzInfo.bitset + HalfNNZ, HalfNNZ);
+        std::memcpy(reversedNNZ.bitset + HalfNNZ, nnzInfo.bitset, HalfNNZ);
 #endif
-
-        fc_1.propagate(buffer.concat_buffer, buffer.fc_1_out);
-
-        if (same)
-            std::copy_n(buffer.fc_1_out, FC_1_OUTPUTS, second.fc_1_out);
-        else
-            other.fc_1.propagate(buffer.concat_buffer, second.fc_1_out);
-
-        for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
-        {
-            buffer.fc_1_sqr[i] = average(i64(buffer.fc_1_out[i]) + dynBias[i + FC_0_OUTPUTS * 2],
-                                         i64(second.fc_1_out[i]) + otherBias[i + FC_0_OUTPUTS * 2]);
-            buffer.fc_1_lin[i] =
-              average(i64(buffer.fc_1_out[i]) + dynBias[i + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS],
-                      i64(second.fc_1_out[i]) + otherBias[i + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS]);
-        }
-        const int32_t* in_sqr_1 = buffer.fc_1_sqr;
-        const int32_t* in_lin_1 = buffer.fc_1_lin;
-
+        fc_0.propagate(transformedFeatures, buffer.first[0], nnzInfo);
+        other.fc_0.propagate(buffer.reversedFT, buffer.first[1], reversedNNZ);
+        const i32 skip =
+          i32(((i64(buffer.first[0][FC_0_OUTPUTS - 2]) - buffer.first[0][FC_0_OUTPUTS - 1])
+               - (i64(buffer.first[1][FC_0_OUTPUTS - 2]) - buffer.first[1][FC_0_OUTPUTS - 1]))
+              / 2);
+        const int32_t* biases[2] = {dynBias, otherBias};
+        for (int p = 0; p < 2; ++p)
+            for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
+            {
+                buffer.firstSqr[p * FC_0_OUTPUTS + i] = i32(i64(buffer.first[p][i]) + biases[p][i]);
+                buffer.firstLin[p * FC_0_OUTPUTS + i] =
+                  i32(i64(buffer.first[p][i]) + biases[p][FC_0_OUTPUTS + i]);
+            }
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_1.propagate_pair(in_sqr_1, in_lin_1, buffer.concat_buffer + FC_0_OUTPUTS * 2,
-                                buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_0.propagate_pair(buffer.firstSqr, buffer.firstLin, buffer.combined,
+                                buffer.combined + FC_0_OUTPUTS * 2);
 #else
-        ac_sqr_1.propagate(in_sqr_1, buffer.concat_buffer + FC_0_OUTPUTS * 2);
-        ac_1.propagate(in_lin_1, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
+        ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS * 2);
 #endif
-
-        fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
-
-        if (same)
-            second.fc_2_out[0] = buffer.fc_2_out[0];
-        else
-            other.fc_2.propagate(buffer.concat_buffer, second.fc_2_out);
-
-        i32 fwdOut = average(buffer.fc_2_out[0], second.fc_2_out[0]) + skip_0;
+        // Logical activations are [A_sq, B_sq, A_lin, B_lin]. Account for
+        // SIMD lane packing when exchanging the two 16-neuron perspectives.
+        static_assert(FC_0_OUTPUTS == 16 && FC_1_OUTPUTS == 16);
+#if defined(USE_PAIR_ACTIVATIONS) && defined(USE_AVX512)
+        constexpr IndexType PerspectiveMask = 4;
+#elif defined(USE_PAIR_ACTIVATIONS) || defined(USE_LASX)
+        constexpr IndexType PerspectiveMask = 8;
+#else
+        constexpr IndexType PerspectiveMask = 16;
+#endif
+        for (IndexType i = 0; i < FC_0_OUTPUTS * 4; ++i)
+            buffer.reversed[i] = buffer.combined[i ^ PerspectiveMask];
+        fc_1.propagate(buffer.combined, buffer.second[0]);
+        other.fc_1.propagate(buffer.reversed, buffer.second[1]);
+        for (int p = 0; p < 2; ++p)
+            for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
+            {
+                buffer.secondSqr[p * FC_1_OUTPUTS + i] =
+                  i32(i64(buffer.second[p][i]) + biases[p][FC_0_OUTPUTS * 2 + i]);
+                buffer.secondLin[p * FC_1_OUTPUTS + i] =
+                  i32(i64(buffer.second[p][i]) + biases[p][FC_0_OUTPUTS * 2 + FC_1_OUTPUTS + i]);
+            }
+        constexpr IndexType Offset = FC_0_OUTPUTS * 4;
+#if defined(USE_PAIR_ACTIVATIONS)
+        ac_sqr_1.propagate_pair(buffer.secondSqr, buffer.secondLin, buffer.combined + Offset,
+                                buffer.combined + Offset + FC_1_OUTPUTS * 2);
+#else
+        ac_sqr_1.propagate(buffer.secondSqr, buffer.combined + Offset);
+        ac_1.propagate(buffer.secondLin, buffer.combined + Offset + FC_1_OUTPUTS * 2);
+#endif
+        for (IndexType i = 0; i < FC_1_OUTPUTS * 4; ++i)
+            buffer.reversed[Offset + i] = buffer.combined[Offset + (i ^ PerspectiveMask)];
+        fc_2.propagate(buffer.combined, buffer.output[0]);
+        other.fc_2.propagate(buffer.reversed, buffer.output[1]);
+        // Convert the opponent readout and skip to STM coordinates.
+        i32 fwdOut = i32((i64(buffer.output[0][0]) - buffer.output[1][0]) / 2) + skip;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale

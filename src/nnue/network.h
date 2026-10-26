@@ -99,7 +99,7 @@ class Network {
     // Downstream Top-2 MoE dual router table (849,420 uint16)
     alignas(CacheLineSize) uint16_t router[RouterTableSize];
 
-    // Dynamic bias table (256 experts x 128 int32)
+    // Dynamic bias table (256 experts x 64 int32)
     alignas(CacheLineSize) int32_t dynamicBiasTable[NumBiasExperts][BiasDimension];
 
     bool initialized = false;
