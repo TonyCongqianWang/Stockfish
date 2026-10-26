@@ -27,8 +27,10 @@
 
 namespace Stockfish::Eval::NNUE::Features {
 
-// Feature K32Q2: Combination of the position of own king (32 buckets), opponent queen presence (2 states),
-// and piece-square positions. Position mirrored such that king is always on e..h files.
+// Feature K32Q2H2: Combination of the position of own king (32 buckets), a piece-square bucket
+// (3 states: opponent queen present; no opponent queen but some rook or queen on the board; no rook
+// or queen on the board) and piece-square positions. Position mirrored such that king is always on
+// e..h files.
 class K32Q2 {
 
     // Unique number for each piece type on each square
@@ -58,11 +60,21 @@ class K32Q2 {
 
    public:
     // Hash value embedded in the evaluation file
-    static constexpr u32 HashValue = 0x32b5e284u;
+    static constexpr u32 HashValue = 0x32b5e2e3u;
 
-    // Number of feature dimensions (45,056 piece-squares)
-    static constexpr IndexType Dimensions =
+    // Piece-square bucket of a perspective: 2 if the opponent has a queen, otherwise 1 if any rook
+    // or queen is on the board (either side), otherwise 0. Buckets 1 and 2 use the K32Q2 layout
+    // (45,056 piece-squares). Bucket 0 has no opponent queen state and its own block of 22,528
+    // piece-squares after them, starting at NoHeavyOffset (see make_index()).
+    static constexpr int PsqBuckets = 3;
+    static constexpr int bucket(Bitboard opponentQueens, Bitboard rooksAndQueens) {
+        return opponentQueens ? 2 : rooksAndQueens != 0;
+    }
+
+    // Number of feature dimensions (67,584 piece-squares)
+    static constexpr IndexType NoHeavyOffset =
       static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB);
+    static constexpr IndexType Dimensions = NoHeavyOffset + NoHeavyOffset / 2;
 
 #define B(v) (v * 2 * PS_NB)
     // clang-format off
@@ -105,20 +117,19 @@ class K32Q2 {
                               Bitboard                            addedBB,
                               Color                               perspective,
                               Square                              ksq,
-                              bool                                opponentHasQueen,
+                              int                                 bucket,
                               IndexList&                          removed,
                               IndexList&                          added);
 #endif
 
     // Index of a feature for a given king position and another piece on some square
-    static IndexType
-    make_index(Color perspective, Square s, Piece pc, Square ksq, bool opponentHasQueen);
+    static IndexType make_index(Color perspective, Square s, Piece pc, Square ksq, int bucket);
 
     // Get a list of indices for recently changed features
     static void append_changed_indices(Color           perspective,
                                        Square          ksq,
                                        const DiffType& diff,
-                                       bool            opponentHasQueen,
+                                       int             bucket,
                                        IndexList&      removed,
                                        IndexList&      added);
 

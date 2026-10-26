@@ -824,6 +824,17 @@ void Position::do_move(
     dp.to     = to;
     dp.add_sq = SQ_NONE;
 
+    // Whether any rook or queen is on the board changes when the last one is captured (castling
+    // is encoded as capturing the own rook) or when a pawn promotes to the first one.
+    {
+        const Bitboard heavy         = pieces(ROOK, QUEEN);
+        const bool     promotesHeavy = m.type_of() == PROMOTION && m.promotion_type() >= ROOK;
+        const bool     capturesHeavy = captured && m.type_of() != CASTLING
+                                && (type_of(captured) == ROOK || type_of(captured) == QUEEN);
+        dp.heavyChange =
+          heavy ? capturesHeavy && !more_than_one(heavy) && !promotesHeavy : promotesHeavy;
+    }
+
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == (m.type_of() != CASTLING ? them : us));
     assert(type_of(captured) != KING);
