@@ -43,6 +43,8 @@ class FeatureTransformer;
 struct alignas(CacheLineSize) Accumulator {
     std::array<std::array<i16, L1>, COLOR_NB> accumulation;
     std::array<bool, COLOR_NB>                computed = {};
+    alignas(CacheLineSize) std::array<std::array<i16, L1>, COLOR_NB> supportAccumulation;
+    std::array<std::array<bool, 2>, COLOR_NB> supportComputed = {};
 };
 
 
@@ -89,7 +91,7 @@ struct AccumulatorCaches {
 };
 
 
-struct AccumulatorState: public Accumulator, Dirties {};
+struct AccumulatorState: public Accumulator, Dirties { };
 
 class AccumulatorStack {
    public:
@@ -108,6 +110,8 @@ class AccumulatorStack {
 
    private:
     [[nodiscard]] AccumulatorState& mut_latest() noexcept;
+
+    void evaluate_support(const Position&, const FeatureTransformer&) noexcept;
 
     void evaluate_side(Color                     perspective,
                        const Position&           pos,

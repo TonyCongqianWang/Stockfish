@@ -1,0 +1,40 @@
+name: Global NNUE contract
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: general-64, debug: "no", sanitize: none}
+          - {arch: x86-64-avx2, debug: "no", sanitize: none}
+          - {arch: general-64, debug: "yes", sanitize: undefined}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Build without a pretrained network or PGO
+        working-directory: src
+        run: >-
+          make -j2 stockfish global-nnue-test ARCH=${{ matrix.arch }} COMP=gcc
+          debug=${{ matrix.debug }} sanitize=${{ matrix.sanitize }}
+          EXTRACXXFLAGS=-DNNUE_EMBEDDING_OFF
+      - name: Verify features, accumulators, and activation assembly
+        working-directory: src
+        run: ./global-nnue-test
+      - name: Generate an explicitly untrained format fixture
+        run: python3 tests/generate_global_nnue_fixture.py "$RUNNER_TEMP/global-fixture.nnue"
+      - name: Check external network loading and raw evaluation
+        run: |
+          python3 - "$RUNNER_TEMP/global-fixture.nnue" <<'PY'
+          import subprocess, sys
+          commands = f"uci\nsetoption name EvalFile value {sys.argv[1]}\nisready\nposition startpos\neval\nquit\n"
+          result = subprocess.run(["src/stockfish"], input=commands, capture_output=True, text=True, check=True)
+          print(result.stdout)
+          assert "NNUE evaluation" in result.stdout
+          assert "ERROR" not in result.stdout
+          PY

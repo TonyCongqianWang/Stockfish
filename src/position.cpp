@@ -805,7 +805,7 @@ void Position::do_move(
     ++st->rule50;
     ++st->pliesFromNull;
 
-    auto& dpps = dirties.dirtyPawnPairs;
+    auto& dpps = dirties.dirtyPawnStructure;
     auto& dts  = dirties.dirtyThreats;
     auto& dp   = dirties.dirtyPiece;
 

@@ -346,7 +346,7 @@ struct DirtyThreats {
     DirtyThreatList list;
 };
 
-struct DirtyPawnPairs {
+struct DirtyPawnStructure {
     Bitboard before[COLOR_NB];
     Bitboard after[COLOR_NB];
 };
@@ -354,7 +354,7 @@ struct DirtyPawnPairs {
 struct Dirties {
     DirtyPiece     dirtyPiece;
     DirtyThreats   dirtyThreats;
-    DirtyPawnPairs dirtyPawnPairs;
+    DirtyPawnStructure dirtyPawnStructure;
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \

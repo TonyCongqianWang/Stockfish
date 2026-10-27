@@ -25,8 +25,8 @@
 #include <iosfwd>
 
 #include "features/k32q2.h"
-#include "features/full_threats.h"
-#include "features/pp_3wide.h"
+#include "features/global_threats.h"
+#include "features/pawn_structure.h"
 #include "layers/affine_transform.h"
 #include "layers/affine_transform_sparse_input.h"
 #include "layers/clipped_relu.h"
@@ -37,14 +37,17 @@
 namespace Stockfish::Eval::NNUE {
 
 // Input features used in evaluation function
-using ThreatFeatureSet = Features::FullThreats;
-using PairFeatureSet   = Features::PP_3Wide;
-using PSQFeatureSet    = Features::K32Q2;
+using SupportFeatureSet = Features::GlobalSupports;
+using ThreatFeatureSet  = Features::GlobalAttacks;
+using PairFeatureSet    = Features::PawnStructure;
+using PSQFeatureSet     = Features::K32Q2;
 
 // Number of input feature dimensions after conversion
-constexpr IndexType L1 = 1024;
-constexpr int       L2 = 32;
-constexpr int       L3 = 32;
+constexpr IndexType L1                     = 1024;
+constexpr IndexType OwnSupportDimensions   = L1 * 3 / 4;
+constexpr IndexType EnemySupportDimensions = L1 / 4;
+constexpr int       L2                     = 32;
+constexpr int       L3                     = 32;
 
 constexpr IndexType LayerStacks = 32;
 

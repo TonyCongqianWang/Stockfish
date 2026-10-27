@@ -86,16 +86,22 @@ class FeatureTransformer {
     using OutputType = TransformedFeatureType;
 
     // Number of input/output dimensions
-    static constexpr IndexType ThreatInputDimensions = ThreatFeatureSet::Dimensions;
-    static constexpr IndexType PairInputDimensions   = PairFeatureSet::Dimensions;
-    static constexpr IndexType PsqDimensions         = PSQFeatureSet::Dimensions;
-    static constexpr IndexType ThreatAndPpDimensions = ThreatInputDimensions + PairInputDimensions;
-    static constexpr IndexType InputDimensions       = PsqDimensions + ThreatAndPpDimensions;
+    static constexpr IndexType SupportInputDimensions = SupportFeatureSet::Dimensions;
+    static constexpr IndexType ThreatInputDimensions  = ThreatFeatureSet::Dimensions;
+    static constexpr IndexType PairInputDimensions    = PairFeatureSet::Dimensions;
+    static constexpr IndexType PsqDimensions          = PSQFeatureSet::Dimensions;
+    static constexpr IndexType ThreatAndPpDimensions  = ThreatInputDimensions + PairInputDimensions;
+    static constexpr IndexType InputDimensions =
+      2 * SupportInputDimensions + PsqDimensions + ThreatAndPpDimensions;
     static constexpr IndexType OutputDimensions      = HalfDimensions;
     static constexpr IndexType ThreatWeightSize      = ThreatInputDimensions * HalfDimensions;
     static constexpr IndexType PairWeightSize        = PairInputDimensions * HalfDimensions;
     static constexpr IndexType ThreatAndPpWeightSize = ThreatAndPpDimensions * HalfDimensions;
 
+    using SupportWeightArray =
+      std::array<ThreatWeightType, SupportInputDimensions * OwnSupportDimensions>;
+    using EnemySupportWeightArray =
+      std::array<ThreatWeightType, SupportInputDimensions * EnemySupportDimensions>;
     using BiasesArray            = std::array<BiasType, HalfDimensions>;
     using WeightArray            = std::array<WeightType, HalfDimensions * PsqDimensions>;
     using ThreatAndPpWeightArray = std::array<ThreatWeightType, ThreatAndPpWeightSize>;
@@ -158,8 +164,9 @@ class FeatureTransformer {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
-        return combine_hash(
-                 {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, PSQFeatureSet::HashValue})
+        return combine_hash({SupportFeatureSet::OwnHash, SupportFeatureSet::EnemyHash,
+                             ThreatFeatureSet::HashValue, PairFeatureSet::FrontierHash,
+                             PairFeatureSet::FileHash, PSQFeatureSet::HashValue})
              ^ (OutputDimensions * 2);
     }
 
@@ -200,6 +207,8 @@ class FeatureTransformer {
     bool read_parameters(std::istream& stream) {
         read_little_endian(stream, biases.data(), HalfDimensions);
 
+        read_little_endian(stream, supportWeights.data(), supportWeights.size());
+        read_little_endian(stream, enemySupportWeights.data(), enemySupportWeights.size());
         read_little_endian(stream, threatWeightData(), ThreatWeightSize);
         read_little_endian(stream, pawnPairWeightData(), PairWeightSize);
 
@@ -218,6 +227,9 @@ class FeatureTransformer {
 
         write_little_endian(stream, copy->biases.data(), HalfDimensions);
 
+        write_little_endian(stream, copy->supportWeights.data(), copy->supportWeights.size());
+        write_little_endian(stream, copy->enemySupportWeights.data(),
+                            copy->enemySupportWeights.size());
         write_little_endian(stream, copy->threatWeightData(), ThreatWeightSize);
         write_little_endian(stream, copy->pawnPairWeightData(), PairWeightSize);
 
@@ -228,6 +240,8 @@ class FeatureTransformer {
 
     usize get_content_hash() const {
         usize h = 0;
+        hash_combine(h, get_raw_data_hash(supportWeights));
+        hash_combine(h, get_raw_data_hash(enemySupportWeights));
 
         hash_combine(h, get_raw_data_hash(biases));
         hash_combine(h, get_raw_data_hash(weights));
@@ -252,11 +266,28 @@ class FeatureTransformer {
         const auto& accumulation    = accumulatorState.accumulation;
 
         for (IndexType p = 0; p < 2; ++p)
-            transform_perspective(accumulation[perspectives[p]], output, p, nnzInfo);
+        {
+            const Color                                c = perspectives[p];
+            alignas(CacheLineSize) std::array<i16, L1> support;
+            for (IndexType operand = 0; operand < 2; ++operand)
+            {
+                std::copy_n(
+                  &accumulatorState.supportAccumulation[c][operand * OwnSupportDimensions / 2],
+                  OwnSupportDimensions / 2, &support[operand * L1 / 2]);
+                std::copy_n(
+                  &accumulatorState.supportAccumulation[~c][OwnSupportDimensions
+                                                            + operand * EnemySupportDimensions / 2],
+                  EnemySupportDimensions / 2,
+                  &support[operand * L1 / 2 + OwnSupportDimensions / 2]);
+            }
+            permute<16>(support, PackusEpi16Order);
+            transform_perspective(accumulation[c], support, output, p, nnzInfo);
+        }
     }
 
    private:
     static void transform_perspective(const std::array<i16, HalfDimensions>&      accumulation,
+                                      const std::array<i16, HalfDimensions>&      support,
                                       OutputType*                                 output,
                                       IndexType                                   perspective,
                                       [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) {
@@ -276,9 +307,11 @@ class FeatureTransformer {
         [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
         [[maybe_unused]] constexpr int shift = 7;
 
-        const vec_t* in0 = reinterpret_cast<const vec_t*>(&accumulation[0]);
-        const vec_t* in1 = reinterpret_cast<const vec_t*>(&accumulation[HalfDimensions / 2]);
-        vec_t*       out = reinterpret_cast<vec_t*>(output + offset);
+        const vec_t* in0      = reinterpret_cast<const vec_t*>(&accumulation[0]);
+        const vec_t* in1      = reinterpret_cast<const vec_t*>(&accumulation[HalfDimensions / 2]);
+        const vec_t* support0 = reinterpret_cast<const vec_t*>(support.data());
+        const vec_t* support1 = reinterpret_cast<const vec_t*>(&support[HalfDimensions / 2]);
+        vec_t*       out      = reinterpret_cast<vec_t*>(output + offset);
 
         // Per the NNUE architecture, here we want to multiply pairs of
         // clipped elements and divide the product by 512. To do this,
@@ -323,6 +356,11 @@ class FeatureTransformer {
                 vec_t acc0b = in0[i + 1];
                 vec_t acc1a = in1[i + 0];
                 vec_t acc1b = in1[i + 1];
+
+                acc0a = vec_add_16(acc0a, support0[i]);
+                acc0b = vec_add_16(acc0b, support0[i + 1]);
+                acc1a = vec_add_16(acc1a, support1[i]);
+                acc1b = vec_add_16(acc1b, support1[i + 1]);
 
                 static_assert(FtMaxVal == 255);
 
@@ -388,8 +426,12 @@ class FeatureTransformer {
             vint16m2_t acc0 = __riscv_vle16_v_i16m2(&accumulation[j], vl);
             vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accumulation[j + HalfDimensions / 2], vl);
 
-            acc0 = __riscv_vmax(acc0, 0, vl);
-            acc1 = __riscv_vmax(acc1, 0, vl);
+            auto s0 = __riscv_vle16_v_i16m2(&support[j], vl);
+            auto s1 = __riscv_vle16_v_i16m2(&support[j + HalfDimensions / 2], vl);
+            acc0    = __riscv_vadd(acc0, s0, vl);
+            acc1    = __riscv_vadd(acc1, s1, vl);
+            acc0    = __riscv_vmax(acc0, 0, vl);
+            acc1    = __riscv_vmax(acc1, 0, vl);
 
             vuint8m1_t pa = __riscv_vnclipu(__riscv_vreinterpret_u16m2(acc0), 0, 0, vl);
             vuint8m1_t pb = __riscv_vnclipu(__riscv_vreinterpret_u16m2(acc1), 0, 0, vl);
@@ -414,11 +456,12 @@ class FeatureTransformer {
 
         for (IndexType j = 0; j < HalfDimensions / 2; ++j)
         {
-            BiasType sum0 = accumulation[j];
-            BiasType sum1 = accumulation[j + HalfDimensions / 2];
+            int sum0 = int(accumulation[j]) + int(support[j]);
+            int sum1 =
+              int(accumulation[j + HalfDimensions / 2]) + int(support[j + HalfDimensions / 2]);
 
-            sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
-            sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
+            sum0 = std::clamp<int>(sum0, 0, FtMaxVal);
+            sum1 = std::clamp<int>(sum1, 0, FtMaxVal);
 
             output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 512);
         }
@@ -434,6 +477,8 @@ class FeatureTransformer {
     // The first pawn-pair feature is at index ThreatFeatureSet::Dimensions.
     static_assert(PairFeatureSet::IndexBase == ThreatFeatureSet::Dimensions);
 
+    alignas(CacheLineSize) SupportWeightArray supportWeights;
+    alignas(CacheLineSize) EnemySupportWeightArray enemySupportWeights;
     alignas(CacheLineSize) ThreatAndPpWeightArray threatAndPpWeights;
 };
 

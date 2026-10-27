@@ -61,7 +61,7 @@ using WeightType       = i8;
 using IndexType        = u32;
 
 // Version of the evaluation file
-constexpr u32 Version = 0x6A448AFAu;
+constexpr u32 Version = 0x6A448AFCu;
 
 // Constant used in evaluation value calculation
 constexpr int OutputScale     = 16;

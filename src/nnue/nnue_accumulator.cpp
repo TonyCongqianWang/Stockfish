@@ -74,17 +74,19 @@ AccumulatorState& AccumulatorStack::mut_latest() noexcept { return accumulators[
 void AccumulatorStack::reset() noexcept {
     accumulators[0].dirtyPiece = {};
     new (&accumulators[0].dirtyThreats) DirtyThreats;
-    new (&accumulators[0].dirtyPawnPairs) DirtyPawnPairs;
+    new (&accumulators[0].dirtyPawnStructure) DirtyPawnStructure;
     accumulators[0].computed.fill(false);
-    size = 1;
+    accumulators[0].supportComputed = {};
+    size                            = 1;
 }
 
 Dirties& AccumulatorStack::push() noexcept {
     assert(size < MaxSize);
     auto& st = accumulators[size];
     st.computed.fill(false);
+    st.supportComputed = {};
     new (&st.dirtyThreats) DirtyThreats;
-    new (&st.dirtyPawnPairs) DirtyPawnPairs;
+    new (&st.dirtyPawnStructure) DirtyPawnStructure;
     size++;
     return st;
 }
@@ -98,6 +100,7 @@ void AccumulatorStack::evaluate(const Position&           pos,
                                 const FeatureTransformer& featureTransformer,
                                 // Silence spurious warning on GCC 10
                                 [[maybe_unused]] AccumulatorCaches& cache) noexcept {
+    evaluate_support(pos, featureTransformer);
     const usize last_white = find_last_usable_accumulator(WHITE);
     const usize last_black = find_last_usable_accumulator(BLACK);
 
@@ -472,6 +475,38 @@ apply_features(IndexType j, Tile acc, const u16* indices, int count, const i8* w
     return acc;
 }
 
+// Support tables remain in canonical lane order; assembly applies SIMD packing.
+void update_support(const FeatureTransformer&           ft,
+                    AccumulatorState&                   target,
+                    const AccumulatorState*             source,
+                    Color                               owner,
+                    bool                                enemy,
+                    const SupportFeatureSet::IndexList& added,
+                    const SupportFeatureSet::IndexList& removed) {
+    const IndexType width   = enemy ? EnemySupportDimensions : OwnSupportDimensions;
+    const IndexType offset  = enemy ? OwnSupportDimensions : 0;
+    auto*           out     = &target.supportAccumulation[owner][offset];
+    const auto*     weights = enemy ? ft.enemySupportWeights.data() : ft.supportWeights.data();
+    // Keep a small lane tile live across all changed rows. Compact tables and
+    // sums are canonical, so the compiler can vectorize without packing shuffles.
+    constexpr IndexType TileWidth = 64;
+    static_assert(OwnSupportDimensions % TileWidth == 0 && EnemySupportDimensions % TileWidth == 0);
+    for (IndexType j = 0; j < width; j += TileWidth)
+    {
+        alignas(CacheLineSize) std::array<i16, TileWidth> acc{};
+        if (source)
+            std::copy_n(&source->supportAccumulation[owner][offset + j], TileWidth, acc.data());
+        for (auto i : added)
+            for (IndexType k = 0; k < TileWidth; ++k)
+                acc[k] += weights[usize(i) * width + j + k];
+        for (auto i : removed)
+            for (IndexType k = 0; k < TileWidth; ++k)
+                acc[k] -= weights[usize(i) * width + j + k];
+        std::copy_n(acc.data(), TileWidth, out + j);
+    }
+    target.supportComputed[owner][enemy] = true;
+}
+
 template<int sign>
 sf_always_inline Tile apply_psq_features(IndexType                       j,
                                          Tile                            acc,
@@ -562,9 +597,10 @@ void update_accumulator_incremental(Color                     perspective,
     PSQFeatureSet::IndexList    psqRemoved, psqAdded;
     ThreatFeatureSet::IndexList thrRemoved, thrAdded;
 
-    const auto& dirtyPiece     = Forward ? target_state.dirtyPiece : computed.dirtyPiece;
-    const auto& dirtyThreats   = Forward ? target_state.dirtyThreats : computed.dirtyThreats;
-    const auto& dirtyPawnPairs = Forward ? target_state.dirtyPawnPairs : computed.dirtyPawnPairs;
+    const auto& dirtyPiece   = Forward ? target_state.dirtyPiece : computed.dirtyPiece;
+    const auto& dirtyThreats = Forward ? target_state.dirtyThreats : computed.dirtyThreats;
+    const auto& dirtyPawnStructure =
+      Forward ? target_state.dirtyPawnStructure : computed.dirtyPawnStructure;
 
     // Used solely for prefetching
     const auto* threatPpBase = &featureTransformer.threatAndPpWeights[0];
@@ -574,7 +610,7 @@ void update_accumulator_incremental(Color                     perspective,
     {
         ThreatFeatureSet::append_changed_indices(perspective, ksq, dirtyThreats, thrRemoved,
                                                  thrAdded, threatPpBase, pfStride);
-        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrRemoved,
+        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnStructure, thrRemoved,
                                                thrAdded, threatPpBase, pfStride);
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, opponentHasQueen,
                                               psqRemoved, psqAdded);
@@ -583,7 +619,7 @@ void update_accumulator_incremental(Color                     perspective,
     {
         ThreatFeatureSet::append_changed_indices(perspective, ksq, dirtyThreats, thrAdded,
                                                  thrRemoved, threatPpBase, pfStride);
-        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrAdded,
+        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnStructure, thrAdded,
                                                thrRemoved, threatPpBase, pfStride);
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, opponentHasQueen,
                                               psqAdded, psqRemoved);
@@ -618,7 +654,7 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
       white_ksq, black_ksq, target_state.dirtyThreats, thr_removed[WHITE], thr_added[WHITE],
       thr_removed[BLACK], thr_added[BLACK], threat_pp_base, pf_stride);
     PairFeatureSet::append_changed_indices_both(
-      white_ksq, black_ksq, target_state.dirtyPawnPairs, thr_removed[WHITE], thr_added[WHITE],
+      white_ksq, black_ksq, target_state.dirtyPawnStructure, thr_removed[WHITE], thr_added[WHITE],
       thr_removed[BLACK], thr_added[BLACK], threat_pp_base, pf_stride);
     PSQFeatureSet::append_changed_indices(WHITE, white_ksq, target_state.dirtyPiece, whiteOppQueen,
                                           psq_removed[WHITE], psq_added[WHITE]);
@@ -835,8 +871,8 @@ void update_accumulator_hybrid(Color                     perspective,
     IndexType                   pfStride     = FeatureTransformer::OutputDimensions;
     ThreatFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyThreats, thrRemoved,
                                              thrAdded, threatPpBase, pfStride);
-    PairFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyPawnPairs, thrRemoved,
-                                           thrAdded, threatPpBase, pfStride);
+    PairFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyPawnStructure,
+                                           thrRemoved, thrAdded, threatPpBase, pfStride);
 
     const auto& fromAcc = computed.accumulation[perspective];
     auto&       toAcc   = target.accumulation[perspective];
@@ -915,6 +951,49 @@ void update_accumulator_refresh_cache(Color                     perspective,
     }
 }
 
+}
+
+void AccumulatorStack::evaluate_support(const Position&           pos,
+                                        const FeatureTransformer& ft) noexcept {
+    for (Color owner : {WHITE, BLACK})
+        for (bool enemy : {false, true})
+        {
+            const Color  receiver = enemy ? ~owner : owner;
+            const Square ksq      = pos.square<KING>(receiver);
+            const auto   barrier  = [&](usize next) {
+                const auto& d = accumulators[next].dirtyPiece;
+                return d.pc == make_piece(receiver, KING) && ((int(d.from) ^ int(d.to)) & 4);
+            };
+            usize begin = size - 1;
+            while (begin > 0 && !accumulators[begin].supportComputed[owner][enemy]
+                   && !barrier(begin))
+                --begin;
+            if (accumulators[begin].supportComputed[owner][enemy])
+            {
+                for (usize next = begin + 1; next < size; ++next)
+                {
+                    SupportFeatureSet::IndexList removed, added;
+                    SupportFeatureSet::append_changed_indices(
+                      receiver, enemy, ksq, accumulators[next].dirtyThreats, removed, added);
+                    update_support(ft, accumulators[next], &accumulators[next - 1], owner, enemy,
+                                   added, removed);
+                }
+            }
+            else
+            {
+                SupportFeatureSet::IndexList active, empty;
+                SupportFeatureSet::append_active_indices(receiver, enemy, pos, active);
+                update_support(ft, mut_latest(), nullptr, owner, enemy, active, empty);
+                for (usize next = size - 1; next > begin; --next)
+                {
+                    SupportFeatureSet::IndexList removed, added;
+                    SupportFeatureSet::append_changed_indices(
+                      receiver, enemy, ksq, accumulators[next].dirtyThreats, removed, added);
+                    update_support(ft, accumulators[next - 1], &accumulators[next], owner, enemy,
+                                   removed, added);
+                }
+            }
+        }
 }
 
 }

@@ -40,7 +40,7 @@ class PP_3Wide {
     // see nnue_feature_transformer.h
     static constexpr IndexType IndexBase = 59808;
     using IndexList                      = ValueList<u16, 256>;
-    using DiffType                       = DirtyPawnPairs;
+    using DiffType                       = DirtyPawnStructure;
 
     static IndexType make_index(
       Color perspective, Color color, Square from, Square to, Color pairedColor, Square ksq);

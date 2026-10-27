@@ -5,6 +5,7 @@ on:
       - master
       - tools
       - github_ci
+      - "feature/global-threats-pawn-frontier*"
   pull_request:
     branches:
       - master
@@ -16,7 +17,7 @@ concurrency:
 
 jobs:
   Prerelease:
-    if: github.repository == 'official-stockfish/Stockfish' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     runs-on: ubuntu-slim
     needs: [Matrix, ARMCompilation, UniversalCompilation]
     outputs:
@@ -133,46 +134,48 @@ jobs:
     name: IWYU
     uses: ./.github/workflows/iwyu.yml
   Sanitizers:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Sanitizers
-    if: ${{ always() }}
     uses: ./.github/workflows/sanitizers.yml
   Tests:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Tests
-    if: ${{ always() }}
     uses: ./.github/workflows/tests.yml
   Matetrack:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Matetrack
-    if: ${{ always() }}
     uses: ./.github/workflows/matetrack.yml
   Games:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Games
-    if: ${{ always() }}
     uses: ./.github/workflows/games.yml
   CompilerCheck:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Compiler check
-    if: ${{ always() }}
     uses: ./.github/workflows/avx2_compilers.yml
   MSVC:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: MSVC
-    if: ${{ always() }}
     uses: ./.github/workflows/msvc.yml
   WASMCompilation:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: WASM compilation
-    if: ${{ always() }}
     uses: ./.github/workflows/wasm_compilation.yml
   # Release Jobs
   ARMCompilation:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Android builds
     needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
     uses: ./.github/workflows/arm_compilation.yml
     with:
       matrix: ${{ needs.Matrix.outputs.arm_matrix }}
   UniversalCompilation:
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: "Universal builds"
     needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
     uses: ./.github/workflows/universal_compilation.yml
   DevBinaries:
-    if: github.repository == 'official-stockfish/Stockfish'
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Universal uploads
     needs: [Prerelease, Matrix, UniversalCompilation]
     uses: ./.github/workflows/upload_binaries.yml
@@ -185,7 +188,7 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
   DevARMBinaries:
-    if: github.repository == 'official-stockfish/Stockfish'
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     name: Android uploads
     needs: [Prerelease, Matrix, ARMCompilation]
     uses: ./.github/workflows/upload_binaries.yml
@@ -198,7 +201,7 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
   PublishPrerelease:
-    if: github.repository == 'official-stockfish/Stockfish' && needs.Prerelease.outputs.release_tag != ''
+    if: ${{ false }} # No compatible trained default net: use GlobalNNUE below.
     needs: [Prerelease, DevBinaries, DevARMBinaries]
     runs-on: ubuntu-slim
     permissions:
@@ -208,3 +211,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "${{ needs.Prerelease.outputs.release_tag }}" --repo "${{ github.repository }}" --draft=false --prerelease
+
+  GlobalNNUE:
+    name: Training-free global NNUE
+    uses: ./.github/workflows/global_nnue.yml

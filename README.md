@@ -159,3 +159,9 @@ project][lc0-data-link], which is made available under the [Open Database Licens
 [license-badge]:      https://img.shields.io/github/license/official-stockfish/Stockfish?style=for-the-badge&label=license&color=success
 [release-badge]:      https://img.shields.io/github/v/release/official-stockfish/Stockfish?style=for-the-badge&label=official%20release
 [website-badge]:      https://img.shields.io/website?style=for-the-badge&down_color=red&down_message=Offline&label=website&up_color=success&up_message=Online&url=https%3A%2F%2Fstockfishchess.org
+
+## Experimental NNUE branch
+
+This branch replaces threats and PP3Wide with separate own/enemy supports, unrestricted
+attacks, pawn-frontier pairs and consecutive file pairs. It needs a newly
+compatible network. See [the architecture and training-free checks](docs/global_nnue.md).
