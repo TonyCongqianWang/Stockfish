@@ -41,7 +41,7 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
 // Sparse input implementation
-template<IndexType InDims, IndexType OutDims>
+template<IndexType InDims, IndexType OutDims, IndexType BiasDims = OutDims>
 class AffineTransformSparseInput {
    public:
     // Input/output type
@@ -93,7 +93,7 @@ class AffineTransformSparseInput {
 
     // Read network parameters
     bool read_parameters(std::istream& stream) {
-        read_little_endian<BiasType>(stream, biases, OutputDimensions);
+        read_little_endian<BiasType>(stream, biases, BiasDims);
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
             weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
 
@@ -102,7 +102,7 @@ class AffineTransformSparseInput {
 
     // Write network parameters
     bool write_parameters(std::ostream& stream) const {
-        write_little_endian<BiasType>(stream, biases, OutputDimensions);
+        write_little_endian<BiasType>(stream, biases, BiasDims);
 
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
             write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
@@ -118,10 +118,13 @@ class AffineTransformSparseInput {
         return h;
     }
 
+    const OutputType* get_biases() const { return biases; }
+
     // Forward propagation
     void propagate(const InputType*                        input,
                    OutputType*                             output,
                    [[maybe_unused]] const NNZInfo<InDims>& nnzInfo) const {
+        const auto* projectionBiases = projection_biases();
 
 #if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
     #if defined(USE_AVX512)
@@ -184,7 +187,7 @@ class AffineTransformSparseInput {
           NumAccums;
     #endif
 
-        const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);
+        const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(projectionBiases);
         outvec_t        acc[NumRegs];
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = biasvec[k];
@@ -387,7 +390,7 @@ class AffineTransformSparseInput {
         do \
         { \
             usize          vl  = OutputDimensions; \
-            vint32##m4##_t acc = __riscv_vle32_v_i32##m4(biases, vl); \
+            vint32##m4##_t acc = __riscv_vle32_v_i32##m4(projectionBiases, vl); \
             IndexType      i   = 0; \
             for (; i + 2 <= nnzInfo.count; i += 2) \
             { \
@@ -429,7 +432,7 @@ class AffineTransformSparseInput {
 #else
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
-          output, weights, biases, input);
+          output, weights, projectionBiases, input);
 #endif
     }
 
@@ -440,7 +443,8 @@ class AffineTransformSparseInput {
                         const NNZInfo<InDims>&            nnzInfo) const {
 #if defined(USE_AVX2)
         affine_transform_pair<InputDimensions, OutputDimensions, true>(
-          input, weights, other.weights, biases, other.biases, output, otherOutput, &nnzInfo);
+          input, weights, other.weights, projection_biases(), other.projection_biases(), output,
+          otherOutput, &nnzInfo);
 #else
         propagate(input, output, nnzInfo);
         other.propagate(input, otherOutput, nnzInfo);
@@ -448,10 +452,21 @@ class AffineTransformSparseInput {
     }
 
    private:
+    // Dual biases are applied independently at activation, after the raw skip is read.
+    const OutputType* projection_biases() const {
+        if constexpr (BiasDims == OutDims)
+            return biases;
+        else
+        {
+            alignas(CacheLineSize) static constexpr OutputType zero[OutDims] = {};
+            return zero;
+        }
+    }
+
     using BiasType   = OutputType;
     using WeightType = i8;
 
-    alignas(CacheLineSize) BiasType biases[OutputDimensions];
+    alignas(CacheLineSize) BiasType biases[BiasDims];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
 };
 

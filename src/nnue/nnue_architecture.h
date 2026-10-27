@@ -49,7 +49,7 @@ constexpr int       L3 = 32;
 
 constexpr IndexType LayerStacks     = 64;
 constexpr IndexType RouterTableSize = 849420;
-constexpr u32       RouterHash      = 0x4D6F4536u;
+constexpr u32       RouterHash      = 0x4D6F3635u;
 constexpr IndexType NumBiasExperts  = 128;
 constexpr IndexType BiasDimension   = 64;
 
@@ -62,13 +62,14 @@ struct NetworkArchitecture {
     static constexpr int       FC_0_OUTPUTS                 = L2 / 2;
     static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
 
-    Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS> fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>                  ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>                     ac_0;
-    Layers::AffineTransform<FC_0_OUTPUTS * 4, FC_1_OUTPUTS>                        fc_1;
-    Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                      ac_sqr_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                         ac_1;
-    Layers::AffineTransform<FC_0_OUTPUTS * 4 + FC_1_OUTPUTS * 4, 1>                fc_2;
+    Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS, FC_0_OUTPUTS * 2>
+                                                                              fc_0;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>             ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>                ac_0;
+    Layers::AffineTransform<FC_0_OUTPUTS * 4, FC_1_OUTPUTS, FC_1_OUTPUTS * 2> fc_1;
+    Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>             ac_sqr_1;
+    Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>                ac_1;
+    Layers::AffineTransform<FC_0_OUTPUTS * 4 + FC_1_OUTPUTS * 4, 1>           fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
@@ -120,13 +121,20 @@ struct NetworkArchitecture {
         const i64 skips = i64(buffer.first[0][FC_0_OUTPUTS - 2]) - buffer.first[0][FC_0_OUTPUTS - 1]
                         + buffer.first[1][FC_0_OUTPUTS - 2] - buffer.first[1][FC_0_OUTPUTS - 1];
         const int32_t* biases[2] = {dynBias, otherBias};
+        const auto add_biases = [&](const auto& projections, const i32* ownBias, const i32* oppBias,
+                                    auto& sqr, auto& lin, IndexType width, IndexType offset) {
+            const i32* expertBiases[2] = {ownBias, oppBias};
         for (int p = 0; p < 2; ++p)
-            for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
+                for (IndexType i = 0; i < width; ++i)
             {
-                buffer.firstSqr[p * FC_0_OUTPUTS + i] = i32(i64(buffer.first[p][i]) + biases[p][i]);
-                buffer.firstLin[p * FC_0_OUTPUTS + i] =
-                  i32(i64(buffer.first[p][i]) + biases[p][FC_0_OUTPUTS + i]);
+                    sqr[p * width + i] =
+                      i32(i64(projections[p][i]) + expertBiases[p][i] + biases[p][offset + i]);
+                    lin[p * width + i] = i32(i64(projections[p][i]) + expertBiases[p][width + i]
+                                             + biases[p][offset + width + i]);
             }
+        };
+        add_biases(buffer.first, fc_0.get_biases(), other.fc_0.get_biases(), buffer.firstSqr,
+                   buffer.firstLin, FC_0_OUTPUTS, 0);
 #if defined(USE_PAIR_ACTIVATIONS)
         ac_sqr_0.propagate_pair(buffer.firstSqr, buffer.firstLin, buffer.combined,
                                 buffer.combined + FC_0_OUTPUTS * 2);
@@ -135,14 +143,8 @@ struct NetworkArchitecture {
         ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS * 2);
 #endif
         fc_1.propagate_pair(buffer.combined, buffer.second[0], other.fc_1, buffer.second[1]);
-        for (int p = 0; p < 2; ++p)
-            for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
-            {
-                buffer.secondSqr[p * FC_1_OUTPUTS + i] =
-                  i32(i64(buffer.second[p][i]) + biases[p][FC_0_OUTPUTS * 2 + i]);
-                buffer.secondLin[p * FC_1_OUTPUTS + i] =
-                  i32(i64(buffer.second[p][i]) + biases[p][FC_0_OUTPUTS * 2 + FC_1_OUTPUTS + i]);
-            }
+        add_biases(buffer.second, fc_1.get_biases(), other.fc_1.get_biases(), buffer.secondSqr,
+                   buffer.secondLin, FC_1_OUTPUTS, FC_0_OUTPUTS * 2);
         constexpr IndexType Offset = FC_0_OUTPUTS * 4;
 #if defined(USE_PAIR_ACTIVATIONS)
         ac_sqr_1.propagate_pair(buffer.secondSqr, buffer.secondLin, buffer.combined + Offset,

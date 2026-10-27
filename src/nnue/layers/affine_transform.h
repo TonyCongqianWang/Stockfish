@@ -249,7 +249,7 @@ affine_transform_non_ssse3(i32* output, const i8* weights, const i32* biases, co
 
 #endif  // !ENABLE_SEQ_OPT
 
-template<IndexType InDims, IndexType OutDims>
+template<IndexType InDims, IndexType OutDims, IndexType BiasDims = OutDims>
 class AffineTransform {
    public:
     // Input/output type
@@ -305,7 +305,7 @@ class AffineTransform {
 
     // Read network parameters
     bool read_parameters(std::istream& stream) {
-        read_little_endian<BiasType>(stream, biases, OutputDimensions);
+        read_little_endian<BiasType>(stream, biases, BiasDims);
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
             weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
 
@@ -314,7 +314,7 @@ class AffineTransform {
 
     // Write network parameters
     bool write_parameters(std::ostream& stream) const {
-        write_little_endian<BiasType>(stream, biases, OutputDimensions);
+        write_little_endian<BiasType>(stream, biases, BiasDims);
 
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
             write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
@@ -330,8 +330,11 @@ class AffineTransform {
         return h;
     }
 
+    const OutputType* get_biases() const { return biases; }
+
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+        const auto* projectionBiases = projection_biases();
 
 #ifdef ENABLE_SEQ_OPT
 
@@ -389,7 +392,7 @@ class AffineTransform {
             constexpr IndexType NumRegs = NumAccums;
     #endif
 
-            const vec_t* biasvec = reinterpret_cast<const vec_t*>(biases);
+            const vec_t* biasvec = reinterpret_cast<const vec_t*>(projectionBiases);
             vec_t        acc[NumRegs];
             for (IndexType k = 0; k < NumAccums; ++k)
                 acc[k] = biasvec[k];
@@ -485,7 +488,7 @@ class AffineTransform {
                 const vec_t in = inputVector[j];
                 vec_add_dpbusd_32(sum0, in, row0[j]);
             }
-            output[0] = vec_hadd(sum0, biases[0]);
+            output[0] = vec_hadd(sum0, projectionBiases[0]);
 
     #undef vec_setzero
     #undef vec_add_dpbusd_32
@@ -504,7 +507,7 @@ class AffineTransform {
             { \
                 vint8##m1##_t  w    = __riscv_vle8_v_i8##m1(wIt, vl); \
                 vint16##m2##_t prod = __riscv_vwmulsu(w, in, vl); \
-                output[i]           = biases[i] + __riscv_vmv_x(__riscv_vwredsum(prod, zero, vl)); \
+                output[i] = projectionBiases[i] + __riscv_vmv_x(__riscv_vwredsum(prod, zero, vl)); \
             } \
         } while (0)
 
@@ -528,7 +531,7 @@ class AffineTransform {
                     vint16m4_t prod = __riscv_vwmulsu(w, in, vl);
                     sum             = __riscv_vwredsum(prod, sum, vl);
                 }
-                output[i] = biases[i] + __riscv_vmv_x(sum);
+                output[i] = projectionBiases[i] + __riscv_vmv_x(sum);
             }
         }
 
@@ -536,7 +539,7 @@ class AffineTransform {
 #else
         // Use old implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
-          output, weights, biases, input);
+          output, weights, projectionBiases, input);
 #endif
     }
 
@@ -546,7 +549,8 @@ class AffineTransform {
                         OutputType*            otherOutput) const {
 #if defined(USE_AVX2)
         affine_transform_pair<InputDimensions, OutputDimensions, false>(
-          input, weights, other.weights, biases, other.biases, output, otherOutput);
+          input, weights, other.weights, projection_biases(), other.projection_biases(), output,
+          otherOutput);
 #else
         propagate(input, output);
         other.propagate(input, otherOutput);
@@ -554,10 +558,21 @@ class AffineTransform {
     }
 
    private:
+    // Dual biases are applied independently at activation, after the raw skip is read.
+    const OutputType* projection_biases() const {
+        if constexpr (BiasDims == OutDims)
+            return biases;
+        else
+        {
+            alignas(CacheLineSize) static constexpr OutputType zero[OutDims] = {};
+            return zero;
+        }
+    }
+
     using BiasType   = OutputType;
     using WeightType = i8;
 
-    alignas(CacheLineSize) BiasType biases[OutputDimensions];
+    alignas(CacheLineSize) BiasType biases[BiasDims];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
 };
 
