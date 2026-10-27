@@ -65,9 +65,10 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     auto t = network.trace_evaluate(pos, *accumulators, caches);
 
-    ss << "NNUE routes (weight / bias): A = " << t.weightExperts[0] << " / " << t.biasExperts[0]
-       << ", B = " << t.weightExperts[1] << " / " << t.biasExperts[1] << '\n';
-    constexpr const char* labels[] = {"A / B (actual)", "A / A", "B / B", "B / A (routes swapped)"};
+    ss << "NNUE routes (weight / bias): STM = " << t.weightExperts[0] << " / " << t.biasExperts[0]
+       << ", OPP = " << t.weightExperts[1] << " / " << t.biasExperts[1] << '\n';
+    constexpr const char* labels[] = {"STM / OPP (actual)", "STM / STM context",
+                                      "OPP / OPP context", "OPP / STM contexts"};
     for (int i = 0; i < 4; ++i)
     {
         ss << std::left << std::setw(24) << labels[i] << std::right;

@@ -205,9 +205,9 @@ Value Network::evaluate(const Position&    pos,
         enemyKingBucket = int(enemyKsqOriented);
 
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
-    const uint16_t packed_1 = router[c_us];
+    const uint32_t packed_1   = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int      b1         = (packed_1 >> 6) & 0xFF;
+    const int      b1         = (packed_1 >> 16) & 0x7F;
     const int32_t* dyn_bias_1 = dynamicBiasTable[b1];
 
     // Perspective 2 (Non-STM):
@@ -231,14 +231,14 @@ Value Network::evaluate(const Position&    pos,
         ourKingBucketThem = int(ourKsqOrientedThem);
 
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
-    const uint16_t packed_2 = router[c_them];
-    const int e2 = packed_2 & 0x3F;
-    const int      b2         = (packed_2 >> 6) & 0xFF;
-    const int32_t* dyn_bias_2 = dynamicBiasTable[b2];
+    const uint32_t packed_2   = router[c_them];
+    const int      e2         = (packed_2 >> 8) & 0x3F;
+    const int      b2         = (packed_2 >> 24) & 0x7F;
+    const int32_t* dyn_bias_2 = dynamicBiasTable[NumBiasExperts + b2];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional =
-      network[e1].propagate(transformedFeatures, nnzInfo, network[e2], dyn_bias_1, dyn_bias_2);
+    const auto positional = network[e1].propagate(
+      transformedFeatures, nnzInfo, network[LayerStacks + e2], dyn_bias_1, dyn_bias_2);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -275,8 +275,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks
-                   + sizeof(router) + sizeof(dynamicBiasTable);
+        usize size =
+          sizeof(featureTransformer) + sizeof(network) + sizeof(router) + sizeof(dynamicBiasTable);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -324,9 +324,9 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
         enemyKingBucket = int(enemyKsqOriented);
 
     const int c_us = make_router_index(mat_id_us, ourKingBucket, enemyKingBucket);
-    const uint16_t packed_1 = router[c_us];
+    const uint32_t packed_1 = router[c_us];
     const int e1 = packed_1 & 0x3F;
-    const int      b1       = (packed_1 >> 6) & 0xFF;
+    const int      b1       = (packed_1 >> 16) & 0x7F;
 
     // Perspective 2 (Non-STM):
     const uint16_t mat_id_them = get_material_id(pos, ~stm);
@@ -349,23 +349,28 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
         ourKingBucketThem = int(ourKsqOrientedThem);
 
     const int c_them = make_router_index(mat_id_them, theirKingBucket, ourKingBucketThem);
-    const uint16_t packed_2 = router[c_them];
-    const int e2 = packed_2 & 0x3F;
-    const int      b2       = (packed_2 >> 6) & 0xFF;
+    const uint32_t packed_2 = router[c_them];
+    const int      e2       = (packed_2 >> 8) & 0x3F;
+    const int      b2       = (packed_2 >> 24) & 0x7F;
 
     NnueEvalTrace t{};
     t.weightExperts = {e1, e2};
     t.biasExperts   = {b1, b2};
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const int weights[4][2] = {{e1, e2}, {e1, e1}, {e2, e2}, {e2, e1}};
-    const int biases[4][2]  = {{b1, b2}, {b1, b1}, {b2, b2}, {b2, b1}};
+    // Counterfactuals exchange contexts, not IDs between independent banks.
+    const uint32_t contexts[4][2] = {
+      {packed_1, packed_2}, {packed_1, packed_1}, {packed_2, packed_2}, {packed_2, packed_1}};
     for (int i = 0; i < 4; ++i)
-        t.positional[i] =
-          static_cast<Value>(network[weights[i][0]].propagate(
-                               transformedFeatures, nnzInfo, network[weights[i][1]],
-                               dynamicBiasTable[biases[i][0]], dynamicBiasTable[biases[i][1]])
+    {
+        const uint32_t us = contexts[i][0], them = contexts[i][1];
+        t.positional[i] = static_cast<Value>(
+          network[us & 0x3F].propagate(transformedFeatures, nnzInfo,
+                                       network[LayerStacks + ((them >> 8) & 0x3F)],
+                                       dynamicBiasTable[(us >> 16) & 0x7F],
+                                       dynamicBiasTable[NumBiasExperts + ((them >> 24) & 0x7F)])
                              / OutputScale);
+    }
 
     return t;
 }
@@ -442,7 +447,7 @@ usize Network::get_content_hash() const {
         hash_combine(h, layerstack);
     for (usize i = 0; i < RouterTableSize; ++i)
         hash_combine(h, router[i]);
-    for (usize i = 0; i < NumBiasExperts; ++i)
+    for (usize i = 0; i < 2 * NumBiasExperts; ++i)
         for (usize j = 0; j < BiasDimension; ++j)
             hash_combine(h, dynamicBiasTable[i][j]);
     return h;
@@ -494,14 +499,14 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         return false;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < LayerStacks; ++i)
+    for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
-    read_little_endian<uint16_t>(stream, router, RouterTableSize);
+    read_little_endian<uint32_t>(stream, router, RouterTableSize);
     read_little_endian<int32_t>(stream, reinterpret_cast<int32_t*>(dynamicBiasTable),
-                                NumBiasExperts * BiasDimension);
+                                2 * NumBiasExperts * BiasDimension);
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
@@ -511,14 +516,14 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         return false;
     if (!Detail::write_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < LayerStacks; ++i)
+    for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
-    write_little_endian<uint16_t>(stream, router, RouterTableSize);
+    write_little_endian<uint32_t>(stream, router, RouterTableSize);
     write_little_endian<int32_t>(stream, reinterpret_cast<const int32_t*>(dynamicBiasTable),
-                                 NumBiasExperts * BiasDimension);
+                                 2 * NumBiasExperts * BiasDimension);
     return bool(stream);
 }
 

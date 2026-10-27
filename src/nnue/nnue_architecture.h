@@ -49,8 +49,8 @@ constexpr int       L3 = 32;
 
 constexpr IndexType LayerStacks     = 64;
 constexpr IndexType RouterTableSize = 849420;
-constexpr u32       RouterHash      = 0x4D6F4535u;
-constexpr IndexType NumBiasExperts  = 256;
+constexpr u32       RouterHash      = 0x4D6F4536u;
+constexpr IndexType NumBiasExperts  = 128;
 constexpr IndexType BiasDimension   = 64;
 
 static constexpr u32 get_router_hash() {
@@ -63,8 +63,8 @@ struct NetworkArchitecture {
     static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS> fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 1>                  ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 1>                     ac_0;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>                  ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS * 2, WeightScaleBits + 2>                     ac_0;
     Layers::AffineTransform<FC_0_OUTPUTS * 4, FC_1_OUTPUTS>                        fc_1;
     Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                      ac_sqr_1;
     Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits>                         ac_1;
@@ -107,38 +107,18 @@ struct NetworkArchitecture {
                   const int32_t*                dynBias,
                   const int32_t*                otherBias) const {
         struct alignas(CacheLineSize) Buffer {
-            alignas(CacheLineSize) TransformedFeatureType reversedFT[L1];
             alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer first[2];
             alignas(CacheLineSize) i32 firstSqr[FC_0_OUTPUTS * 2], firstLin[FC_0_OUTPUTS * 2];
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer second[2];
             alignas(CacheLineSize) i32 secondSqr[FC_1_OUTPUTS * 2], secondLin[FC_1_OUTPUTS * 2];
             alignas(CacheLineSize) u8 combined[(FC_0_OUTPUTS + FC_1_OUTPUTS) * 4];
-            alignas(CacheLineSize) u8 reversed[(FC_0_OUTPUTS + FC_1_OUTPUTS) * 4];
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
         };
         Buffer buffer;
-        std::rotate_copy(transformedFeatures, transformedFeatures + L1 / 2,
-                         transformedFeatures + L1, buffer.reversedFT);
-        NNZInfo<L1> reversedNNZ;
-#if defined(USE_AVX512)
-        reversedNNZ.count = nnzInfo.count;
-        for (unsigned i = 0; i < nnzInfo.count; ++i)
-            reversedNNZ.nnz[i] = nnzInfo.nnz[i] ^ (L1 / 8);  // Four-byte chunks
-#elif defined(USE_RVV)
-        reversedNNZ.count = nnzInfo.count;
-        for (usize i = 0; i < nnzInfo.count; ++i)
-            reversedNNZ.nnz[i] = nnzInfo.nnz[i] ^ (L1 / 2);
-#else
-        constexpr usize HalfNNZ = sizeof(nnzInfo.bitset) / 2;
-        std::memcpy(reversedNNZ.bitset, nnzInfo.bitset + HalfNNZ, HalfNNZ);
-        std::memcpy(reversedNNZ.bitset + HalfNNZ, nnzInfo.bitset, HalfNNZ);
-#endif
         fc_0.propagate(transformedFeatures, buffer.first[0], nnzInfo);
-        other.fc_0.propagate(buffer.reversedFT, buffer.first[1], reversedNNZ);
-        const i32 skip =
-          i32(((i64(buffer.first[0][FC_0_OUTPUTS - 2]) - buffer.first[0][FC_0_OUTPUTS - 1])
-               - (i64(buffer.first[1][FC_0_OUTPUTS - 2]) - buffer.first[1][FC_0_OUTPUTS - 1]))
-              / 2);
+        other.fc_0.propagate(transformedFeatures, buffer.first[1], nnzInfo);
+        const i64 skips = i64(buffer.first[0][FC_0_OUTPUTS - 2]) - buffer.first[0][FC_0_OUTPUTS - 1]
+                        + buffer.first[1][FC_0_OUTPUTS - 2] - buffer.first[1][FC_0_OUTPUTS - 1];
         const int32_t* biases[2] = {dynBias, otherBias};
         for (int p = 0; p < 2; ++p)
             for (IndexType i = 0; i < FC_0_OUTPUTS; ++i)
@@ -154,20 +134,8 @@ struct NetworkArchitecture {
         ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
         ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS * 2);
 #endif
-        // Logical activations are [A_sq, B_sq, A_lin, B_lin]. Account for
-        // SIMD lane packing when exchanging the two 16-neuron perspectives.
-        static_assert(FC_0_OUTPUTS == 16 && FC_1_OUTPUTS == 16);
-#if defined(USE_PAIR_ACTIVATIONS) && defined(USE_AVX512)
-        constexpr IndexType PerspectiveMask = 4;
-#elif defined(USE_PAIR_ACTIVATIONS) || defined(USE_LASX)
-        constexpr IndexType PerspectiveMask = 8;
-#else
-        constexpr IndexType PerspectiveMask = 16;
-#endif
-        for (IndexType i = 0; i < FC_0_OUTPUTS * 4; ++i)
-            buffer.reversed[i] = buffer.combined[i ^ PerspectiveMask];
         fc_1.propagate(buffer.combined, buffer.second[0]);
-        other.fc_1.propagate(buffer.reversed, buffer.second[1]);
+        other.fc_1.propagate(buffer.combined, buffer.second[1]);
         for (int p = 0; p < 2; ++p)
             for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
             {
@@ -184,19 +152,13 @@ struct NetworkArchitecture {
         ac_sqr_1.propagate(buffer.secondSqr, buffer.combined + Offset);
         ac_1.propagate(buffer.secondLin, buffer.combined + Offset + FC_1_OUTPUTS * 2);
 #endif
-        for (IndexType i = 0; i < FC_1_OUTPUTS * 4; ++i)
-            buffer.reversed[Offset + i] = buffer.combined[Offset + (i ^ PerspectiveMask)];
         fc_2.propagate(buffer.combined, buffer.output[0]);
-        other.fc_2.propagate(buffer.reversed, buffer.output[1]);
-        // Convert the opponent readout and skip to STM coordinates.
-        i32 fwdOut = i32((i64(buffer.output[0][0]) - buffer.output[1][0]) / 2) + skip;
-
-        // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
-        // quantized form, but we want 1.0 to be equal to 600*OutputScale
-        // to make overflow impossible we cast to int64_t
+        other.fc_2.propagate(buffer.combined, buffer.output[1]);
+        // Both readouts predict STM scores. Convert their scale 128 to the
+        // skips' scale 256, then average complete predictions exactly once.
+        const i64     fwdOut = (2 * (i64(buffer.output[0][0]) + buffer.output[1][0]) + skips) / 2;
         constexpr i64 multiplier = 600 * OutputScale;
-        constexpr i64 denominator =
-          static_cast<i64>(HiddenOneVal) * static_cast<i64>(1U << WeightScaleBits) * 2;
+        constexpr i64 denominator = static_cast<i64>(HiddenOneVal) * (1U << WeightScaleBits) * 4;
 
         i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
         return outputValue;

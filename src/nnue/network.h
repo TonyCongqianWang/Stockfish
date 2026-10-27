@@ -94,13 +94,13 @@ class Network {
     FeatureTransformer featureTransformer;
 
     // Evaluation function
-    NetworkArchitecture network[LayerStacks];
+    NetworkArchitecture network[2 * LayerStacks];
 
-    // Downstream Top-2 MoE dual router table (849,420 uint16)
-    alignas(CacheLineSize) uint16_t router[RouterTableSize];
+    // Byte-aligned role routing: STM weights, OPP weights, STM biases, OPP biases.
+    alignas(CacheLineSize) uint32_t router[RouterTableSize];
 
-    // Dynamic bias table (256 experts x 64 int32)
-    alignas(CacheLineSize) int32_t dynamicBiasTable[NumBiasExperts][BiasDimension];
+    // STM and OPP bias banks (128 experts x 64 int32 each).
+    alignas(CacheLineSize) int32_t dynamicBiasTable[2 * NumBiasExperts][BiasDimension];
 
     bool initialized = false;
 
