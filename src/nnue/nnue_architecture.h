@@ -115,8 +115,8 @@ struct NetworkArchitecture {
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
         };
         Buffer buffer;
-        fc_0.propagate(transformedFeatures, buffer.first[0], nnzInfo);
-        other.fc_0.propagate(transformedFeatures, buffer.first[1], nnzInfo);
+        fc_0.propagate_pair(transformedFeatures, buffer.first[0], other.fc_0, buffer.first[1],
+                            nnzInfo);
         const i64 skips = i64(buffer.first[0][FC_0_OUTPUTS - 2]) - buffer.first[0][FC_0_OUTPUTS - 1]
                         + buffer.first[1][FC_0_OUTPUTS - 2] - buffer.first[1][FC_0_OUTPUTS - 1];
         const int32_t* biases[2] = {dynBias, otherBias};
@@ -134,8 +134,7 @@ struct NetworkArchitecture {
         ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
         ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS * 2);
 #endif
-        fc_1.propagate(buffer.combined, buffer.second[0]);
-        other.fc_1.propagate(buffer.combined, buffer.second[1]);
+        fc_1.propagate_pair(buffer.combined, buffer.second[0], other.fc_1, buffer.second[1]);
         for (int p = 0; p < 2; ++p)
             for (IndexType i = 0; i < FC_1_OUTPUTS; ++i)
             {
