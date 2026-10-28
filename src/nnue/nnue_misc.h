@@ -48,8 +48,10 @@ struct EvalFile {
 };
 
 struct NnueEvalTrace {
-    Value positional[LayerStacks];
-    usize correctBucket;
+    Value              positional[4];
+    std::array<int, 2> weightExperts;
+    std::array<int, 2> downstreamExperts;
+    std::array<int, 2> biasExperts;
 };
 
 class Network;
