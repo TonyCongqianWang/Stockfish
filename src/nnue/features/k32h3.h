@@ -62,21 +62,21 @@ class K32H3 {
 
    public:
     // Hash value embedded in the evaluation file
-    static constexpr u32 HashValue = 0xab005cefu;
+    static constexpr u32 HashValue = 0x32b5e387u;
 
     // Piece-square block of a perspective, in order of increasing heavy material:
-    //   0: no rook or queen on the board,
-    //   1: some rook or queen on the board, but the opponent has no queen,
+    //   0: the opponent has no rook or queen,
+    //   1: the opponent has a rook but no queen,
     //   2: the opponent has a queen.
     static constexpr int NumBlocks = 3;
 
     struct BlockState {
         int queens[COLOR_NB];
-        int rooksAndQueens;
+        int rooks[COLOR_NB];
     };
 
     static constexpr int block(const BlockState& m, Color perspective) {
-        return m.queens[~perspective] ? 2 : m.rooksAndQueens > 0;
+        return m.queens[~perspective] ? 2 : m.rooks[~perspective] > 0;
     }
     static int        block(const Position& pos, Color perspective);
     static BlockState block_state(const Position& pos);

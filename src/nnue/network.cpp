@@ -19,6 +19,7 @@
 #include "network.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -64,6 +65,54 @@ const unsigned int  gEmbeddedNNUESize    = 1;
 namespace Stockfish::Eval::NNUE {
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// Legal material states (non-king pieces, pawns, cascading material category).
+constexpr auto MAT_ID_TABLE = [] {
+    std::array<std::array<std::array<uint16_t, 4>, 9>, 16> table{};
+    uint16_t                                               id = 0;
+    for (int t = 0; t < 16; ++t)
+        for (int p = 0; p <= std::min(8, t); ++p)
+            for (int h = 0; h < 4; ++h)
+                if (t - p >= (h < 2 ? 1 : h == 2 ? 2 : 0))
+                    table[t][p][h] = id++;
+    return table;
+}();
+
+inline uint16_t get_material_id(const Position& pos, Color c) {
+    const int      t = std::clamp(pos.count<ALL_PIECES>(c) - 1, 0, 15);
+    const int      p = std::clamp(pos.count<PAWN>(c), 0, std::min(8, t));
+    const Bitboard b = pos.pieces(c, BISHOP);
+    const int      h = t - p >= 1 && pos.pieces(c, QUEEN)                                        ? 0
+                     : t - p >= 1 && pos.pieces(c, ROOK)                                         ? 1
+                     : t - p >= 2 && (b & 0x55AA55AA55AA55AAULL) && (b & ~0x55AA55AA55AA55AAULL) ? 2
+                                                                                                 : 3;
+    return MAT_ID_TABLE[t][p][h];
+}
+
+int router_context(const Position& pos, Color perspective) {
+    const auto orient      = [perspective](Square sq) { return int(sq) ^ (56 * int(perspective)); };
+    const int  own         = orient(pos.square<KING>(perspective));
+    const int  enemy       = orient(pos.square<KING>(~perspective));
+    const bool ownCastling = pos.can_castle(perspective == WHITE ? WHITE_CASTLING : BLACK_CASTLING);
+    const bool enemyCastling =
+      pos.can_castle(perspective == WHITE ? BLACK_CASTLING : WHITE_CASTLING);
+    const int ownBucket =
+      ownCastling && own == SQ_E1 ? 32 : (own / 8) * 4 + std::min(own % 8, 7 - own % 8);
+    const int enemyBucket = enemyCastling && enemy == SQ_E8 ? 64 : enemy;
+    return (get_material_id(pos, perspective) * 33 + ownBucket) * 65 + enemyBucket;
+}
+
+struct Route {
+    int fc0, downstream, bias;
+    explicit Route(u32 packed) :
+        fc0(packed & 31),
+        downstream((packed >> 5) & 31),
+        bias((packed >> 10) & 63) {}
+};
+
+}  // namespace
 
 namespace Detail {
 
@@ -138,6 +187,17 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
     return saved;
 }
 
+i32 Network::propagate_routes(const TransformedFeatureType* features,
+                              const NNZInfo<L1>&            nnz,
+                              u32                           us,
+                              u32                           them) const {
+    const Route own(us), opponent(them >> 16);
+    return network[own.fc0].propagate(
+      features, nnz, network[LayerStacks + opponent.fc0], network[own.downstream],
+      network[LayerStacks + opponent.downstream], dynamicBiasTable[own.bias],
+      dynamicBiasTable[NumBiasExperts + opponent.bias]);
+}
+
 Value Network::evaluate(const Position&    pos,
                         AccumulatorStack&  accumulatorStack,
                         AccumulatorCaches& cache) const {
@@ -150,13 +210,13 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
     const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
+
+    const u32 us   = router[router_context(pos, stm)];
+    const u32 them = router[router_context(pos, ~stm)];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
+    const auto positional = propagate_routes(transformedFeatures, nnzInfo, us, them);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -193,7 +253,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks;
+        usize size =
+          sizeof(featureTransformer) + sizeof(network) + sizeof(router) + sizeof(dynamicBiasTable);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -214,21 +275,25 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
     const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
 
+    const u32     packed_1 = router[router_context(pos, stm)];
+    const u32     packed_2 = router[router_context(pos, ~stm)];
+    const Route   own(packed_1), opponent(packed_2 >> 16);
     NnueEvalTrace t{};
-    t.correctBucket = bucket;
-
+    t.weightExperts     = {own.fc0, opponent.fc0};
+    t.downstreamExperts = {own.downstream, opponent.downstream};
+    t.biasExperts       = {own.bias, opponent.bias};
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-
-    for (IndexType b = 0; b < LayerStacks; ++b)
+    // Counterfactuals exchange contexts, not IDs between independent banks.
+    const uint32_t contexts[4][2] = {
+      {packed_1, packed_2}, {packed_1, packed_1}, {packed_2, packed_2}, {packed_2, packed_1}};
+    for (int i = 0; i < 4; ++i)
     {
-        const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
-        t.positional[b]       = static_cast<Value>(positional / OutputScale);
+        const uint32_t us = contexts[i][0], them = contexts[i][1];
+        t.positional[i] = static_cast<Value>(
+          propagate_routes(transformedFeatures, nnzInfo, us, them) / OutputScale);
     }
 
     return t;
@@ -276,7 +341,11 @@ void Network::load_internal(EvalFile& evalFile) {
 }
 
 
-void Network::initialize() { initialized = true; }
+void Network::initialize() {
+    initialized = true;
+    std::memset(router, 0, sizeof(router));
+    std::memset(dynamicBiasTable, 0, sizeof(dynamicBiasTable));
+}
 
 
 bool Network::save(std::ostream& stream, const std::string& netDescription) const {
@@ -300,6 +369,11 @@ usize Network::get_content_hash() const {
     hash_combine(h, featureTransformer);
     for (auto&& layerstack : network)
         hash_combine(h, layerstack);
+    for (usize i = 0; i < RouterTableSize; ++i)
+        hash_combine(h, router[i]);
+    for (usize i = 0; i < 2 * NumBiasExperts; ++i)
+        for (usize j = 0; j < BiasDimension; ++j)
+            hash_combine(h, dynamicBiasTable[i][j]);
     return h;
 }
 
@@ -349,11 +423,14 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         return false;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < LayerStacks; ++i)
+    for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
+    read_little_endian<uint32_t>(stream, router, RouterTableSize);
+    read_little_endian<int32_t>(stream, reinterpret_cast<int32_t*>(dynamicBiasTable),
+                                2 * NumBiasExperts * BiasDimension);
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
@@ -363,11 +440,14 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         return false;
     if (!Detail::write_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < LayerStacks; ++i)
+    for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
+    write_little_endian<uint32_t>(stream, router, RouterTableSize);
+    write_little_endian<int32_t>(stream, reinterpret_cast<const int32_t*>(dynamicBiasTable),
+                                 2 * NumBiasExperts * BiasDimension);
     return bool(stream);
 }
 

@@ -124,7 +124,8 @@ int K32H3::block(const Position& pos, Color perspective) {
 }
 
 K32H3::BlockState K32H3::block_state(const Position& pos) {
-    return {{pos.count<QUEEN>(WHITE), pos.count<QUEEN>(BLACK)}, popcount(pos.pieces(ROOK, QUEEN))};
+    return {{pos.count<QUEEN>(WHITE), pos.count<QUEEN>(BLACK)},
+            {pos.count<ROOK>(WHITE), pos.count<ROOK>(BLACK)}};
 }
 
 bool K32H3::requires_refresh(const DiffType&   diff,
