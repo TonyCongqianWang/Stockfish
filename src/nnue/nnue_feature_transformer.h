@@ -90,7 +90,9 @@ class FeatureTransformer {
     static constexpr IndexType PairInputDimensions   = PairFeatureSet::Dimensions;
     static constexpr IndexType PsqDimensions         = PSQFeatureSet::Dimensions;
     static constexpr IndexType ThreatAndPpDimensions = ThreatInputDimensions + PairInputDimensions;
-    static constexpr IndexType InputDimensions       = PsqDimensions + ThreatAndPpDimensions;
+    static constexpr IndexType MaterialInputDimensions = Features::Composition::Dimensions;
+    static constexpr IndexType InputDimensions =
+      PsqDimensions + ThreatAndPpDimensions + MaterialInputDimensions;
     static constexpr IndexType OutputDimensions      = HalfDimensions;
     static constexpr IndexType ThreatWeightSize      = ThreatInputDimensions * HalfDimensions;
     static constexpr IndexType PairWeightSize        = PairInputDimensions * HalfDimensions;
@@ -158,13 +160,14 @@ class FeatureTransformer {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
-        return combine_hash(
-                 {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, PSQFeatureSet::HashValue})
+        return combine_hash({ThreatFeatureSet::HashValue, PairFeatureSet::HashValue,
+                             PSQFeatureSet::HashValue, Features::Composition::HashValue})
              ^ (OutputDimensions * 2);
     }
 
     void permute_weights() {
         permute<16>(biases, PackusEpi16Order);
+        permute<8>(materialWeights, PackusEpi16Order);
         permute<8>(weights, PackusEpi16Order);
 
         permute<8>(threatAndPpWeights, PackusEpi16Order);
@@ -189,6 +192,7 @@ class FeatureTransformer {
 #endif
 
         permute<16>(biases, InversePackusEpi16Order);
+        permute<8>(materialWeights, InversePackusEpi16Order);
         permute<8>(weights, InversePackusEpi16Order);
         permute<8>(threatAndPpWeights, InversePackusEpi16Order);
     }
@@ -204,6 +208,7 @@ class FeatureTransformer {
         read_little_endian(stream, pawnPairWeightData(), PairWeightSize);
 
         read_little_endian(stream, weights.data(), weights.size());
+        read_little_endian(stream, materialWeights.data(), materialWeights.size());
 
         permute_weights();
 
@@ -222,6 +227,7 @@ class FeatureTransformer {
         write_little_endian(stream, copy->pawnPairWeightData(), PairWeightSize);
 
         write_little_endian(stream, copy->weights.data(), copy->weights.size());
+        write_little_endian(stream, copy->materialWeights.data(), copy->materialWeights.size());
 
         return !stream.fail();
     }
@@ -231,6 +237,7 @@ class FeatureTransformer {
 
         hash_combine(h, get_raw_data_hash(biases));
         hash_combine(h, get_raw_data_hash(weights));
+        hash_combine(h, get_raw_data_hash(materialWeights));
 
         hash_combine(h, get_raw_data_hash(threatAndPpWeights));
 
@@ -433,6 +440,8 @@ class FeatureTransformer {
    public:
     alignas(CacheLineSize) BiasesArray biases;
     alignas(CacheLineSize) WeightArray weights;
+    // Packus lane order only: consumed by the independent int8 material kernel.
+    alignas(CacheLineSize) std::array<i8, Features::Composition::Dimensions * L1> materialWeights;
 
     // Threats and pawn-pair features are concatenated into one array to allow for a single index to address either.
     // The first pawn-pair feature is at index ThreatFeatureSet::Dimensions.

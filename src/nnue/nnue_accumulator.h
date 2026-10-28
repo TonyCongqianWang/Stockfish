@@ -28,6 +28,7 @@
 #include "../types.h"
 #include "../misc.h"
 #include "features/k32h3.h"
+#include "features/composition.h"
 #include "nnue_architecture.h"
 #include "nnue_common.h"
 
@@ -40,7 +41,7 @@ namespace Stockfish::Eval::NNUE {
 class FeatureTransformer;
 
 // Class that holds the result of affine transformation of input features,
-// combined HalfKA + Threats
+// combined PSQ, threats, pawn pairs, and composition-conditioned material
 struct alignas(CacheLineSize) Accumulator {
     std::array<std::array<i16, L1>, COLOR_NB> accumulation;
     std::array<bool, COLOR_NB>                computed = {};
@@ -60,9 +61,10 @@ struct AccumulatorCaches {
     }
 
     struct alignas(CacheLineSize) Entry {
-        std::array<BiasType, L1>     accumulation;
-        std::array<Piece, SQUARE_NB> pieces;
-        Bitboard                     pieceBB;
+        std::array<BiasType, L1>      accumulation;
+        std::array<Piece, SQUARE_NB>  pieces;
+        Bitboard                      pieceBB;
+        Features::Composition::Counts materialCounts;
 
         // To initialize a refresh entry, we set all its bitboards empty,
         // so we put the biases in the accumulation, without any weights on top
@@ -90,7 +92,8 @@ struct AccumulatorCaches {
 
 
 struct AccumulatorState: public Accumulator, Dirties {
-    PSQFeatureSet::BlockState blockBefore;
+    PSQFeatureSet::BlockState     blockBefore;
+    Features::Composition::Counts materialCounts;
 };
 
 class AccumulatorStack {

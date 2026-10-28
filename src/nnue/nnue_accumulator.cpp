@@ -246,6 +246,40 @@ namespace {
 
 constexpr IndexType Dimensions = FeatureTransformer::OutputDimensions;
 
+using Composition = Features::Composition;
+
+// No vector work when counts agree, including ordinary king moves and castling.
+// Material rows use accumulator lane order (without the paired-widening permutation).
+void update_material(Color                      perspective,
+                     const FeatureTransformer&  ft,
+                     std::array<i16, L1>&       acc,
+                     const Composition::Counts& before,
+                     const Composition::Counts& after,
+                     [[maybe_unused]] bool      cacheUpdate = false) {
+    if (before == after)
+        return;
+#ifdef NNUE_COMPOSITION_TEST
+    ++(cacheUpdate ? Composition::cacheUpdates : Composition::incrementalUpdates);
+#endif
+    const int oldBucket = Composition::bucket(before, perspective);
+    const int newBucket = Composition::bucket(after, perspective);
+    int       oldRow    = Composition::Offsets[oldBucket];
+    int       newRow    = Composition::Offsets[newBucket];
+    for (int t = 0; t < 10; ++t)
+    {
+        const int   i        = (t + 5 * perspective) % 10;
+        const int   oldCount = before[i], newCount = after[i];
+        const auto* oldWeight = oldCount ? &ft.materialWeights[usize(oldRow++) * L1] : nullptr;
+        const auto* newWeight = newCount ? &ft.materialWeights[usize(newRow++) * L1] : nullptr;
+        if (oldBucket == newBucket && oldCount == newCount)
+            continue;
+        for (IndexType j = 0; j < L1; ++j)
+            acc[j] = i16(int(acc[j]) + (newCount ? newCount * newWeight[j] : 0)
+                         - (oldCount ? oldCount * oldWeight[j] : 0));
+    }
+}
+
+
 #ifdef USE_RVV
 
 struct Tiling {
@@ -601,9 +635,16 @@ void update_accumulator_incremental(Color                     perspective,
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqAdded, psqRemoved);
     }
 
+    target_state.materialCounts = computed.materialCounts;
+    if (Composition::changes(dirtyPiece))
+        target_state.materialCounts =
+          Composition::changed(computed.materialCounts, dirtyPiece, Forward ? 1 : -1);
+
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
                    thrAdded, thrRemoved, featureTransformer.psq_weights(psqBlock));
 
+    update_material(perspective, featureTransformer, target_state.accumulation[perspective],
+                    computed.materialCounts, target_state.materialCounts);
     target_state.computed[perspective] = true;
 }
 
@@ -637,6 +678,11 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
     PSQFeatureSet::append_changed_indices(BLACK, black_ksq, target_state.dirtyPiece,
                                           psq_removed[BLACK], psq_added[BLACK]);
 
+    target_state.materialCounts = computed.materialCounts;
+    if (Composition::changes(target_state.dirtyPiece))
+        target_state.materialCounts =
+          Composition::changed(computed.materialCounts, target_state.dirtyPiece, 1);
+
     apply_combined(WHITE, featureTransformer, computed, target_state, psq_added[WHITE],
                    psq_removed[WHITE], thr_added[WHITE], thr_removed[WHITE],
                    featureTransformer.psq_weights(whiteBlock));
@@ -644,6 +690,9 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
                    psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK],
                    featureTransformer.psq_weights(blackBlock));
 
+    for (Color c : {WHITE, BLACK})
+        update_material(c, featureTransformer, target_state.accumulation[c],
+                        computed.materialCounts, target_state.materialCounts);
     target_state.computed[WHITE] = true;
     target_state.computed[BLACK] = true;
 }
@@ -828,7 +877,7 @@ void update_accumulator_hybrid(Color                     perspective,
     previousPieceBB |= square_bb(oldKsq);
 
     const int   psqBlock   = PSQFeatureSet::block(pos, perspective);
-    const auto& oldEntry   = cache[psqBlock][oldKsq][perspective];
+    auto&       oldEntry   = cache[psqBlock][oldKsq][perspective];
     auto&       newEntry   = cache[psqBlock][newKsq][perspective];
     const auto* psqWeights = featureTransformer.psq_weights(psqBlock);
 
@@ -848,6 +897,18 @@ void update_accumulator_hybrid(Color                     perspective,
                                              thrAdded, threatPpBase, pfStride);
     PairFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyPawnPairs, thrRemoved,
                                            thrAdded, threatPpBase, pfStride);
+
+    // Both Finny entries include material. Match the old entry to the previous
+    // position so its material cancels the computed accumulator's material.
+    target.materialCounts = Composition::changes(dirtyPiece)
+                            ? Composition::changed(computed.materialCounts, dirtyPiece, 1)
+                            : computed.materialCounts;
+    update_material(perspective, featureTransformer, oldEntry.accumulation, oldEntry.materialCounts,
+                    computed.materialCounts, true);
+    oldEntry.materialCounts = computed.materialCounts;
+    update_material(perspective, featureTransformer, newEntry.accumulation, newEntry.materialCounts,
+                    target.materialCounts, true);
+    newEntry.materialCounts = target.materialCounts;
 
     const auto& fromAcc = computed.accumulation[perspective];
     auto&       toAcc   = target.accumulation[perspective];
@@ -909,6 +970,11 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
     PairFeatureSet::append_active_indices(perspective, pos, active);
+
+    accumulator.materialCounts = Composition::counts(pos);
+    update_material(perspective, featureTransformer, entry.accumulation, entry.materialCounts,
+                    accumulator.materialCounts, true);
+    entry.materialCounts = accumulator.materialCounts;
 
     accumulator.computed[perspective] = true;
 
