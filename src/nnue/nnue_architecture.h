@@ -25,6 +25,7 @@
 #include <iosfwd>
 
 #include "features/k32h3.h"
+#include "features/endgame.h"
 #include "features/full_threats.h"
 #include "features/pp_3wide.h"
 #include "layers/affine_transform.h"

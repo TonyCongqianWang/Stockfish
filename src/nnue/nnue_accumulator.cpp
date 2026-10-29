@@ -37,6 +37,112 @@ using namespace SIMD;
 
 namespace {
 
+using Endgame = Features::Endgame;
+
+// Add only changed square rows, including the case of a new orientation.
+void change_endgame(std::array<i16, L1>&      acc,
+                    const FeatureTransformer& ft,
+                    const Endgame::Board&     before,
+                    int                       oldCategory,
+                    int                       oldFlip,
+                    const Endgame::Board&     after,
+                    int                       newCategory,
+                    int                       newFlip,
+                    bool                      enemy) {
+    for (int t = 0; t < 5; ++t)
+    {
+        Bitboard removed = oldCategory >= 0 ? before[t] : 0;
+        Bitboard added   = newCategory >= 0 ? after[t] : 0;
+        if (oldCategory == newCategory && bool(before[0]) == bool(after[0]) && oldFlip == newFlip)
+        {
+            const Bitboard common = removed & added;
+            removed ^= common;
+            added ^= common;
+        }
+        auto apply = [&](Bitboard squares, int category, bool pawns, int flip, int sign) {
+            while (squares)
+            {
+#ifdef NNUE_ENDGAME_TEST
+                ++Endgame::rowUpdates;
+#endif
+                const int index =
+                  Endgame::make_index(category, pawns, t, enemy, pop_lsb(squares), flip);
+                const auto* row = &ft.endgameWeights[usize(index) * L1];
+                for (int j = 0; j < int(L1); ++j)
+                    acc[j] = i16(acc[j] + sign * row[j]);
+            }
+        };
+        apply(removed, oldCategory, bool(before[0]), oldFlip, -1);
+        apply(added, newCategory, bool(after[0]), newFlip, 1);
+    }
+}
+
+const auto& cached_endgame(AccumulatorCaches::EndgameEntry& entry,
+                           const FeatureTransformer&        ft,
+                           const Endgame::Board&            board,
+                           int                              category,
+                           int                              flip,
+                           bool                             enemy) {
+    if (entry.flip != flip)
+    {
+        entry.accumulation.fill(0);
+        entry.board.fill(0);
+    }
+    change_endgame(entry.accumulation, ft, entry.board, category, flip, board, category, flip,
+                   enemy);
+    entry.board = board;
+    entry.flip  = flip;
+    return entry.accumulation;
+}
+
+void reconcile_endgame(Color                     perspective,
+                       const Position&           pos,
+                       const FeatureTransformer& ft,
+                       AccumulatorState&         state,
+                       AccumulatorCaches&        cache) {
+#ifdef NNUE_ENDGAME_TEST
+    ++Endgame::reconciliations;
+#endif
+    const auto after   = Endgame::snapshot(pos);
+    auto&      before  = state.endgameAnchor[perspective];
+    const int  oldFlip = state.endgameFlip[perspective];
+    const int  flip    = Endgame::orientation(perspective, pos.square<KING>(perspective));
+    auto&      acc     = state.accumulation[perspective];
+    for (Color c : {WHITE, BLACK})
+    {
+        if (before[c] == after[c] && oldFlip == flip)
+            continue;
+        const int oldCategory = Endgame::category(before[c]);
+        const int newCategory = Endgame::category(after[c]);
+        if (oldCategory == newCategory && bool(before[c][0]) == bool(after[c][0])
+            && oldFlip == flip)
+            change_endgame(acc, ft, before[c], oldCategory, flip, after[c], newCategory, flip,
+                           c != perspective);
+        else
+        {
+            // Slots include pawn presence, so source and destination cannot alias
+            // unless only orientation changed. Remove the source before replacing it.
+            auto& entries = cache.endgames[perspective][c];
+            if (oldCategory >= 0)
+            {
+                const auto& old = cached_endgame(entries[oldCategory + 8 * !before[c][0]], ft,
+                                                 before[c], oldCategory, oldFlip, c != perspective);
+                for (int j = 0; j < int(L1); ++j)
+                    acc[j] = i16(acc[j] - old[j]);
+            }
+            if (newCategory >= 0)
+            {
+                const auto& next = cached_endgame(entries[newCategory + 8 * !after[c][0]], ft,
+                                                  after[c], newCategory, flip, c != perspective);
+                for (int j = 0; j < int(L1); ++j)
+                    acc[j] = i16(acc[j] + next[j]);
+            }
+        }
+    }
+    before                         = after;
+    state.endgameFlip[perspective] = flip;
+}
+
 template<bool Forward>
 void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
@@ -110,6 +216,8 @@ void AccumulatorStack::evaluate(const Position&           pos,
         evaluate_side(WHITE, pos, featureTransformer, cache, last_white);
         evaluate_side(BLACK, pos, featureTransformer, cache, last_black);
     }
+    reconcile_endgame(WHITE, pos, featureTransformer, mut_latest(), cache);
+    reconcile_endgame(BLACK, pos, featureTransformer, mut_latest(), cache);
 }
 
 void AccumulatorStack::evaluate_side(Color                     perspective,
@@ -604,7 +712,9 @@ void update_accumulator_incremental(Color                     perspective,
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
                    thrAdded, thrRemoved, featureTransformer.psq_weights(psqBlock));
 
-    target_state.computed[perspective] = true;
+    target_state.endgameAnchor[perspective] = computed.endgameAnchor[perspective];
+    target_state.endgameFlip[perspective]   = computed.endgameFlip[perspective];
+    target_state.computed[perspective]      = true;
 }
 
 void update_accumulator_incremental_both(const FeatureTransformer& featureTransformer,
@@ -644,6 +754,8 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
                    psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK],
                    featureTransformer.psq_weights(blackBlock));
 
+    target_state.endgameAnchor   = computed.endgameAnchor;
+    target_state.endgameFlip     = computed.endgameFlip;
     target_state.computed[WHITE] = true;
     target_state.computed[BLACK] = true;
 }
@@ -883,7 +995,9 @@ void update_accumulator_hybrid(Color                     perspective,
     newEntry.pieces  = currentPieces;
     newEntry.pieceBB = pos.pieces();
 
-    target.computed[perspective] = true;
+    target.endgameAnchor[perspective] = computed.endgameAnchor[perspective];
+    target.endgameFlip[perspective]   = computed.endgameFlip[perspective];
+    target.computed[perspective]      = true;
 }
 
 // HalfKA data comes from the Finny table entry, while the threats are built
@@ -910,7 +1024,9 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
     PairFeatureSet::append_active_indices(perspective, pos, active);
 
-    accumulator.computed[perspective] = true;
+    accumulator.endgameAnchor[perspective] = {};
+    accumulator.endgameFlip[perspective]   = Endgame::orientation(perspective, ksq);
+    accumulator.computed[perspective]      = true;
 
     Tile acc;
 

@@ -73,8 +73,21 @@ struct AccumulatorCaches {
         }
     };
 
+    struct alignas(CacheLineSize) EndgameEntry {
+        std::array<i16, L1>      accumulation{};
+        Features::Endgame::Board board{};
+        int                      flip = -1;
+    };
+
+    // Receiving perspective, piece color, pawn-presence/category.
+    std::array<std::array<std::array<EndgameEntry, 16>, COLOR_NB>, COLOR_NB> endgames;
+
     template<typename Network>
     void clear(const Network& network) {
+        for (auto& sides : endgames)
+            for (auto& colors : sides)
+                for (auto& entry : colors)
+                    entry.flip = -1;
         for (auto& entries2D : entries)
             for (auto& entries1D : entries2D)
                 for (auto& entry : entries1D)
@@ -91,6 +104,11 @@ struct AccumulatorCaches {
 
 struct AccumulatorState: public Accumulator, Dirties {
     PSQFeatureSet::BlockState blockBefore;
+    // computed[] marks spatial readiness. The spatial traversal carries this
+    // anchor unchanged; only the requested
+    // state reconciles endgame rows, skipping unevaluated category transitions.
+    std::array<Features::Endgame::Snapshot, COLOR_NB> endgameAnchor;
+    std::array<int, COLOR_NB>                         endgameFlip;
 };
 
 class AccumulatorStack {
