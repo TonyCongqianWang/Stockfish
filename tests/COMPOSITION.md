@@ -116,3 +116,25 @@ a fresh anchor. No accumulator lanes or downstream operations are added.
 The harness includes three consecutive presence-bit changes without a king/H3
 refresh, checks exactly one leaf reconciliation per perspective, then evaluates
 each state during undo. Existing randomized lazy, refresh, and null tests remain.
+
+## Bucket-indexed material Finny cache
+
+Each thread has 64 tagged slots per receiving perspective (270,336 bytes total
+on x86-64). High bucket bits are folded into the slot index; tags prevent aliasing.
+Entries contain a material sum and the full count snapshot behind that sum.
+A hit in the same composition bucket reconciles only classes whose counts differ;
+an exact count match reads no material weight rows. Replacement builds the new
+entry from zero. Network cache clearing invalidates all material tags.
+
+Bucket changes reconcile the old and new endpoint cache entries and apply their
+vector difference to the existing accumulator. Colliding endpoints consume the
+old vector before replacing its slot. Same-bucket updates retain the direct
+changed-class path. Sparse endpoints with at most four active class rows in total
+also use the direct path, avoiding two int16 cache-vector reads when a few int8
+rows suffice. Cold cache misses still construct material sums; usefulness depends
+on reuse and is measured separately from correctness.
+
+Tests cover warm hits with changed counts, collisions, network replacement,
+reverse lazy updates and deferred leaf-only reconciliation, in scalar and AVX2.
+The cache does not alter network serialization, accumulator width, downstream
+layers or evaluation values, and is never added as another per-evaluation vector.

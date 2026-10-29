@@ -201,6 +201,48 @@ int main(int argc, char** argv) {
             check(pos);
         }
     }
+    // A two-capture lazy transition whose endpoint buckets hash to the same
+    // material-cache slot for White. The old vector must be consumed before
+    // loading the new entry into that slot.
+    {
+        Position  pos;
+        StateInfo root, children[2];
+        require(!pos.set("1b1qk3/p7/8/8/8/8/n1P4r/R3KBN1 w Q - 0 1", false, &root),
+                "collision FEN");
+        stack->reset();
+        check(pos);
+        const Move moves[]    = {Move(SQ_A1, SQ_A2), Move(SQ_H2, SQ_C2)};
+        const auto collisions = Composition::materialCacheCollisions;
+        for (int i = 0; i < 2; ++i)
+        {
+            require(pos.legal(moves[i]), "collision move legality");
+            auto& d = stack->push(pos);
+            pos.do_move(moves[i], children[i], pos.gives_check(moves[i]), d);
+        }
+        check(pos);
+        require(Composition::materialCacheCollisions > collisions,
+                "missing cache collision coverage");
+        for (int i = 1; i >= 0; --i)
+        {
+            pos.undo_move(moves[i]);
+            stack->pop();
+            check(pos);
+        }
+        // Network replacement must invalidate both spatial and material tables.
+        for (auto& w : ft.materialWeights)
+            ++w;
+        cache->clear(*fixture);
+        stack->reset();
+        check(pos);
+    }
+    require(Composition::materialCacheHits && Composition::materialCacheMisses
+              && Composition::materialCacheCountReconciliations,
+            "missing material cache coverage");
+    std::cout << "material_cache_hits=" << Composition::materialCacheHits
+              << " misses=" << Composition::materialCacheMisses
+              << " count_reconciliations=" << Composition::materialCacheCountReconciliations
+              << " collisions=" << Composition::materialCacheCollisions
+              << " material_cache_bytes=" << sizeof(cache->materialEntries) << '\n';
     require(quiet && capture && promotion && ep && castle && presence && sameBucket && king
               && nulls,
             "missing edge coverage");

@@ -37,7 +37,10 @@ using namespace SIMD;
 
 namespace {
 
-void reconcile_material(Color perspective, const FeatureTransformer& ft, AccumulatorState& state);
+void reconcile_material(Color                     perspective,
+                        const FeatureTransformer& ft,
+                        AccumulatorState&         state,
+                        AccumulatorCaches&        cache);
 
 template<bool Forward>
 void update_accumulator_incremental(Color                     perspective,
@@ -115,7 +118,7 @@ void AccumulatorStack::evaluate(const Position&           pos,
     // Only the requested state needs its actual material sum. Traversed states
     // retain their anchor so undo can reconcile them later if they are evaluated.
     for (Color c : {WHITE, BLACK})
-        reconcile_material(c, featureTransformer, mut_latest());
+        reconcile_material(c, featureTransformer, mut_latest(), cache);
 }
 
 void AccumulatorStack::evaluate_side(Color                     perspective,
@@ -286,9 +289,90 @@ void update_material(Color                      perspective,
 }
 
 
-void reconcile_material(Color perspective, const FeatureTransformer& ft, AccumulatorState& state) {
-    update_material(perspective, ft, state.accumulation[perspective],
-                    state.materialAnchor[perspective], state.materialCounts);
+constexpr int material_slot(int bucket) {
+    // Fold high presence bits so losing a queen changes the slot too.
+    return (bucket ^ (bucket >> 6)) & (AccumulatorCaches::MaterialSlots - 1);
+}
+
+const std::array<i16, L1>& cached_material(Color                      perspective,
+                                           const FeatureTransformer&  ft,
+                                           const Composition::Counts& counts,
+                                           AccumulatorCaches&         cache) {
+    const int bucket = Composition::bucket(counts, perspective);
+    auto&     entry  = cache.materialEntries[perspective][material_slot(bucket)];
+    if (entry.bucket != bucket)
+    {
+#ifdef NNUE_COMPOSITION_TEST
+        ++Composition::materialCacheMisses;
+#endif
+        entry.accumulation.fill(0);
+        entry.counts = {};
+        entry.bucket = bucket;
+    }
+    else
+    {
+#ifdef NNUE_COMPOSITION_TEST
+        ++Composition::materialCacheHits;
+        if (entry.counts != counts)
+            ++Composition::materialCacheCountReconciliations;
+#endif
+    }
+    // On a hit, both count snapshots have this bucket: only differing classes
+    // access weights. No row operations at all for an exact count match.
+    update_material(perspective, ft, entry.accumulation, entry.counts, counts, true);
+    entry.counts = counts;
+    return entry.accumulation;
+}
+
+void update_material_cached(Color                      perspective,
+                            const FeatureTransformer&  ft,
+                            std::array<i16, L1>&       acc,
+                            const Composition::Counts& before,
+                            const Composition::Counts& after,
+                            AccumulatorCaches&         cache,
+                            bool                       cacheUpdate = false) {
+    if (before == after)
+        return;
+    const int oldBucket = Composition::bucket(before, perspective);
+    const int newBucket = Composition::bucket(after, perspective);
+    if (oldBucket == newBucket
+        || popcount(Bitboard(oldBucket)) + popcount(Bitboard(newBucket)) <= 4)
+    {
+        // Same-bucket or sparse-material deltas are already cheap; avoid vector-cache
+        // reads/writes and retain the direct changed-class path.
+        update_material(perspective, ft, acc, before, after, cacheUpdate);
+        return;
+    }
+#ifdef NNUE_COMPOSITION_TEST
+    ++(cacheUpdate ? Composition::cacheUpdates : Composition::incrementalUpdates);
+#endif
+    const auto& oldMaterial = cached_material(perspective, ft, before, cache);
+    if (material_slot(oldBucket) == material_slot(newBucket))
+    {
+#ifdef NNUE_COMPOSITION_TEST
+        ++Composition::materialCacheCollisions;
+#endif
+        // Consume the old entry before the colliding new bucket replaces it.
+        for (IndexType j = 0; j < L1; ++j)
+            acc[j] = i16(int(acc[j]) - oldMaterial[j]);
+        const auto& newMaterial = cached_material(perspective, ft, after, cache);
+        for (IndexType j = 0; j < L1; ++j)
+            acc[j] = i16(int(acc[j]) + newMaterial[j]);
+    }
+    else
+    {
+        const auto& newMaterial = cached_material(perspective, ft, after, cache);
+        for (IndexType j = 0; j < L1; ++j)
+            acc[j] = i16(int(acc[j]) + newMaterial[j] - oldMaterial[j]);
+    }
+}
+
+void reconcile_material(Color                     perspective,
+                        const FeatureTransformer& ft,
+                        AccumulatorState&         state,
+                        AccumulatorCaches&        cache) {
+    update_material_cached(perspective, ft, state.accumulation[perspective],
+                           state.materialAnchor[perspective], state.materialCounts, cache);
     state.materialAnchor[perspective] = state.materialCounts;
 }
 
@@ -913,11 +997,12 @@ void update_accumulator_hybrid(Color                     perspective,
     target.materialCounts = Composition::changes(dirtyPiece)
                             ? Composition::changed(computed.materialCounts, dirtyPiece, 1)
                             : computed.materialCounts;
-    update_material(perspective, featureTransformer, oldEntry.accumulation, oldEntry.materialCounts,
-                    computed.materialAnchor[perspective], true);
+    update_material_cached(perspective, featureTransformer, oldEntry.accumulation,
+                           oldEntry.materialCounts, computed.materialAnchor[perspective], cache,
+                           true);
     oldEntry.materialCounts = computed.materialAnchor[perspective];
-    update_material(perspective, featureTransformer, newEntry.accumulation, newEntry.materialCounts,
-                    target.materialCounts, true);
+    update_material_cached(perspective, featureTransformer, newEntry.accumulation,
+                           newEntry.materialCounts, target.materialCounts, cache, true);
     newEntry.materialCounts            = target.materialCounts;
     target.materialAnchor[perspective] = target.materialCounts;
 
@@ -983,8 +1068,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
     PairFeatureSet::append_active_indices(perspective, pos, active);
 
     accumulator.materialCounts = Composition::counts(pos);
-    update_material(perspective, featureTransformer, entry.accumulation, entry.materialCounts,
-                    accumulator.materialCounts, true);
+    update_material_cached(perspective, featureTransformer, entry.accumulation,
+                           entry.materialCounts, accumulator.materialCounts, cache, true);
     entry.materialCounts                    = accumulator.materialCounts;
     accumulator.materialAnchor[perspective] = accumulator.materialCounts;
 

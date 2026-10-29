@@ -75,8 +75,21 @@ struct AccumulatorCaches {
         }
     };
 
+    // Bounded bucket-indexed material Finny table, independent of king squares.
+    // Full counts belong to each entry; matching buckets reconcile only count deltas.
+    static constexpr int MaterialSlots = 64;
+    struct alignas(CacheLineSize) MaterialEntry {
+        std::array<i16, L1>           accumulation;
+        Features::Composition::Counts counts;
+        int                           bucket = -1;
+    };
+    std::array<std::array<MaterialEntry, MaterialSlots>, COLOR_NB> materialEntries;
+
     template<typename Network>
     void clear(const Network& network) {
+        for (auto& side : materialEntries)
+            for (auto& entry : side)
+                entry.bucket = -1;
         for (auto& entries2D : entries)
             for (auto& entries1D : entries2D)
                 for (auto& entry : entries1D)

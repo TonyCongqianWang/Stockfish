@@ -27,8 +27,12 @@ namespace Stockfish::Eval::NNUE::Features {
 struct Composition {
 #ifdef NNUE_COMPOSITION_TEST
     // Test-only counters distinguish state deltas from cold/stale Finny entries.
-    static inline usize incrementalUpdates = 0;
-    static inline usize cacheUpdates       = 0;
+    static inline usize incrementalUpdates                = 0;
+    static inline usize cacheUpdates                      = 0;
+    static inline usize materialCacheHits                 = 0;
+    static inline usize materialCacheMisses               = 0;
+    static inline usize materialCacheCountReconciliations = 0;
+    static inline usize materialCacheCollisions           = 0;
 #endif
     static constexpr u32 HashValue  = 0xC04D1024u;
     static constexpr int Dimensions = 5120;
