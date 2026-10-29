@@ -100,3 +100,19 @@ the measurement noise; negative differences are not evidence of a speedup.
 Cold/stale king cache material reconciliation has additional work. No overall
 search/evaluation-throughput conclusion is justified by these small warm-cache
 samples. The dense evaluation path itself is unchanged.
+
+## Deferred material reconciliation
+
+Spatial readiness and included material are tracked separately. Each perspective
+has a count snapshot identifying the material already inside its combined
+accumulator. Forward/backward spatial traversal carries that snapshot unchanged;
+only the requested evaluation reconciles it with the state's actual counts.
+Unevaluated intermediate buckets therefore do not construct material vectors.
+Undo can reuse an intermediate spatial accumulator and reconcile its material
+on demand. Hybrid king refreshes cancel the included material snapshot, which
+may differ from the previous position's actual counts. Full refreshes establish
+a fresh anchor. No accumulator lanes or downstream operations are added.
+
+The harness includes three consecutive presence-bit changes without a king/H3
+refresh, checks exactly one leaf reconciliation per perspective, then evaluates
+each state during undo. Existing randomized lazy, refresh, and null tests remain.

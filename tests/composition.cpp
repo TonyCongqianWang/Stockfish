@@ -80,6 +80,34 @@ int main(int argc, char** argv) {
         require(stack->latest().materialCounts == Composition::counts(pos), "counts mismatch");
         ++checks;
     };
+    // Three presence changes without a king/H3 refresh: evaluate only the leaf.
+    // Intermediate spatial states retain the root material anchor, rather than
+    // constructing each crossed bucket. Undo must reconcile those states on demand.
+    {
+        Position  pos;
+        StateInfo root, children[3];
+        require(!pos.set("7k/8/8/8/8/1b6/n1B5/R6K w - - 0 1", false, &root), "lazy FEN");
+        stack->reset();
+        check(pos);
+        const Move moves[] = {Move(SQ_A1, SQ_A2), Move(SQ_B3, SQ_C2), Move(SQ_A2, SQ_C2)};
+        const auto updates = Composition::incrementalUpdates;
+        for (int i = 0; i < 3; ++i)
+        {
+            require(pos.legal(moves[i]), "lazy move legality");
+            auto& d = stack->push(pos);
+            pos.do_move(moves[i], children[i], pos.gives_check(moves[i]), d);
+        }
+        check(pos);
+        require(Composition::incrementalUpdates - updates == 2,
+                "lazy chain must reconcile only final material, once per perspective");
+        for (int i = 2; i >= 0; --i)
+        {
+            pos.undo_move(moves[i]);
+            stack->pop();
+            check(pos);
+        }
+    }
+
     const char* fens[] = {
       "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
       "r3k2r/ppp2ppp/2n1bn2/3qp3/3PP3/2N1BN2/PPP2PPP/R3K2R w KQkq - 0 1",

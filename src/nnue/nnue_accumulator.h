@@ -94,6 +94,9 @@ struct AccumulatorCaches {
 struct AccumulatorState: public Accumulator, Dirties {
     PSQFeatureSet::BlockState     blockBefore;
     Features::Composition::Counts materialCounts;
+    // computed[] denotes spatial readiness. Each side may still include material
+    // for an earlier/later position until evaluate() reconciles the requested state.
+    std::array<Features::Composition::Counts, COLOR_NB> materialAnchor;
 };
 
 class AccumulatorStack {

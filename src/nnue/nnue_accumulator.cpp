@@ -37,6 +37,8 @@ using namespace SIMD;
 
 namespace {
 
+void reconcile_material(Color perspective, const FeatureTransformer& ft, AccumulatorState& state);
+
 template<bool Forward>
 void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
@@ -110,6 +112,10 @@ void AccumulatorStack::evaluate(const Position&           pos,
         evaluate_side(WHITE, pos, featureTransformer, cache, last_white);
         evaluate_side(BLACK, pos, featureTransformer, cache, last_black);
     }
+    // Only the requested state needs its actual material sum. Traversed states
+    // retain their anchor so undo can reconcile them later if they are evaluated.
+    for (Color c : {WHITE, BLACK})
+        reconcile_material(c, featureTransformer, mut_latest());
 }
 
 void AccumulatorStack::evaluate_side(Color                     perspective,
@@ -277,6 +283,13 @@ void update_material(Color                      perspective,
             acc[j] = i16(int(acc[j]) + (newCount ? newCount * newWeight[j] : 0)
                          - (oldCount ? oldCount * oldWeight[j] : 0));
     }
+}
+
+
+void reconcile_material(Color perspective, const FeatureTransformer& ft, AccumulatorState& state) {
+    update_material(perspective, ft, state.accumulation[perspective],
+                    state.materialAnchor[perspective], state.materialCounts);
+    state.materialAnchor[perspective] = state.materialCounts;
 }
 
 
@@ -643,9 +656,8 @@ void update_accumulator_incremental(Color                     perspective,
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
                    thrAdded, thrRemoved, featureTransformer.psq_weights(psqBlock));
 
-    update_material(perspective, featureTransformer, target_state.accumulation[perspective],
-                    computed.materialCounts, target_state.materialCounts);
-    target_state.computed[perspective] = true;
+    target_state.materialAnchor[perspective] = computed.materialAnchor[perspective];
+    target_state.computed[perspective]       = true;
 }
 
 void update_accumulator_incremental_both(const FeatureTransformer& featureTransformer,
@@ -690,9 +702,7 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
                    psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK],
                    featureTransformer.psq_weights(blackBlock));
 
-    for (Color c : {WHITE, BLACK})
-        update_material(c, featureTransformer, target_state.accumulation[c],
-                        computed.materialCounts, target_state.materialCounts);
+    target_state.materialAnchor  = computed.materialAnchor;
     target_state.computed[WHITE] = true;
     target_state.computed[BLACK] = true;
 }
@@ -904,11 +914,12 @@ void update_accumulator_hybrid(Color                     perspective,
                             ? Composition::changed(computed.materialCounts, dirtyPiece, 1)
                             : computed.materialCounts;
     update_material(perspective, featureTransformer, oldEntry.accumulation, oldEntry.materialCounts,
-                    computed.materialCounts, true);
-    oldEntry.materialCounts = computed.materialCounts;
+                    computed.materialAnchor[perspective], true);
+    oldEntry.materialCounts = computed.materialAnchor[perspective];
     update_material(perspective, featureTransformer, newEntry.accumulation, newEntry.materialCounts,
                     target.materialCounts, true);
-    newEntry.materialCounts = target.materialCounts;
+    newEntry.materialCounts            = target.materialCounts;
+    target.materialAnchor[perspective] = target.materialCounts;
 
     const auto& fromAcc = computed.accumulation[perspective];
     auto&       toAcc   = target.accumulation[perspective];
@@ -974,7 +985,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
     accumulator.materialCounts = Composition::counts(pos);
     update_material(perspective, featureTransformer, entry.accumulation, entry.materialCounts,
                     accumulator.materialCounts, true);
-    entry.materialCounts = accumulator.materialCounts;
+    entry.materialCounts                    = accumulator.materialCounts;
+    accumulator.materialAnchor[perspective] = accumulator.materialCounts;
 
     accumulator.computed[perspective] = true;
 
