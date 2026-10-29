@@ -150,13 +150,13 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
-    const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
+    const Color stm = pos.side_to_move();
+    const auto  own = perspective_route(pos, stm, exposure[0]);
+    const auto  opp = perspective_route(pos, ~stm, exposure[1]);
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
+    const auto positional = network[own.expert].propagate(transformedFeatures, nnzInfo,
+                                                          network[RoleExperts + opp.expert]);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -214,22 +214,15 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int   pcBucket    = (pos.count<ALL_PIECES>() - 1) / 4;
-    const Color stm         = pos.side_to_move();
-    const int   queenBucket = (pos.pieces(stm, QUEEN) ? 2 : 0) | (pos.pieces(~stm, QUEEN) ? 1 : 0);
-    const int   bucket      = pcBucket * 4 + queenBucket;
-
     NnueEvalTrace t{};
-    t.correctBucket = bucket;
-
+    t.stm = perspective_route(pos, pos.side_to_move(), exposure[0]);
+    t.opp = perspective_route(pos, ~pos.side_to_move(), exposure[1]);
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-
-    for (IndexType b = 0; b < LayerStacks; ++b)
-    {
-        const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
-        t.positional[b]       = static_cast<Value>(positional / OutputScale);
-    }
+    t.positional =
+      static_cast<Value>(network[t.stm.expert].propagate(transformedFeatures, nnzInfo,
+                                                         network[RoleExperts + t.opp.expert])
+                         / OutputScale);
 
     return t;
 }
@@ -300,6 +293,9 @@ usize Network::get_content_hash() const {
     hash_combine(h, featureTransformer);
     for (auto&& layerstack : network)
         hash_combine(h, layerstack);
+    for (const auto& role : exposure)
+        for (u8 byte : role)
+            hash_combine(h, byte);
     return h;
 }
 
@@ -354,6 +350,12 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
+    stream.read(reinterpret_cast<char*>(exposure), sizeof(exposure));
+    if ((exposure[0][10] & 0xe0) || (exposure[1][10] & 0xe0))
+        return false;
+    for (const auto& role : exposure)
+        if (std::none_of(std::begin(role), std::end(role), [](u8 byte) { return byte != 0; }))
+            return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
@@ -368,6 +370,7 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
+    stream.write(reinterpret_cast<const char*>(exposure), sizeof(exposure));
     return bool(stream);
 }
 

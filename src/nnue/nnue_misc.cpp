@@ -67,21 +67,20 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     ss << "NNUE network contributions (Normalized, "
        << (pos.side_to_move() == WHITE ? "White to move)" : "Black to move)") << std::endl
-       << "+------------+------------+\n"
-       << "|   Bucket   | Evaluation |\n"
-       << "+------------+------------+\n";
-
-    for (usize bucket = 0; bucket < LayerStacks; ++bucket)
-    {
-        ss << "|  " << std::left << std::setw(10) << bucket << std::right << "|  ";
-        format_cp_aligned_dot(t.positional[bucket], ss, pos);
-        ss << "   |";
-        if (bucket == t.correctBucket)
-            ss << " <-- this bucket is used";
+       << "\n";
+    const auto route = [&](const char* role, const PerspectiveRoute& r) {
+        ss << role << " bucket " << r.bucket << " expert " << r.expert;
+        if (r.unsupported)
+            ss << " (fallback: unsupported material)";
+        if (r.unexposed)
+            ss << " (fallback: zero training exposure)";
         ss << '\n';
-    }
-
-    ss << "+------------+------------+\n";
+    };
+    route("STM", t.stm);
+    route("OPP", t.opp);
+    ss << "Evaluation: ";
+    format_cp_aligned_dot(t.positional, ss, pos);
+    ss << '\n';
 
     return ss.str();
 }

@@ -48,8 +48,8 @@ struct EvalFile {
 };
 
 struct NnueEvalTrace {
-    Value positional[LayerStacks];
-    usize correctBucket;
+    Value            positional;
+    PerspectiveRoute stm, opp;
 };
 
 class Network;

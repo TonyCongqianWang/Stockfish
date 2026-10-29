@@ -95,6 +95,7 @@ class Network {
 
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
+    u8                  exposure[2][11] = {};
 
     bool initialized = false;
 

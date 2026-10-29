@@ -23,6 +23,9 @@
 
 #include <cstdint>
 #include <iostream>
+#include <type_traits>
+#include "../../bitboard.h"
+#include "../nnz_helper.h"
 
 #include "../../memory.h"
 #include "../nnue_common.h"
@@ -42,6 +45,129 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 #if defined(USE_SSSE3) || defined(USE_NEON_DOTPROD) || defined(USE_LSX) || defined(USE_LASX)
     #define ENABLE_SEQ_OPT
+#endif
+
+// Evaluate two output slices without assembling or copying their weights.
+#if defined(USE_AVX2)
+template<IndexType InDims, IndexType OutDims, bool Sparse>
+void affine_transform_pair(const u8*              input,
+                           const i8*              weights0,
+                           const i8*              weights1,
+                           const i32*             biases0,
+                           const i32*             biases1,
+                           i32*                   output0,
+                           i32*                   output1,
+                           const NNZInfo<InDims>* nnz = nullptr) {
+    #if defined(USE_AVX512)
+    using Vec = __m512i;
+        #define pair_set _mm512_set1_epi32
+        #define pair_add _mm512_add_epi32
+        #define pair_dot SIMD::m512_add_dpbusd_epi32
+    #else
+    using Vec = __m256i;
+        #define pair_set _mm256_set1_epi32
+        #define pair_add _mm256_add_epi32
+        #define pair_dot SIMD::m256_add_dpbusd_epi32
+    #endif
+    constexpr IndexType Width  = sizeof(Vec) / sizeof(i32);
+    constexpr IndexType Accums = OutDims / Width;
+    static_assert(OutDims % Width == 0 && InDims % 4 == 0);
+    #if defined(USE_AVX512) && defined(USE_VNNI)
+    constexpr IndexType Chains = 3;
+    #elif defined(USE_AVXVNNI)
+    constexpr IndexType Chains = 2;
+    #else
+    constexpr IndexType Chains = 1;
+    #endif
+    const u8*  inputBase    = input;
+    const i8*  weightsBase0 = weights0;
+    const i8*  weightsBase1 = weights1;
+    const i32* biases[2]    = {biases0, biases1};
+    i32*       outputs[2]   = {output0, output1};
+    Vec        acc[Chains][2][Accums];
+    for (IndexType c = 0; c < Chains; ++c)
+        for (int p = 0; p < 2; ++p)
+            for (IndexType k = 0; k < Accums; ++k)
+                acc[c][p][k] = c ? pair_set(0) : reinterpret_cast<const Vec*>(biases[p])[k];
+    auto add = [&](IndexType index, auto chain) {
+        constexpr IndexType C    = decltype(chain)::value;
+        const Vec           in   = pair_set(load_as<i32>(inputBase + index * 4));
+        const auto*         col0 = reinterpret_cast<const Vec*>(weightsBase0 + index * OutDims * 4);
+        const auto*         col1 = reinterpret_cast<const Vec*>(weightsBase1 + index * OutDims * 4);
+        for (IndexType k = 0; k < Accums; ++k)
+        {
+            pair_dot(acc[C][0][k], in, col0[k]);
+            pair_dot(acc[C][1][k], in, col1[k]);
+        }
+    };
+    using C0 = std::integral_constant<IndexType, 0>;
+    using C1 = std::integral_constant<IndexType, 1>;
+    using C2 = std::integral_constant<IndexType, 2>;
+    if constexpr (Sparse)
+    {
+    #if defined(USE_AVX512)
+        const auto* start = nnz->nnz;
+        const auto* end   = start + nnz->count;
+        while (start < end)
+        {
+            add(*start++, C0{});
+            if constexpr (Chains > 1)
+            {
+                if (start < end)
+                    add(*start++, C1{});
+            }
+            if constexpr (Chains > 2)
+            {
+                if (start < end)
+                    add(*start++, C2{});
+            }
+        }
+    #else
+        static_assert(InDims % 256 == 0);
+        for (IndexType block = 0; block < InDims / 256; ++block)
+        {
+            inputBase    = input + block * 256;
+            weightsBase0 = weights0 + block * 256 * OutDims;
+            weightsBase1 = weights1 + block * 256 * OutDims;
+            u64 bits     = load_as<u64>(nnz->bitset + block * 8);
+            while (bits)
+            {
+                add(pop_lsb(bits), C0{});
+                if constexpr (Chains > 1)
+                {
+                    if (bits)
+                        add(pop_lsb(bits), C1{});
+                }
+            }
+        }
+    #endif
+    }
+    else
+        for (IndexType i = 0; i < InDims / 4; i += Chains)
+        {
+            add(i, C0{});
+            if constexpr (Chains > 1)
+            {
+                if (i + 1 < InDims / 4)
+                    add(i + 1, C1{});
+            }
+            if constexpr (Chains > 2)
+            {
+                if (i + 2 < InDims / 4)
+                    add(i + 2, C2{});
+            }
+        }
+    for (int p = 0; p < 2; ++p)
+        for (IndexType k = 0; k < Accums; ++k)
+        {
+            for (IndexType c = 1; c < Chains; ++c)
+                acc[0][p][k] = pair_add(acc[0][p][k], acc[c][p][k]);
+            reinterpret_cast<Vec*>(outputs[p])[k] = acc[0][p][k];
+        }
+    #undef pair_set
+    #undef pair_add
+    #undef pair_dot
+}
 #endif
 
 // Fallback implementation for older/other architectures.
@@ -410,6 +536,20 @@ class AffineTransform {
         // Use old implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
           output, weights, biases, input);
+#endif
+    }
+
+    const OutputType* get_biases() const { return biases; }
+    void              propagate_pair(const InputType*       input,
+                                     OutputType*            output,
+                                     const AffineTransform& other,
+                                     OutputType*            otherOutput) const {
+#if defined(USE_AVX2)
+        affine_transform_pair<InputDimensions, OutputDimensions, false>(
+          input, weights, other.weights, biases, other.biases, output, otherOutput);
+#else
+        propagate(input, output);
+        other.propagate(input, otherOutput);
 #endif
     }
 

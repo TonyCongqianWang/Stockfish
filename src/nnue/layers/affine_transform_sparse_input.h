@@ -432,6 +432,21 @@ class AffineTransformSparseInput {
 #endif
     }
 
+    const OutputType* get_biases() const { return biases; }
+    void              propagate_pair(const InputType*                  input,
+                                     OutputType*                       output,
+                                     const AffineTransformSparseInput& other,
+                                     OutputType*                       otherOutput,
+                                     const NNZInfo<InDims>&            nnzInfo) const {
+#if defined(USE_AVX2)
+        affine_transform_pair<InputDimensions, OutputDimensions, true>(
+          input, weights, other.weights, biases, other.biases, output, otherOutput, &nnzInfo);
+#else
+        propagate(input, output, nnzInfo);
+        other.propagate(input, otherOutput, nnzInfo);
+#endif
+    }
+
    private:
     using BiasType   = OutputType;
     using WeightType = i8;

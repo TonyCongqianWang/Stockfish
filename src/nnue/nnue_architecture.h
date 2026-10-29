@@ -22,6 +22,7 @@
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
 #include <cstdint>
+#include <algorithm>
 #include <iosfwd>
 
 #include "features/k32h3.h"
@@ -33,6 +34,7 @@
 #include "layers/sqr_clipped_relu.h"
 #include "nnue_common.h"
 #include "nnz_helper.h"
+#include "perspective_buckets.h"
 
 namespace Stockfish::Eval::NNUE {
 
@@ -46,20 +48,20 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks = 32;
+constexpr IndexType LayerStacks = RoleExperts * 2;
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
-    static constexpr int       FC_0_OUTPUTS                 = L2;
-    static constexpr int       FC_1_OUTPUTS                 = L3;
+    static constexpr int       FC_0_OUTPUTS                 = L2 / 2;
+    static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
 
-    Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS> fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                      ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                         ac_0;
-    Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS>                        fc_1;
-    Layers::SqrClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                          ac_sqr_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                             ac_1;
-    Layers::AffineTransform<FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 1>                fc_2;
+    Layers::AffineTransformSparseInput<L1, FC_0_OUTPUTS> fc_0;
+    Layers::SqrClippedReLU<L2, WeightScaleBits + 1>      ac_sqr_0;
+    Layers::ClippedReLU<L2, WeightScaleBits + 1>         ac_0;
+    Layers::AffineTransform<L2 * 2, FC_1_OUTPUTS>        fc_1;
+    Layers::SqrClippedReLU<L3, WeightScaleBits>          ac_sqr_1;
+    Layers::ClippedReLU<L3, WeightScaleBits>             ac_1;
+    Layers::AffineTransform<L2 * 2 + L3 * 2, 1>          fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
@@ -75,7 +77,7 @@ struct NetworkArchitecture {
         hashValue = decltype(ac_1)::get_hash_value(hashValue);
         hashValue = decltype(fc_2)::get_hash_value(hashValue);
 
-        return hashValue;
+        return hashValue ^ PerspectiveHash;
     }
 
     // Read network parameters
@@ -92,52 +94,48 @@ struct NetworkArchitecture {
             && fc_2.write_parameters(stream);
     }
 
-    i32 propagate(const TransformedFeatureType* transformedFeatures,
-                  const NNZInfo<L1>&            nnzInfo) const {
+    i32 propagate(const TransformedFeatureType* input,
+                  const NNZInfo<L1>&            nnz,
+                  const NetworkArchitecture&    other) const {
         struct alignas(CacheLineSize) Buffer {
-            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
-            alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
-              concat_buffer[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 32)];
-            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
-            alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
+            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer first[2];
+            alignas(CacheLineSize) i32 firstBoth[L2];
+            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer second[2];
+            alignas(CacheLineSize) i32 secondBoth[L3];
+            alignas(CacheLineSize) u8 combined[(L2 + L3) * 2];
+            alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
         };
-
-        Buffer buffer;
-
-        fc_0.propagate(transformedFeatures, buffer.fc_0_out, nnzInfo);
+        Buffer b;
+        fc_0.propagate_pair(input, b.first[0], other.fc_0, b.first[1], nnz);
+        const auto rawSkip = [](const auto& values, const auto& layer) -> i64 {
+            return i64(values[FC_0_OUTPUTS - 2]) - layer.get_biases()[FC_0_OUTPUTS - 2]
+                 - values[FC_0_OUTPUTS - 1] + layer.get_biases()[FC_0_OUTPUTS - 1];
+        };
+        const i64 skips = rawSkip(b.first[0], fc_0) + rawSkip(b.first[1], other.fc_0);
+        for (int p = 0; p < 2; ++p)
+            std::copy_n(b.first[p], FC_0_OUTPUTS, b.firstBoth + p * FC_0_OUTPUTS);
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_0.propagate_pair(buffer.fc_0_out, buffer.concat_buffer,
-                                buffer.concat_buffer + FC_0_OUTPUTS);
+        ac_sqr_0.propagate_pair(b.firstBoth, b.combined, b.combined + L2);
 #else
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.concat_buffer);
-        ac_0.propagate(buffer.fc_0_out, buffer.concat_buffer + FC_0_OUTPUTS);
+        ac_sqr_0.propagate(b.firstBoth, b.combined);
+        ac_0.propagate(b.firstBoth, b.combined + L2);
 #endif
-
-        fc_1.propagate(buffer.concat_buffer, buffer.fc_1_out);
+        fc_1.propagate_pair(b.combined, b.second[0], other.fc_1, b.second[1]);
+        for (int p = 0; p < 2; ++p)
+            std::copy_n(b.second[p], FC_1_OUTPUTS, b.secondBoth + p * FC_1_OUTPUTS);
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_1.propagate_pair(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2,
-                                buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_1.propagate_pair(b.secondBoth, b.combined + L2 * 2, b.combined + L2 * 2 + L3);
 #else
-        ac_sqr_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2);
-        ac_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS);
+        ac_sqr_1.propagate(b.secondBoth, b.combined + L2 * 2);
+        ac_1.propagate(b.secondBoth, b.combined + L2 * 2 + L3);
 #endif
-
-        fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
-
-        static_assert(FC_0_OUTPUTS >= 2);
-        i32 fwdOut = buffer.fc_2_out[0];
-        i32 skip_0 = buffer.fc_0_out[FC_0_OUTPUTS - 2] - buffer.fc_0_out[FC_0_OUTPUTS - 1];
-        fwdOut += skip_0;
-
-        // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
-        // quantized form, but we want 1.0 to be equal to 600*OutputScale
-        // to make overflow impossible we cast to int64_t
-        constexpr i64 multiplier = 600 * OutputScale;
-        constexpr i64 denominator =
-          static_cast<i64>(HiddenOneVal) * static_cast<i64>(1U << WeightScaleBits) * 2;
-
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
-        return outputValue;
+        fc_2.propagate(b.combined, b.output[0]);
+        other.fc_2.propagate(b.combined, b.output[1]);
+        // Upstream scales: readouts and raw skips both represent 1.0 as 16384.
+        // Average complete STM-score predictions once, without antisymmetry.
+        const i64     merged      = (i64(b.output[0][0]) + b.output[1][0] + skips) / 2;
+        constexpr i64 denominator = i64(HiddenOneVal) * (1U << WeightScaleBits) * 2;
+        return i32(merged * (600 * OutputScale) / denominator);
     }
 
     usize get_content_hash() const {
