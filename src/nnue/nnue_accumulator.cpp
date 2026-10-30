@@ -530,15 +530,17 @@ sf_always_inline Tile apply_combined_features(IndexType                         
     return apply_features<sign>(j, acc, thr.begin() + thrBegin, thr.ssize() - thrBegin, thrWeights);
 }
 
-void apply_combined(Color                              perspective,
-                    const FeatureTransformer&          featureTransformer,
-                    const AccumulatorState&            from,
-                    AccumulatorState&                  to,
-                    const PSQFeatureSet::IndexList&    psqAdded,
-                    const PSQFeatureSet::IndexList&    psqRemoved,
-                    const ThreatFeatureSet::IndexList& thrAdded,
-                    const ThreatFeatureSet::IndexList& thrRemoved,
-                    const WeightType*                  psqWeights) {
+void apply_combined(Color                                    perspective,
+                    const FeatureTransformer&                featureTransformer,
+                    const AccumulatorState&                  from,
+                    AccumulatorState&                        to,
+                    const PSQFeatureSet::IndexList&          psqAdded,
+                    const PSQFeatureSet::IndexList&          psqRemoved,
+                    const ThreatFeatureSet::IndexList&       thrAdded,
+                    const ThreatFeatureSet::IndexList&       thrRemoved,
+                    const WeightType*                        psqWeights,
+                    const AdvancedPairFeatureSet::IndexList& advancedAdded,
+                    const AdvancedPairFeatureSet::IndexList& advancedRemoved) {
 
     const auto& fromAcc = from.accumulation[perspective];
     auto&       toAcc   = to.accumulation[perspective];
@@ -554,6 +556,10 @@ void apply_combined(Color                              perspective,
         acc = apply_combined_features<+1, true>(j, acc, psqAdded, thrAdded, featureTransformer,
                                                 psqWeights);
 
+        acc = apply_features<-1>(j, acc, advancedRemoved.begin(), advancedRemoved.ssize(),
+                                 &featureTransformer.advancedPairWeights[j]);
+        acc = apply_features<+1>(j, acc, advancedAdded.begin(), advancedAdded.ssize(),
+                                 &featureTransformer.advancedPairWeights[j]);
         store_tile(j, toAcc.data(), acc);
     }
 }
@@ -601,8 +607,15 @@ void update_accumulator_incremental(Color                     perspective,
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqAdded, psqRemoved);
     }
 
+    AdvancedPairFeatureSet::IndexList advancedRemoved, advancedAdded;
+    const auto&                       advancedDiff =
+      Forward ? target_state.dirtyAdvancedPawnPairs : computed.dirtyAdvancedPawnPairs;
+    AdvancedPairFeatureSet::append_changed_indices(perspective, ksq, advancedDiff,
+                                                   Forward ? advancedRemoved : advancedAdded,
+                                                   Forward ? advancedAdded : advancedRemoved);
     apply_combined(perspective, featureTransformer, computed, target_state, psqAdded, psqRemoved,
-                   thrAdded, thrRemoved, featureTransformer.psq_weights(psqBlock));
+                   thrAdded, thrRemoved, featureTransformer.psq_weights(psqBlock), advancedAdded,
+                   advancedRemoved);
 
     target_state.computed[perspective] = true;
 }
@@ -637,12 +650,22 @@ void update_accumulator_incremental_both(const FeatureTransformer& featureTransf
     PSQFeatureSet::append_changed_indices(BLACK, black_ksq, target_state.dirtyPiece,
                                           psq_removed[BLACK], psq_added[BLACK]);
 
+    AdvancedPairFeatureSet::IndexList advancedRemoved[COLOR_NB], advancedAdded[COLOR_NB];
+    AdvancedPairFeatureSet::append_changed_indices(WHITE, white_ksq,
+                                                   target_state.dirtyAdvancedPawnPairs,
+                                                   advancedRemoved[WHITE], advancedAdded[WHITE]);
+    AdvancedPairFeatureSet::append_changed_indices(BLACK, black_ksq,
+                                                   target_state.dirtyAdvancedPawnPairs,
+                                                   advancedRemoved[BLACK], advancedAdded[BLACK]);
+
     apply_combined(WHITE, featureTransformer, computed, target_state, psq_added[WHITE],
                    psq_removed[WHITE], thr_added[WHITE], thr_removed[WHITE],
-                   featureTransformer.psq_weights(whiteBlock));
+                   featureTransformer.psq_weights(whiteBlock), advancedAdded[WHITE],
+                   advancedRemoved[WHITE]);
     apply_combined(BLACK, featureTransformer, computed, target_state, psq_added[BLACK],
                    psq_removed[BLACK], thr_added[BLACK], thr_removed[BLACK],
-                   featureTransformer.psq_weights(blackBlock));
+                   featureTransformer.psq_weights(blackBlock), advancedAdded[BLACK],
+                   advancedRemoved[BLACK]);
 
     target_state.computed[WHITE] = true;
     target_state.computed[BLACK] = true;
@@ -849,6 +872,10 @@ void update_accumulator_hybrid(Color                     perspective,
     PairFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyPawnPairs, thrRemoved,
                                            thrAdded, threatPpBase, pfStride);
 
+    AdvancedPairFeatureSet::IndexList advancedRemoved, advancedAdded;
+    AdvancedPairFeatureSet::append_changed_indices(
+      perspective, newKsq, target.dirtyAdvancedPawnPairs, advancedRemoved, advancedAdded);
+
     const auto& fromAcc = computed.accumulation[perspective];
     auto&       toAcc   = target.accumulation[perspective];
 
@@ -877,6 +904,10 @@ void update_accumulator_hybrid(Color                     perspective,
         acc =
           apply_combined_features<+1>(j, acc, oldRemove, thrAdded, featureTransformer, psqWeights);
 
+        acc = apply_features<-1>(j, acc, advancedRemoved.begin(), advancedRemoved.ssize(),
+                                 &featureTransformer.advancedPairWeights[j]);
+        acc = apply_features<+1>(j, acc, advancedAdded.begin(), advancedAdded.ssize(),
+                                 &featureTransformer.advancedPairWeights[j]);
         store_tile(j, toAcc.data(), acc);
     }
 
@@ -909,6 +940,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
     PairFeatureSet::append_active_indices(perspective, pos, active);
+    AdvancedPairFeatureSet::IndexList advancedActive;
+    AdvancedPairFeatureSet::append_active_indices(perspective, pos, advancedActive);
 
     accumulator.computed[perspective] = true;
 
@@ -924,6 +957,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
         store_tile(j, &entry.accumulation[0], acc);
 
         acc = apply_threat_features<+1>(j, acc, active, featureTransformer);
+        acc = apply_features<+1>(j, acc, advancedActive.begin(), advancedActive.ssize(),
+                                 &featureTransformer.advancedPairWeights[j]);
 
         store_tile(j, accumulator.accumulation[perspective].data(), acc);
     }

@@ -345,9 +345,15 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
         return false;
-    if (hashValue != Network::hash)
+    const bool baseNetwork =
+      hashValue == (FeatureTransformer::base_hash_value() ^ NetworkArchitecture::get_hash_value());
+    if (hashValue != Network::hash && !baseNetwork)
         return false;
-    if (!Detail::read_parameters(stream, featureTransformer))
+    const u32 transformerHash = read_little_endian<u32>(stream);
+    const u32 expectedHash =
+      baseNetwork ? FeatureTransformer::base_hash_value() : FeatureTransformer::get_hash_value();
+    if (!stream || transformerHash != expectedHash
+        || !featureTransformer.read_parameters(stream, baseNetwork))
         return false;
     for (usize i = 0; i < LayerStacks; ++i)
     {

@@ -17,6 +17,7 @@
 */
 
 #include "position.h"
+#include "nnue/features/advanced_pawn_pairs.h"
 
 #include <algorithm>
 #include <array>
@@ -809,6 +810,8 @@ void Position::do_move(
     auto& dts  = dirties.dirtyThreats;
     auto& dp   = dirties.dirtyPiece;
 
+    dirties.dirtyAdvancedPawnPairs.before =
+      Eval::NNUE::Features::AdvancedPawnPairs::snapshot(*this);
     dpps.before[WHITE] = pieces(WHITE, PAWN);
     dpps.before[BLACK] = pieces(BLACK, PAWN);
 
@@ -1035,6 +1038,7 @@ void Position::do_move(
 
     assert(pos_is_ok());
 
+    dirties.dirtyAdvancedPawnPairs.after = Eval::NNUE::Features::AdvancedPawnPairs::snapshot(*this);
     dpps.after[WHITE] = pieces(WHITE, PAWN);
     dpps.after[BLACK] = pieces(BLACK, PAWN);
 

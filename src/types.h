@@ -351,10 +351,21 @@ struct DirtyPawnPairs {
     Bitboard after[COLOR_NB];
 };
 
+struct DirtyAdvancedPawnPairs {
+    struct Snapshot {
+        Bitboard pawns[COLOR_NB]{};
+        Piece    pieces[3]{};
+        Square   squares[3]{};
+        int      count = 0;
+    };
+    Snapshot before, after;
+};
+
 struct Dirties {
     DirtyPiece     dirtyPiece;
     DirtyThreats   dirtyThreats;
     DirtyPawnPairs dirtyPawnPairs;
+    DirtyAdvancedPawnPairs dirtyAdvancedPawnPairs;
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \

@@ -80,7 +80,7 @@ SRCS = attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	misc.cpp movegen.cpp movepick.cpp position.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
 	nnue/nnue_accumulator.cpp nnue/nnue_misc.cpp nnue/network.cpp \
-	nnue/features/k32h3.cpp nnue/features/full_threats.cpp nnue/features/pp_3wide.cpp \
+	nnue/features/k32h3.cpp nnue/features/full_threats.cpp nnue/features/pp_3wide.cpp nnue/features/advanced_pawn_pairs.cpp \
 	engine.cpp score.cpp memory.cpp
 
 OTHER_SRCS = universal/entry_x86.cpp universal/entry_arm64.cpp universal/entry_riscv64.cpp universal/nnue_embed.cpp

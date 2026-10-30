@@ -90,11 +90,15 @@ class FeatureTransformer {
     static constexpr IndexType PairInputDimensions   = PairFeatureSet::Dimensions;
     static constexpr IndexType PsqDimensions         = PSQFeatureSet::Dimensions;
     static constexpr IndexType ThreatAndPpDimensions = ThreatInputDimensions + PairInputDimensions;
-    static constexpr IndexType InputDimensions       = PsqDimensions + ThreatAndPpDimensions;
+    static constexpr IndexType InputDimensions =
+      PsqDimensions + ThreatAndPpDimensions + AdvancedPairFeatureSet::Dimensions;
     static constexpr IndexType OutputDimensions      = HalfDimensions;
     static constexpr IndexType ThreatWeightSize      = ThreatInputDimensions * HalfDimensions;
     static constexpr IndexType PairWeightSize        = PairInputDimensions * HalfDimensions;
     static constexpr IndexType ThreatAndPpWeightSize = ThreatAndPpDimensions * HalfDimensions;
+
+    using AdvancedPairWeightArray =
+      std::array<ThreatWeightType, AdvancedPairFeatureSet::Dimensions * HalfDimensions>;
 
     using BiasesArray            = std::array<BiasType, HalfDimensions>;
     using WeightArray            = std::array<WeightType, HalfDimensions * PsqDimensions>;
@@ -158,6 +162,13 @@ class FeatureTransformer {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
+        return combine_hash({ThreatFeatureSet::HashValue, PairFeatureSet::HashValue,
+                             AdvancedPairFeatureSet::HashValue, PSQFeatureSet::HashValue})
+             ^ (OutputDimensions * 2);
+    }
+
+    // Permit the upstream SFNNv19 net as a baseline until the new slice is trained.
+    static constexpr u32 base_hash_value() {
         return combine_hash(
                  {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, PSQFeatureSet::HashValue})
              ^ (OutputDimensions * 2);
@@ -168,6 +179,7 @@ class FeatureTransformer {
         permute<8>(weights, PackusEpi16Order);
 
         permute<8>(threatAndPpWeights, PackusEpi16Order);
+        permute<8>(advancedPairWeights, PackusEpi16Order);
 
 #if defined(USE_PAIRED_WIDENING_ADD)
         // With 128-bit vectors the order is the identity
@@ -175,6 +187,7 @@ class FeatureTransformer {
         {
             permute<8>(weights, WideningPairOrder);
             permute<8>(threatAndPpWeights, WideningPairOrder);
+            permute<8>(advancedPairWeights, WideningPairOrder);
         }
 #endif
     }
@@ -185,24 +198,30 @@ class FeatureTransformer {
         {
             permute<8>(weights, InverseWideningPairOrder);
             permute<8>(threatAndPpWeights, InverseWideningPairOrder);
+            permute<8>(advancedPairWeights, InverseWideningPairOrder);
         }
 #endif
 
         permute<16>(biases, InversePackusEpi16Order);
         permute<8>(weights, InversePackusEpi16Order);
         permute<8>(threatAndPpWeights, InversePackusEpi16Order);
+        permute<8>(advancedPairWeights, InversePackusEpi16Order);
     }
 
     ThreatWeightType* threatWeightData() { return threatAndPpWeights.data(); }
     ThreatWeightType* pawnPairWeightData() { return threatWeightData() + ThreatWeightSize; }
 
     // Read network parameters
-    bool read_parameters(std::istream& stream) {
+    bool read_parameters(std::istream& stream, bool baseNetwork = false) {
         read_little_endian(stream, biases.data(), HalfDimensions);
 
         read_little_endian(stream, threatWeightData(), ThreatWeightSize);
         read_little_endian(stream, pawnPairWeightData(), PairWeightSize);
 
+        if (baseNetwork)
+            advancedPairWeights.fill(0);
+        else
+            read_little_endian(stream, advancedPairWeights.data(), advancedPairWeights.size());
         read_little_endian(stream, weights.data(), weights.size());
 
         permute_weights();
@@ -221,6 +240,8 @@ class FeatureTransformer {
         write_little_endian(stream, copy->threatWeightData(), ThreatWeightSize);
         write_little_endian(stream, copy->pawnPairWeightData(), PairWeightSize);
 
+        write_little_endian(stream, copy->advancedPairWeights.data(),
+                            copy->advancedPairWeights.size());
         write_little_endian(stream, copy->weights.data(), copy->weights.size());
 
         return !stream.fail();
@@ -233,6 +254,7 @@ class FeatureTransformer {
         hash_combine(h, get_raw_data_hash(weights));
 
         hash_combine(h, get_raw_data_hash(threatAndPpWeights));
+        hash_combine(h, get_raw_data_hash(advancedPairWeights));
 
         hash_combine(h, get_hash_value());
 
@@ -439,6 +461,7 @@ class FeatureTransformer {
     static_assert(PairFeatureSet::IndexBase == ThreatFeatureSet::Dimensions);
 
     alignas(CacheLineSize) ThreatAndPpWeightArray threatAndPpWeights;
+    alignas(CacheLineSize) AdvancedPairWeightArray advancedPairWeights;
 };
 
 }  // namespace Stockfish::Eval::NNUE
