@@ -47,29 +47,43 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks        = 32;
+constexpr IndexType LayerStacks        = 64;
 constexpr IndexType RouterTableSize    = 849420;
 constexpr IndexType NumFC0Experts      = 64;
 constexpr IndexType NumMaterialStates  = 396;
 constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
-static_assert(NumFC0Experts == 2 * LayerStacks);
-constexpr u32       RouterHash     = 0x4D6F4537u;
-constexpr IndexType NumBiasExperts = 64;
-constexpr IndexType BiasDimension  = 64;
+constexpr u32       RouterHash         = 0x4D6F4537u;
+constexpr IndexType NumBiasExperts     = 64;
+constexpr IndexType BiasDimension      = 64;
 
 static constexpr u32 get_router_hash() {
     return RouterHash ^ ((NumBiasExperts << 16) | (LayerStacks << 8) | NumFC0Experts);
 }
+
+struct InputLayer {
+    static constexpr IndexType TransformedFeatureDimensions = L1;
+    static constexpr int       FC_0_OUTPUTS                 = L2;
+
+    Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS, FC_0_OUTPUTS * 2>
+                                                              fc_0;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2> ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2>    ac_0;
+
+    static constexpr u32 get_hash_value() {
+        u32 hash = 0xEC42E90Du ^ (TransformedFeatureDimensions * 2);
+        return decltype(ac_0)::get_hash_value(decltype(fc_0)::get_hash_value(hash));
+    }
+
+    bool  read_parameters(std::istream& stream) { return fc_0.read_parameters(stream); }
+    bool  write_parameters(std::ostream& stream) const { return fc_0.write_parameters(stream); }
+    usize get_content_hash() const { return fc_0.get_content_hash(); }
+};
 
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
     static constexpr int       FC_0_OUTPUTS                 = L2;
     static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
 
-    Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS, FC_0_OUTPUTS * 2>
-                                                                              fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2>                 ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2>                    ac_0;
     Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS, FC_1_OUTPUTS * 2> fc_1;
     Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>             ac_sqr_1;
     Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>                ac_1;
@@ -77,43 +91,34 @@ struct NetworkArchitecture {
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
-        // input slice hash
-        u32 hashValue = 0xEC42E90Du;
-        hashValue ^= TransformedFeatureDimensions * 2;
-
-        hashValue = decltype(fc_0)::get_hash_value(hashValue);
-        // TODO: consider including hash value of ac_sqr_0 in the overall hash value.
-        // For now omitted on purpose because hash value is not written by trainer (yet)
-        hashValue = decltype(ac_0)::get_hash_value(hashValue);
-        hashValue = decltype(fc_1)::get_hash_value(hashValue);
-        hashValue = decltype(ac_1)::get_hash_value(hashValue);
-        hashValue = decltype(fc_2)::get_hash_value(hashValue);
+        u32 hashValue = InputLayer::get_hash_value();
+        hashValue     = decltype(fc_1)::get_hash_value(hashValue);
+        hashValue     = decltype(ac_1)::get_hash_value(hashValue);
+        hashValue     = decltype(fc_2)::get_hash_value(hashValue);
 
         return hashValue;
     }
 
     // Read network parameters
     bool read_parameters(std::istream& stream) {
-        return fc_0.read_parameters(stream) && ac_0.read_parameters(stream)
-            && fc_1.read_parameters(stream) && ac_1.read_parameters(stream)
+        return fc_1.read_parameters(stream) && ac_1.read_parameters(stream)
             && fc_2.read_parameters(stream);
     }
 
     // Write network parameters
     bool write_parameters(std::ostream& stream) const {
-        return fc_0.write_parameters(stream) && ac_0.write_parameters(stream)
-            && fc_1.write_parameters(stream) && ac_1.write_parameters(stream)
+        return fc_1.write_parameters(stream) && ac_1.write_parameters(stream)
             && fc_2.write_parameters(stream);
     }
 
     i32 propagate(const TransformedFeatureType* transformedFeatures,
                   const NNZInfo<L1>&            nnzInfo,
-                  const NetworkArchitecture&    tail,
+                  const InputLayer&             firstLayer,
                   const NetworkArchitecture&    otherTail,
                   const int32_t*                dynBias,
                   const int32_t*                otherBias) const {
         struct alignas(CacheLineSize) Buffer {
-            alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer first;
+            alignas(CacheLineSize) typename decltype(InputLayer::fc_0)::OutputBuffer first;
             alignas(CacheLineSize) i32 firstSqr[FC_0_OUTPUTS], firstLin[FC_0_OUTPUTS];
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer second[2];
             alignas(CacheLineSize) i32 secondSqr[FC_1_OUTPUTS * 2], secondLin[FC_1_OUTPUTS * 2];
@@ -121,7 +126,7 @@ struct NetworkArchitecture {
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
         };
         Buffer buffer;
-        fc_0.propagate(transformedFeatures, buffer.first, nnzInfo);
+        firstLayer.fc_0.propagate(transformedFeatures, buffer.first, nnzInfo);
         constexpr IndexType Half  = FC_0_OUTPUTS / 2;
         const i64           skips = i64(buffer.first[Half - 2]) - buffer.first[Half - 1]
                         + buffer.first[FC_0_OUTPUTS - 2] - buffer.first[FC_0_OUTPUTS - 1];
@@ -138,7 +143,7 @@ struct NetworkArchitecture {
                                              + biases[p][offset + width + i]);
                 }
         };
-        const i32* staticBias = fc_0.get_biases();
+        const i32* staticBias = firstLayer.fc_0.get_biases();
         for (int p = 0; p < 2; ++p)
             for (IndexType i = 0; i < Half; ++i)
             {
@@ -148,16 +153,15 @@ struct NetworkArchitecture {
                   i32(i64(buffer.first[j]) + staticBias[FC_0_OUTPUTS + j] + biases[p][Half + i]);
             }
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_0.propagate_pair(buffer.firstSqr, buffer.firstLin, buffer.combined,
-                                buffer.combined + FC_0_OUTPUTS);
+        firstLayer.ac_sqr_0.propagate_pair(buffer.firstSqr, buffer.firstLin, buffer.combined,
+                                           buffer.combined + FC_0_OUTPUTS);
 #else
-        ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
-        ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS);
+        firstLayer.ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
+        firstLayer.ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS);
 #endif
-        tail.fc_1.propagate_pair(buffer.combined, buffer.second[0], otherTail.fc_1,
-                                 buffer.second[1]);
-        add_biases(buffer.second, tail.fc_1.get_biases(), otherTail.fc_1.get_biases(),
-                   buffer.secondSqr, buffer.secondLin, FC_1_OUTPUTS, FC_0_OUTPUTS);
+        fc_1.propagate_pair(buffer.combined, buffer.second[0], otherTail.fc_1, buffer.second[1]);
+        add_biases(buffer.second, fc_1.get_biases(), otherTail.fc_1.get_biases(), buffer.secondSqr,
+                   buffer.secondLin, FC_1_OUTPUTS, FC_0_OUTPUTS);
         constexpr IndexType Offset = FC_0_OUTPUTS * 2;
 #if defined(USE_PAIR_ACTIVATIONS)
         ac_sqr_1.propagate_pair(buffer.secondSqr, buffer.secondLin, buffer.combined + Offset,
@@ -166,7 +170,7 @@ struct NetworkArchitecture {
         ac_sqr_1.propagate(buffer.secondSqr, buffer.combined + Offset);
         ac_1.propagate(buffer.secondLin, buffer.combined + Offset + FC_1_OUTPUTS * 2);
 #endif
-        tail.fc_2.propagate(buffer.combined, buffer.output[0]);
+        fc_2.propagate(buffer.combined, buffer.output[0]);
         otherTail.fc_2.propagate(buffer.combined, buffer.output[1]);
         // Both readouts predict STM scores. Convert their scale 128 to the
         // skips' scale 256, then average complete predictions exactly once.
@@ -180,9 +184,6 @@ struct NetworkArchitecture {
 
     usize get_content_hash() const {
         usize h = 0;
-        hash_combine(h, fc_0.get_content_hash());
-        hash_combine(h, ac_sqr_0.get_content_hash());
-        hash_combine(h, ac_0.get_content_hash());
         hash_combine(h, fc_1.get_content_hash());
         // hash_combine(h, ac_sqr_1.get_content_hash()); TODO
         hash_combine(h, ac_1.get_content_hash());
