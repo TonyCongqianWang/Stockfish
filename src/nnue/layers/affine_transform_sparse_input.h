@@ -27,7 +27,6 @@
 #include <cstring>
 #include <iostream>
 
-#include "affine_transform.h"
 #include "../../bitboard.h"
 #include "../../memory.h"
 #include "../simd.h"
@@ -433,21 +432,6 @@ class AffineTransformSparseInput {
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
           output, weights, projectionBiases, input);
-#endif
-    }
-
-    void propagate_pair(const InputType*                  input,
-                        OutputType*                       output,
-                        const AffineTransformSparseInput& other,
-                        OutputType*                       otherOutput,
-                        const NNZInfo<InDims>&            nnzInfo) const {
-#if defined(USE_AVX2)
-        affine_transform_pair<InputDimensions, OutputDimensions, true>(
-          input, weights, other.weights, projection_biases(), other.projection_biases(), output,
-          otherOutput, &nnzInfo);
-#else
-        propagate(input, output, nnzInfo);
-        other.propagate(input, otherOutput, nnzInfo);
 #endif
     }
 
