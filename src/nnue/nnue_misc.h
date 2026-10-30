@@ -49,7 +49,7 @@ struct EvalFile {
 
 struct NnueEvalTrace {
     Value              positional[4];
-    std::array<int, 2> weightExperts;
+    int                fc0Expert;
     std::array<int, 2> downstreamExperts;
     std::array<int, 2> biasExperts;
 };

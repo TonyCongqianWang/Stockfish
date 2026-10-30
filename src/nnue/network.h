@@ -96,15 +96,18 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[2 * LayerStacks];
 
-    // Two 16-bit role routes: FC0 (5), downstream (5), dynamic biases (6).
+    // Two 16-bit role words: downstream (5), dynamic biases (6).
     alignas(CacheLineSize) uint32_t router[RouterTableSize];
+
+    // Ordered STM/OPP material pair selects one full-width FC0 expert.
+    alignas(CacheLineSize) uint8_t fc0Router[FC0RouterTableSize];
 
     // STM and OPP bias banks (64 experts x 64 int32 each).
     alignas(CacheLineSize) int32_t dynamicBiasTable[2 * NumBiasExperts][BiasDimension];
 
     bool initialized = false;
 
-    i32 propagate_routes(const TransformedFeatureType*, const NNZInfo<L1>&, u32, u32) const;
+    i32 propagate_routes(const TransformedFeatureType*, const NNZInfo<L1>&, int, int) const;
 
     // Hash value of evaluation function structure
     static constexpr u32 hash = FeatureTransformer::get_hash_value()

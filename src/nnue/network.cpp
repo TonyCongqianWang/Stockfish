@@ -105,11 +105,10 @@ int router_context(const Position& pos, Color perspective) {
 }
 
 struct Route {
-    int fc0, downstream, bias;
+    int downstream, bias;
     explicit Route(u32 packed) :
-        fc0(packed & 31),
-        downstream((packed >> 5) & 31),
-        bias((packed >> 10) & 63) {}
+        downstream(packed & 31),
+        bias((packed >> 5) & 63) {}
 };
 
 }  // namespace
@@ -189,13 +188,13 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
 
 i32 Network::propagate_routes(const TransformedFeatureType* features,
                               const NNZInfo<L1>&            nnz,
-                              u32                           us,
-                              u32                           them) const {
-    const Route own(us), opponent(them >> 16);
-    return network[own.fc0].propagate(
-      features, nnz, network[LayerStacks + opponent.fc0], network[own.downstream],
-      network[LayerStacks + opponent.downstream], dynamicBiasTable[own.bias],
-      dynamicBiasTable[NumBiasExperts + opponent.bias]);
+                              int                           c_us,
+                              int                           c_them) const {
+    const Route own(router[c_us]), opponent(router[c_them] >> 16);
+    const int   fc0 = fc0Router[(c_us / (33 * 65)) * NumMaterialStates + c_them / (33 * 65)];
+    return network[fc0].propagate(
+      features, nnz, network[own.downstream], network[LayerStacks + opponent.downstream],
+      dynamicBiasTable[own.bias], dynamicBiasTable[NumBiasExperts + opponent.bias]);
 }
 
 Value Network::evaluate(const Position&    pos,
@@ -210,10 +209,10 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const Color stm         = pos.side_to_move();
+    const Color stm = pos.side_to_move();
 
-    const u32 us   = router[router_context(pos, stm)];
-    const u32 them = router[router_context(pos, ~stm)];
+    const int us   = router_context(pos, stm);
+    const int them = router_context(pos, ~stm);
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
     const auto positional = propagate_routes(transformedFeatures, nnzInfo, us, them);
@@ -253,8 +252,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size =
-          sizeof(featureTransformer) + sizeof(network) + sizeof(router) + sizeof(dynamicBiasTable);
+        usize size = sizeof(featureTransformer) + sizeof(network) + sizeof(router)
+                   + sizeof(fc0Router) + sizeof(dynamicBiasTable);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -275,23 +274,21 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const Color stm         = pos.side_to_move();
+    const Color stm = pos.side_to_move();
 
-    const u32     packed_1 = router[router_context(pos, stm)];
-    const u32     packed_2 = router[router_context(pos, ~stm)];
-    const Route   own(packed_1), opponent(packed_2 >> 16);
+    const int     c_us = router_context(pos, stm), c_them = router_context(pos, ~stm);
+    const Route   own(router[c_us]), opponent(router[c_them] >> 16);
     NnueEvalTrace t{};
-    t.weightExperts     = {own.fc0, opponent.fc0};
+    t.fc0Expert         = fc0Router[(c_us / (33 * 65)) * NumMaterialStates + c_them / (33 * 65)];
     t.downstreamExperts = {own.downstream, opponent.downstream};
     t.biasExperts       = {own.bias, opponent.bias};
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
     // Counterfactuals exchange contexts, not IDs between independent banks.
-    const uint32_t contexts[4][2] = {
-      {packed_1, packed_2}, {packed_1, packed_1}, {packed_2, packed_2}, {packed_2, packed_1}};
+    const int contexts[4][2] = {{c_us, c_them}, {c_us, c_us}, {c_them, c_them}, {c_them, c_us}};
     for (int i = 0; i < 4; ++i)
     {
-        const uint32_t us = contexts[i][0], them = contexts[i][1];
+        const int us = contexts[i][0], them = contexts[i][1];
         t.positional[i] = static_cast<Value>(
           propagate_routes(transformedFeatures, nnzInfo, us, them) / OutputScale);
     }
@@ -344,6 +341,7 @@ void Network::load_internal(EvalFile& evalFile) {
 void Network::initialize() {
     initialized = true;
     std::memset(router, 0, sizeof(router));
+    std::memset(fc0Router, 0, sizeof(fc0Router));
     std::memset(dynamicBiasTable, 0, sizeof(dynamicBiasTable));
 }
 
@@ -371,6 +369,8 @@ usize Network::get_content_hash() const {
         hash_combine(h, layerstack);
     for (usize i = 0; i < RouterTableSize; ++i)
         hash_combine(h, router[i]);
+    for (auto id : fc0Router)
+        hash_combine(h, id);
     for (usize i = 0; i < 2 * NumBiasExperts; ++i)
         for (usize j = 0; j < BiasDimension; ++j)
             hash_combine(h, dynamicBiasTable[i][j]);
@@ -429,6 +429,10 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
             return false;
     }
     read_little_endian<uint32_t>(stream, router, RouterTableSize);
+    read_little_endian<uint8_t>(stream, fc0Router, FC0RouterTableSize);
+    if (std::any_of(std::begin(fc0Router), std::end(fc0Router),
+                    [](uint8_t id) { return id >= NumFC0Experts; }))
+        return false;
     read_little_endian<int32_t>(stream, reinterpret_cast<int32_t*>(dynamicBiasTable),
                                 2 * NumBiasExperts * BiasDimension);
     return stream && stream.peek() == std::ios::traits_type::eof();
@@ -446,6 +450,7 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
             return false;
     }
     write_little_endian<uint32_t>(stream, router, RouterTableSize);
+    write_little_endian<uint8_t>(stream, fc0Router, FC0RouterTableSize);
     write_little_endian<int32_t>(stream, reinterpret_cast<const int32_t*>(dynamicBiasTable),
                                  2 * NumBiasExperts * BiasDimension);
     return bool(stream);
