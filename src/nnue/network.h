@@ -94,9 +94,10 @@ class Network {
     FeatureTransformer featureTransformer;
 
     // Evaluation function
+    InputLayer          firstLayer[NumFC0Experts];
     NetworkArchitecture network[2 * LayerStacks];
 
-    // Two 16-bit role words: downstream (5), dynamic biases (6).
+    // Two 16-bit role words: downstream (6), dynamic biases (6).
     alignas(CacheLineSize) uint32_t router[RouterTableSize];
 
     // Ordered STM/OPP material pair selects one full-width FC0 expert.

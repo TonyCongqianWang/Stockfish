@@ -107,8 +107,8 @@ int router_context(const Position& pos, Color perspective) {
 struct Route {
     int downstream, bias;
     explicit Route(u32 packed) :
-        downstream(packed & 31),
-        bias((packed >> 5) & 63) {}
+        downstream(packed & 63),
+        bias((packed >> 6) & 63) {}
 };
 
 }  // namespace
@@ -192,8 +192,8 @@ i32 Network::propagate_routes(const TransformedFeatureType* features,
                               int                           c_them) const {
     const Route own(router[c_us]), opponent(router[c_them] >> 16);
     const int   fc0 = fc0Router[(c_us / (33 * 65)) * NumMaterialStates + c_them / (33 * 65)];
-    return network[fc0].propagate(
-      features, nnz, network[own.downstream], network[LayerStacks + opponent.downstream],
+    return network[own.downstream].propagate(
+      features, nnz, firstLayer[fc0], network[LayerStacks + opponent.downstream],
       dynamicBiasTable[own.bias], dynamicBiasTable[NumBiasExperts + opponent.bias]);
 }
 
@@ -252,8 +252,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(network) + sizeof(router)
-                   + sizeof(fc0Router) + sizeof(dynamicBiasTable);
+        usize size = sizeof(featureTransformer) + sizeof(firstLayer) + sizeof(network)
+                   + sizeof(router) + sizeof(fc0Router) + sizeof(dynamicBiasTable);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -365,6 +365,8 @@ usize Network::get_content_hash() const {
 
     usize h = 0;
     hash_combine(h, featureTransformer);
+    for (auto&& first : firstLayer)
+        hash_combine(h, first.get_content_hash());
     for (auto&& layerstack : network)
         hash_combine(h, layerstack);
     for (usize i = 0; i < RouterTableSize; ++i)
@@ -423,6 +425,9 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         return false;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
+    for (auto& first : firstLayer)
+        if (!Detail::read_parameters(stream, first))
+            return false;
     for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
@@ -444,6 +449,9 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         return false;
     if (!Detail::write_parameters(stream, featureTransformer))
         return false;
+    for (const auto& first : firstLayer)
+        if (!Detail::write_parameters(stream, first))
+            return false;
     for (usize i = 0; i < 2 * LayerStacks; ++i)
     {
         if (!Detail::write_parameters(stream, network[i]))
