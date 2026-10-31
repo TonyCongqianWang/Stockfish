@@ -81,12 +81,32 @@ int main(int argc, char** argv) {
         reference->evaluate(pos, ft, *referenceCache);
         require(stack->latest().accumulation == reference->latest().accumulation,
                     "incremental/full accumulator mismatch");
-        // Included anchors must describe the eligible layouts actually requested.
         for (Color p : {WHITE, BLACK})
         {
-            require(stack->latest().endgameAnchor[p] == Endgame::snapshot(pos), "anchor mismatch");
-            require(stack->latest().endgameFlip[p] == Endgame::orientation(p, pos.square<KING>(p)),
-                        "orientation mismatch");
+            const auto& sum = cache->endgameSums[p];
+            require(sum.board == Endgame::snapshot(pos), "snapshot mismatch");
+            require(sum.accumulation == referenceCache->endgameSums[p].accumulation,
+                        "incremental/full endgame sum mismatch");
+            // Independent full square-row summation, without cache/delta machinery.
+            std::array<i16, L1> expected{};
+            for (Color c : {WHITE, BLACK})
+            {
+                const int cat = Endgame::category(sum.board[c]);
+                if (cat < 0)
+                    continue;
+                for (int t = 0; t < 5; ++t)
+                {
+                    auto squares = sum.board[c][t];
+                    while (squares)
+                    {
+                        int id = Endgame::make_index(cat, bool(sum.board[c][0]), t, c != p,
+                                                         pop_lsb(squares), sum.flip);
+                        for (int j = 0; j < int(L1); ++j)
+                            expected[j] = i16(expected[j] + ft.endgameWeights[id * L1 + j]);
+                    }
+                }
+            }
+            require(sum.accumulation == expected, "endgame sum oracle mismatch");
         }
         ++checks;
     };

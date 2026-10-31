@@ -262,14 +262,24 @@ class FeatureTransformer {
         const auto& accumulation    = accumulatorState.accumulation;
 
         for (IndexType p = 0; p < 2; ++p)
-            transform_perspective(accumulation[perspectives[p]], output, p, nnzInfo);
+        {
+            const auto& endgame = cache.endgameSums[perspectives[p]];
+            if (endgame.active)
+                transform_perspective<true>(accumulation[perspectives[p]], output, p, nnzInfo,
+                                            endgame.accumulation.data());
+            else
+                transform_perspective<false>(accumulation[perspectives[p]], output, p, nnzInfo,
+                                             nullptr);
+        }
     }
 
    private:
+    template<bool EndgameActive>
     static void transform_perspective(const std::array<i16, HalfDimensions>&      accumulation,
                                       OutputType*                                 output,
                                       IndexType                                   perspective,
-                                      [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo) {
+                                      [[maybe_unused]] NNZInfo<OutputDimensions>& nnzInfo,
+                                      [[maybe_unused]] const i16*                 endgame) {
 
         using namespace SIMD;
         const IndexType offset = (HalfDimensions / 2) * perspective;
@@ -333,6 +343,16 @@ class FeatureTransformer {
                 vec_t acc0b = in0[i + 1];
                 vec_t acc1a = in1[i + 0];
                 vec_t acc1b = in1[i + 1];
+                if constexpr (EndgameActive)
+                {
+                    const auto* eg0 = reinterpret_cast<const vec_t*>(endgame);
+                    const auto* eg1 = reinterpret_cast<const vec_t*>(endgame + HalfDimensions / 2);
+                    acc0a           = vec_add_16(acc0a, eg0[i]);
+                    acc0b           = vec_add_16(acc0b, eg0[i + 1]);
+                    acc1a           = vec_add_16(acc1a, eg1[i]);
+                    acc1b           = vec_add_16(acc1b, eg1[i + 1]);
+                }
+
 
                 static_assert(FtMaxVal == 255);
 
@@ -398,6 +418,12 @@ class FeatureTransformer {
             vint16m2_t acc0 = __riscv_vle16_v_i16m2(&accumulation[j], vl);
             vint16m2_t acc1 = __riscv_vle16_v_i16m2(&accumulation[j + HalfDimensions / 2], vl);
 
+            if constexpr (EndgameActive)
+            {
+                acc0 = __riscv_vadd(acc0, __riscv_vle16_v_i16m2(endgame + j, vl), vl);
+                acc1 = __riscv_vadd(
+                  acc1, __riscv_vle16_v_i16m2(endgame + j + HalfDimensions / 2, vl), vl);
+            }
             acc0 = __riscv_vmax(acc0, 0, vl);
             acc1 = __riscv_vmax(acc1, 0, vl);
 
@@ -427,6 +453,11 @@ class FeatureTransformer {
             BiasType sum0 = accumulation[j];
             BiasType sum1 = accumulation[j + HalfDimensions / 2];
 
+            if constexpr (EndgameActive)
+            {
+                sum0 = i16(sum0 + endgame[j]);
+                sum1 = i16(sum1 + endgame[j + HalfDimensions / 2]);
+            }
             sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
             sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
 
