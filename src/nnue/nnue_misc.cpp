@@ -65,17 +65,10 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     auto t = network.trace_evaluate(pos, *accumulators, caches);
 
-    ss << "NNUE routes: FC0 = " << t.fc0Expert
-       << "; downstream / bias: STM = " << t.downstreamExperts[0] << " / " << t.biasExperts[0]
-       << ", OPP = " << t.downstreamExperts[1] << " / " << t.biasExperts[1] << '\n';
-    constexpr const char* labels[] = {"STM / OPP (actual)", "STM / STM context",
-                                      "OPP / OPP context", "OPP / STM contexts"};
-    for (int i = 0; i < 4; ++i)
-    {
-        ss << std::left << std::setw(24) << labels[i] << std::right;
-        format_cp_aligned_dot(t.positional[i], ss, pos);
-        ss << '\n';
-    }
+    ss << "NNUE routes: FC0 = " << t.fc0Expert << "; tail = " << t.tailExpert << '\n';
+    ss << "NNUE evaluation: ";
+    format_cp_aligned_dot(t.positional, ss, pos);
+    ss << '\n';
 
     return ss.str();
 }
