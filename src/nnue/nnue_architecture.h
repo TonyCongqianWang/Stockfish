@@ -47,17 +47,16 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks        = 64;
-constexpr IndexType RouterTableSize    = 849420;
+constexpr IndexType LayerStacks        = 512;
 constexpr IndexType NumFC0Experts      = 64;
-constexpr IndexType NumMaterialStates  = 396;
+constexpr IndexType NumMaterialStates  = 676;
+constexpr IndexType KingStates         = 8;
 constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
-constexpr u32       RouterHash         = 0x4D6F4537u;
-constexpr IndexType NumBiasExperts     = 64;
-constexpr IndexType BiasDimension      = 64;
+constexpr IndexType RouterTableSize    = FC0RouterTableSize * KingStates;
+constexpr u32       RouterHash         = 0x4D6F4538u;
 
 static constexpr u32 get_router_hash() {
-    return RouterHash ^ ((NumBiasExperts << 16) | (LayerStacks << 8) | NumFC0Experts);
+    return RouterHash ^ ((NumFC0Experts << 16) | LayerStacks);
 }
 
 struct InputLayer {
@@ -82,12 +81,12 @@ struct InputLayer {
 struct NetworkArchitecture {
     static constexpr IndexType TransformedFeatureDimensions = L1;
     static constexpr int       FC_0_OUTPUTS                 = L2;
-    static constexpr int       FC_1_OUTPUTS                 = L3 / 2;
+    static constexpr int       FC_1_OUTPUTS                 = L3;
 
     Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS, FC_1_OUTPUTS * 2> fc_1;
-    Layers::SqrClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>             ac_sqr_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS * 2, WeightScaleBits + 1>                ac_1;
-    Layers::AffineTransform<FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 4, 1>           fc_2;
+    Layers::SqrClippedReLU<FC_1_OUTPUTS, WeightScaleBits + 1>                 ac_sqr_1;
+    Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits + 1>                    ac_1;
+    Layers::AffineTransform<FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 1>           fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
@@ -113,73 +112,51 @@ struct NetworkArchitecture {
 
     i32 propagate(const TransformedFeatureType* transformedFeatures,
                   const NNZInfo<L1>&            nnzInfo,
-                  const InputLayer&             firstLayer,
-                  const NetworkArchitecture&    otherTail,
-                  const int32_t*                dynBias,
-                  const int32_t*                otherBias) const {
+                  const InputLayer&             firstLayer) const {
         struct alignas(CacheLineSize) Buffer {
-            alignas(CacheLineSize) typename decltype(InputLayer::fc_0)::OutputBuffer first;
-            alignas(CacheLineSize) i32 firstSqr[FC_0_OUTPUTS], firstLin[FC_0_OUTPUTS];
-            alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer second[2];
-            alignas(CacheLineSize) i32 secondSqr[FC_1_OUTPUTS * 2], secondLin[FC_1_OUTPUTS * 2];
-            alignas(CacheLineSize) u8 combined[FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 4];
-            alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer output[2];
+            typename decltype(InputLayer::fc_0)::OutputBuffer first;
+            typename decltype(fc_1)::OutputBuffer             second;
+            alignas(CacheLineSize) i32 sqr[L2], lin[L2];
+            alignas(CacheLineSize) u8 combined[(L2 + L3) * 2];
+            typename decltype(fc_2)::OutputBuffer output;
         };
-        Buffer buffer;
-        firstLayer.fc_0.propagate(transformedFeatures, buffer.first, nnzInfo);
-        constexpr IndexType Half  = FC_0_OUTPUTS / 2;
-        const i64           skips = i64(buffer.first[Half - 2]) - buffer.first[Half - 1]
-                        + buffer.first[FC_0_OUTPUTS - 2] - buffer.first[FC_0_OUTPUTS - 1];
-        const int32_t* biases[2] = {dynBias, otherBias};
-        const auto add_biases = [&](const auto& projections, const i32* ownBias, const i32* oppBias,
-                                    auto& sqr, auto& lin, IndexType width, IndexType offset) {
-            const i32* expertBiases[2] = {ownBias, oppBias};
-            for (int p = 0; p < 2; ++p)
-                for (IndexType i = 0; i < width; ++i)
-                {
-                    sqr[p * width + i] =
-                      i32(i64(projections[p][i]) + expertBiases[p][i] + biases[p][offset + i]);
-                    lin[p * width + i] = i32(i64(projections[p][i]) + expertBiases[p][width + i]
-                                             + biases[p][offset + width + i]);
-                }
-        };
-        const i32* staticBias = firstLayer.fc_0.get_biases();
-        for (int p = 0; p < 2; ++p)
-            for (IndexType i = 0; i < Half; ++i)
+        static_assert(L2 == L3);
+        Buffer     buffer;
+        const auto add_biases = [&](const auto& raw, const i32* bias) {
+            for (int i = 0; i < L2; ++i)
             {
-                const IndexType j  = p * Half + i;
-                buffer.firstSqr[j] = i32(i64(buffer.first[j]) + staticBias[j] + biases[p][i]);
-                buffer.firstLin[j] =
-                  i32(i64(buffer.first[j]) + staticBias[FC_0_OUTPUTS + j] + biases[p][Half + i]);
+                buffer.sqr[i] = raw[i] + bias[i];
+                buffer.lin[i] = raw[i] + bias[L2 + i];
             }
+        };
+        firstLayer.fc_0.propagate(transformedFeatures, buffer.first, nnzInfo);
+        constexpr int Half  = L2 / 2;
+        const i64     skips = i64(buffer.first[Half - 2]) - buffer.first[Half - 1]
+                        + buffer.first[L2 - 2] - buffer.first[L2 - 1];
+        add_biases(buffer.first, firstLayer.fc_0.get_biases());
 #if defined(USE_PAIR_ACTIVATIONS)
-        firstLayer.ac_sqr_0.propagate_pair(buffer.firstSqr, buffer.firstLin, buffer.combined,
-                                           buffer.combined + FC_0_OUTPUTS);
+        firstLayer.ac_sqr_0.propagate_pair(buffer.sqr, buffer.lin, buffer.combined,
+                                           buffer.combined + L2);
 #else
-        firstLayer.ac_sqr_0.propagate(buffer.firstSqr, buffer.combined);
-        firstLayer.ac_0.propagate(buffer.firstLin, buffer.combined + FC_0_OUTPUTS);
+        firstLayer.ac_sqr_0.propagate(buffer.sqr, buffer.combined);
+        firstLayer.ac_0.propagate(buffer.lin, buffer.combined + L2);
 #endif
-        fc_1.propagate_pair(buffer.combined, buffer.second[0], otherTail.fc_1, buffer.second[1]);
-        add_biases(buffer.second, fc_1.get_biases(), otherTail.fc_1.get_biases(), buffer.secondSqr,
-                   buffer.secondLin, FC_1_OUTPUTS, FC_0_OUTPUTS);
-        constexpr IndexType Offset = FC_0_OUTPUTS * 2;
+        fc_1.propagate(buffer.combined, buffer.second);
+        add_biases(buffer.second, fc_1.get_biases());
 #if defined(USE_PAIR_ACTIVATIONS)
-        ac_sqr_1.propagate_pair(buffer.secondSqr, buffer.secondLin, buffer.combined + Offset,
-                                buffer.combined + Offset + FC_1_OUTPUTS * 2);
+        ac_sqr_1.propagate_pair(buffer.sqr, buffer.lin, buffer.combined + 2 * L2,
+                                buffer.combined + 2 * L2 + L3);
 #else
-        ac_sqr_1.propagate(buffer.secondSqr, buffer.combined + Offset);
-        ac_1.propagate(buffer.secondLin, buffer.combined + Offset + FC_1_OUTPUTS * 2);
+        ac_sqr_1.propagate(buffer.sqr, buffer.combined + 2 * L2);
+        ac_1.propagate(buffer.lin, buffer.combined + 2 * L2 + L3);
 #endif
-        fc_2.propagate(buffer.combined, buffer.output[0]);
-        otherTail.fc_2.propagate(buffer.combined, buffer.output[1]);
-        // Both readouts predict STM scores. Convert their scale 128 to the
-        // skips' scale 256, then average complete predictions exactly once.
-        const i64     fwdOut = (2 * (i64(buffer.output[0][0]) + buffer.output[1][0]) + skips) / 2;
+        fc_2.propagate(buffer.combined, buffer.output);
+        // The readout has scale 128 and the raw skips scale 256. Preserve
+        // the average of the two bias-free FC0 skip differences.
+        const i64     fwdOut      = (4 * i64(buffer.output[0]) + skips) / 2;
         constexpr i64 multiplier  = 600 * OutputScale;
         constexpr i64 denominator = static_cast<i64>(HiddenOneVal) * (1U << WeightScaleBits) * 4;
-
-        i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
-        return outputValue;
+        return i32((fwdOut * multiplier) / denominator);
     }
 
     usize get_content_hash() const {

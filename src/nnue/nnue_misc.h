@@ -48,10 +48,9 @@ struct EvalFile {
 };
 
 struct NnueEvalTrace {
-    Value              positional[4];
-    int                fc0Expert;
-    std::array<int, 2> downstreamExperts;
-    std::array<int, 2> biasExperts;
+    Value positional;
+    int   fc0Expert;
+    int   tailExpert;
 };
 
 class Network;

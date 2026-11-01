@@ -95,16 +95,13 @@ class Network {
 
     // Evaluation function
     InputLayer          firstLayer[NumFC0Experts];
-    NetworkArchitecture network[2 * LayerStacks];
+    NetworkArchitecture network[LayerStacks];
 
-    // Two 16-bit role words: downstream (6), dynamic biases (6).
-    alignas(CacheLineSize) uint32_t router[RouterTableSize];
+    // Expanded 9-bit joint tail IDs; the file stores packed IDs.
+    alignas(CacheLineSize) uint16_t router[RouterTableSize];
 
     // Ordered STM/OPP material pair selects one full-width FC0 expert.
     alignas(CacheLineSize) uint8_t fc0Router[FC0RouterTableSize];
-
-    // STM and OPP bias banks (64 experts x 64 int32 each).
-    alignas(CacheLineSize) int32_t dynamicBiasTable[2 * NumBiasExperts][BiasDimension];
 
     bool initialized = false;
 
