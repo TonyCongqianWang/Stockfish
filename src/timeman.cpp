@@ -22,11 +22,61 @@
 #include <cassert>
 #include <cmath>
 
+#include "position.h"
 #include "search.h"
+#include "tmparams.h"
 #include "types.h"
 #include "ucioption.h"
 
 namespace Stockfish {
+
+namespace TimeParams {
+TUNE(SetRange(2000, 30000), TMHorizonBase);
+TUNE(SetRange(250, 4000), TMHorizonPiece);
+TUNE(SetRange(300, 4000), TMBankRate);
+TUNE(SetRange(300, 1500), TMIncRate);
+TUNE(SetRange(200, 1000), TMOpeningFloor);
+TUNE(SetRange(2000, 60000), TMOpeningPlies);
+TUNE(SetRange(0, 15000), TMReserveMoves);
+TUNE(SetRange(1000, 10000), TMMaxSD);
+TUNE(SetRange(1000, 12000), TMMaxInc);
+TUNE(SetRange(100, 2000), TMElasticitySD);
+TUNE(SetRange(100, 2000), TMElasticityInc);
+TUNE(SetRange(0, 1200), TMBehind);
+TUNE(SetRange(300, 950), TMClockCap);
+TUNE(SetRange(200, 1500), TMCyclicBase);
+TUNE(SetRange(20000, 300000), TMCyclicPly);
+TUNE(SetRange(1000, 3000), TMCyclicMaxBase);
+TUNE(SetRange(10, 250), TMCyclicMaxMove);
+TUNE(SetRange(0, 1200), TMCyclicBehind);
+TUNE(SetRange(1000, 50000), TMEvalBase);
+TUNE(SetRange(100, 6000), TMEvalPrevious);
+TUNE(SetRange(100, 4000), TMEvalIteration);
+TUNE(SetRange(100, 1000), TMEvalMin);
+TUNE(SetRange(1000, 4000), TMEvalMax);
+TUNE(SetRange(1000, 10000), TMStableStart);
+TUNE(SetRange(1000, 30000), TMStableSpan);
+TUNE(SetRange(100, 1200), TMStableLow);
+TUNE(SetRange(100, 2500), TMStableRise);
+TUNE(SetRange(100, 1000), TMStableMin);
+TUNE(SetRange(1000, 3000), TMStableMax);
+TUNE(SetRange(100, 3000), TMReductionOffset);
+TUNE(SetRange(500, 5000), TMReductionDivisor);
+TUNE(SetRange(0, 950), TMChangeDecay);
+TUNE(SetRange(300, 2000), TMChangeBase);
+TUNE(SetRange(100, 6000), TMChangeWeight);
+TUNE(SetRange(10000, 95000), TMEffortStart);
+TUNE(SetRange(1000, 60000), TMEffortSpan);
+TUNE(SetRange(300, 1500), TMEffortBase);
+TUNE(SetRange(0, 700), TMEffortDrop);
+TUNE(SetRange(100, 1000), TMEffortMin);
+TUNE(SetRange(500, 1500), TMEffortMax);
+TUNE(SetRange(100, 900), TMDepthFraction);
+TUNE(SetRange(100, 2000), TMPreviousReduction);
+TUNE(SetRange(0, 1000), TMPonderBonus);
+}  // namespace TimeParams
+
+using namespace TimeParams;
 
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }
@@ -46,10 +96,11 @@ void TimeManagement::advance_nodes_time(i64 nodes) {
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
 void TimeManagement::init(Search::LimitsType& limits,
-                          Color               us,
-                          int                 ply,
-                          const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
+                          const Position&     pos,
+                          const OptionsMap&   options) {
+    Color us         = pos.side_to_move();
+    int   ply        = pos.game_ply();
+    dynamicExponent  = 1.0;
     TimePoint npmsec = TimePoint(options["nodestime"]);
 
     // If we have no time, we don't need to fully initialize TM.
@@ -67,10 +118,6 @@ void TimeManagement::init(Search::LimitsType& limits,
     }
 
     TimePoint moveOverhead = TimePoint(options["Move Overhead"]);
-
-    // optScale is a percentage of available time to use for the current move.
-    // maxScale is a multiplier applied to optimumTime.
-    double optScale, maxScale;
 
     // If we have to play in 'nodes as time' mode, then convert from time
     // to nodes, and use resulting values in time management formulas.
@@ -96,73 +143,63 @@ void TimeManagement::init(Search::LimitsType& limits,
         moveOverhead *= npmsec;
     }
 
-    // These numbers are used where multiplications, divisions,
-    // or comparisons with constants are involved.
-    const i64       scaleFactor = useNodesTime ? npmsec : 1;
-    const TimePoint scaledTime  = std::max(TimePoint(1), limits.time[us] / scaleFactor);
-
-    // Maximum move horizon
-    int mtg = limits.movestogo ? std::min(limits.movestogo, 50) : 50;
-
-    // If less than one second, gradually reduce mtg.
-    // In cyclic time controls we keep the actual movestogo as horizon.
-    if (scaledTime < 1000 && limits.movestogo == 0)
-        mtg = int(scaledTime * 0.05);
-
-    // Make sure timeLeft is > 0 since we may use it as a divisor
-    TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
-                                                  - moveOverhead * (2 + mtg));
-
-    // x basetime (+ z increment)
-    // If there is a healthy increment, timeLeft can exceed the actual available
-    // game time for the current move, so also cap to a percentage of available game time.
+    double budget, maxScale;
     if (limits.movestogo == 0)
     {
-        // Extra time according to timeLeft
-        if (originalTimeAdjust < 0)
-            originalTimeAdjust = 0.3272 * std::log10(timeLeft) - 0.4141;
+        // Allocate the current bank over a material-dependent horizon. Increment is
+        // renewable income; overhead is paid on every move, including sudden death.
+        double horizon =
+          std::max(1.0, (TMHorizonBase + TMHorizonPiece * pos.count<ALL_PIECES>()) / 1000.0);
+        double income = double(limits.inc[us]) - moveOverhead;
+        double bank =
+          std::max(0.0, double(limits.time[us]) - moveOverhead * (TMReserveMoves / 1000.0));
+        double bankDraw = (TMBankRate / 1000.0) * bank / horizon;
 
-        // Calculate time constants based on current time left.
-        double logTimeInSec = std::log10(scaledTime / 1000.0);
-        double optConstant  = std::min(0.0029869 + 0.00033554 * logTimeInSec, 0.004905);
-        double maxConstant  = std::max(3.3744 + 3.0608 * logTimeInSec, 3.1441);
+        // Only bank spending responds to the opponent clock. Income remains usable.
+        if (!useNodesTime)
+        {
+            double advantage = (double(limits.time[us]) - limits.time[~us])
+                             / (1.0 + double(limits.time[us]) + limits.time[~us]);
+            bankDraw *= std::max(0.0, 1.0 + TMBehind / 1000.0 * std::min(advantage, 0.0));
+        }
 
-        optScale = std::min(0.012112 + std::pow(ply + 3.22713, 0.46866) * optConstant,
-                            0.19404 * limits.time[us] / timeLeft)
-                 * originalTimeAdjust;
+        double opening =
+          TMOpeningFloor / 1000.0
+          + (1.0 - TMOpeningFloor / 1000.0) * std::tanh(ply / (TMOpeningPlies / 1000.0));
+        budget = std::max(0.0, bankDraw + TMIncRate / 1000.0 * income) * opening;
 
-        maxScale = std::min(6.873, maxConstant + ply / 12.352);
+        // Renewable share is dimensionless and independent of the initial clock
+        // and machine speed. Share the signal between headroom and responsiveness.
+        double renewable = horizon * std::max(0.0, income);
+        double share     = renewable / std::max(1.0, bank + renewable);
+        maxScale         = (TMMaxSD + (TMMaxInc - TMMaxSD) * share) / 1000.0;
+        dynamicExponent  = (TMElasticitySD + (TMElasticityInc - TMElasticitySD) * share) / 1000.0;
     }
-
-    // x moves in y seconds (+ z increment)
     else
     {
-        optScale = std::min((0.88 + ply / 116.4) / mtg, 0.88 * limits.time[us] / timeLeft);
-        maxScale = 1.3 + 0.11 * mtg;
+        // Keep master's cyclic allocation as the starting point.
+        int    mtg      = std::min(limits.movestogo, 50);
+        double timeLeft = std::max(1.0, double(limits.time[us]) + double(limits.inc[us]) * (mtg - 1)
+                                          - double(moveOverhead) * (2 + mtg));
+        double scale    = std::min((TMCyclicBase / 1000.0 + ply / (TMCyclicPly / 1000.0)) / mtg,
+                                   TMCyclicBase / 1000.0 * limits.time[us] / timeLeft);
+        if (!useNodesTime && limits.movestogo != 1)
+        {
+            double advantage = (double(limits.time[us]) - limits.time[~us])
+                             / (1.0 + double(limits.time[us]) + limits.time[~us]);
+            scale *= std::max(0.0, 1.0 + TMCyclicBehind / 1000.0 * std::min(advantage, 0.0));
+        }
+        budget   = scale * timeLeft;
+        maxScale = (TMCyclicMaxBase + TMCyclicMaxMove * mtg) / 1000.0;
     }
 
-    // Decrease time usage if behind in time.
-    // This is skipped in two cases:
-    // - if the nodestime option is used we can't calculate the opponent nodes budget in a deterministic way.
-    // - if we use a cyclic time management (like 40/10) calculating time advantage for the last move (movestogo = 1)
-    //   can be vastly off, because if the opponent had done his last move before us his time budget includes already
-    //   the next cycle time increment but our not. This leads to a unnecessary big decrease in time usage which favors blunders.
-    // Warning: don't remove this conditions.
-    if (!useNodesTime && limits.movestogo != 1)
-    {
-        double timeAdvantage =
-          (limits.time[us] - limits.time[~us]) / (1.0 + limits.time[us] + limits.time[~us]);
-        optScale *= 1 + 0.9 * std::min(timeAdvantage, 0.0);
-    }
-
-    // Limit the maximum possible time for this move
-    optimumTime = TimePoint(std::max(1.0, optScale * timeLeft));
-    maximumTime =
-      TimePoint(std::max(double(optimumTime), std::min(0.8097 * limits.time[us] - moveOverhead,
-                                                       maxScale * optimumTime)));
+    // Safety is independent of responsiveness: no extrapolation past the clock cap.
+    double cap  = std::max(1.0, TMClockCap / 1000.0 * limits.time[us] - moveOverhead);
+    optimumTime = TimePoint(std::clamp(budget, 1.0, cap));
+    maximumTime = TimePoint(std::clamp(maxScale * optimumTime, double(optimumTime), cap));
 
     if (options["Ponder"])
-        optimumTime += optimumTime / 4;
+        optimumTime += TimePoint(optimumTime * (TMPonderBonus / 1000.0));
 }
 
 }  // namespace Stockfish

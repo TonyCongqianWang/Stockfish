@@ -27,7 +27,7 @@
 namespace Stockfish {
 
 class OptionsMap;
-enum Color : u8;
+class Position;
 
 namespace Search {
 struct LimitsType;
@@ -37,11 +37,8 @@ struct LimitsType;
 // the maximum available time, the game move number, and other parameters.
 class TimeManagement {
    public:
-    void init(Search::LimitsType& limits,
-              Color               us,
-              int                 ply,
-              const OptionsMap&   options,
-              double&             originalTimeAdjust);
+    void   init(Search::LimitsType& limits, const Position& pos, const OptionsMap& options);
+    double responsiveness() const { return dynamicExponent; }
 
     TimePoint optimum() const;
     TimePoint maximum() const;
@@ -57,6 +54,7 @@ class TimeManagement {
    private:
     static constexpr TimePoint NoBound = std::numeric_limits<TimePoint>::max() / 2;
 
+    double    dynamicExponent = 1.0;
     TimePoint startTime;
     TimePoint optimumTime = NoBound;
     TimePoint maximumTime = NoBound;

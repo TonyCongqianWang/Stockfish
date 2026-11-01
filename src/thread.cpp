@@ -17,6 +17,7 @@
 */
 
 #include "thread.h"
+#include "tmparams.h"
 
 #include <algorithm>
 #include <cassert>
@@ -268,11 +269,10 @@ void ThreadPool::clear() {
 
     // These two affect the time taken on the first move of a game:
     main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
-    main_manager()->previousTimeReduction    = 0.85;
+    main_manager()->previousTimeReduction    = TimeParams::TMPreviousReduction / 1000.0;
 
-    main_manager()->callsCnt           = 0;
-    main_manager()->bestPreviousScore  = VALUE_INFINITE;
-    main_manager()->originalTimeAdjust = -1;
+    main_manager()->callsCnt          = 0;
+    main_manager()->bestPreviousScore = VALUE_INFINITE;
     main_manager()->tm.clear();
 }
 

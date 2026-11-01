@@ -45,6 +45,7 @@
 #include "syzygy/tbprobe.h"
 #include "thread.h"
 #include "timeman.h"
+#include "tmparams.h"
 #include "tt.h"
 #include "types.h"
 #include "uci.h"
@@ -67,6 +68,7 @@ void syzygy_extend_pv(const OptionsMap&            options,
                       const usize                  multiPV);
 
 using namespace Search;
+using namespace TimeParams;
 
 namespace {
 
@@ -211,8 +213,7 @@ void Search::Worker::start_searching() {
         return;
     }
 
-    main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
-                            main_manager()->originalTimeAdjust);
+    main_manager()->tm.init(limits, rootPos, options);
     tt.new_search();
     main_manager()->updates.onStart();
 
@@ -584,34 +585,43 @@ bool Search::Worker::iterative_deepening() {
         {
             u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
 
-            double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
-                                  + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
-                               / 100.0;
-            fallingEval = std::clamp(fallingEval, 0.576, 1.728);
+            double fallingEval =
+              (TMEvalBase / 1000.0
+               + TMEvalPrevious / 1000.0 * (mainThread->bestPreviousAverageScore - bestValue)
+               + TMEvalIteration / 1000.0 * (mainThread->iterValue[iterIdx] - bestValue))
+              / 100.0;
+            fallingEval = std::clamp(fallingEval, TMEvalMin / 1000.0, TMEvalMax / 1000.0);
 
             // If the bestMove is stable over several iterations, reduce time accordingly
-            timeReduction = std::clamp(
-              interpolate(double(rootDepth - lastBestMoveDepth), 4.96, 18.79, 0.639, 1.712), 0.629,
-              1.544);
+            timeReduction =
+              std::clamp(interpolate(double(rootDepth - lastBestMoveDepth), TMStableStart / 1000.0,
+                                     (TMStableStart + TMStableSpan) / 1000.0, TMStableLow / 1000.0,
+                                     (TMStableLow + TMStableRise) / 1000.0),
+                         TMStableMin / 1000.0, TMStableMax / 1000.0);
 
-            double reduction =
-              (1.468 + mainThread->previousTimeReduction) / (2.284 * timeReduction);
+            double reduction = (TMReductionOffset / 1000.0 + mainThread->previousTimeReduction)
+                             / (TMReductionDivisor / 1000.0 * timeReduction);
 
             // Age out and update PV variability metric
-            totBestMoveChanges /= 2;
+            totBestMoveChanges *= TMChangeDecay / 1000.0;
             for (auto&& th : threads)
             {
                 totBestMoveChanges += th->worker->bestMoveChanges;
                 th->worker->bestMoveChanges = 0;
             }
 
-            double bestMoveInstability = 1.077 + 2.229 * totBestMoveChanges / threads.size();
+            double bestMoveInstability =
+              TMChangeBase / 1000.0 + TMChangeWeight / 1000.0 * totBestMoveChanges / threads.size();
 
             double highBestMoveEffort = std::clamp(
-              interpolate(i64(nodesEffort), i64(75800), i64(104510), 0.969, 0.714), 0.693, 0.838);
+              interpolate(i64(nodesEffort), i64(TMEffortStart), i64(TMEffortStart + TMEffortSpan),
+                          TMEffortBase / 1000.0, (TMEffortBase - TMEffortDrop) / 1000.0),
+              TMEffortMin / 1000.0, std::max(TMEffortMin, TMEffortMax) / 1000.0);
 
-            double totalTime = mainThread->tm.optimum() * fallingEval * reduction
-                             * bestMoveInstability * highBestMoveEffort;
+            double difficulty =
+              std::max(0.01, fallingEval * reduction * bestMoveInstability * highBestMoveEffort);
+            double totalTime =
+              mainThread->tm.optimum() * std::pow(difficulty, mainThread->tm.responsiveness());
 
             if (rootMoves.size() == 1)
                 // Cap used time to 0.5s for a better viewer experience
@@ -632,7 +642,8 @@ bool Search::Worker::iterative_deepening() {
                     threads.stop = true;
             }
             else
-                threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
+                threads.increaseDepth =
+                  mainThread->ponder || elapsedTime <= totalTime * (TMDepthFraction / 1000.0);
         }
 
         mainThread->iterValue[iterIdx] = bestValue;
