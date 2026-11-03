@@ -47,13 +47,13 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks        = 512;
+constexpr IndexType LayerStacks        = 256;
 constexpr IndexType NumFC0Experts      = 64;
 constexpr IndexType NumMaterialStates  = 676;
 constexpr IndexType KingStates         = 8;
 constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
 constexpr IndexType RouterTableSize    = FC0RouterTableSize * KingStates;
-constexpr u32       RouterHash         = 0x4D6F4538u;
+constexpr u32       RouterHash         = 0x4D6F3835u;
 
 static constexpr u32 get_router_hash() {
     return RouterHash ^ ((NumFC0Experts << 16) | LayerStacks);
