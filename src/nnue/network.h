@@ -97,8 +97,8 @@ class Network {
     InputLayer          firstLayer[NumFC0Experts];
     NetworkArchitecture network[LayerStacks];
 
-    // Expanded 9-bit joint tail IDs; the file stores packed IDs.
-    alignas(CacheLineSize) uint16_t router[RouterTableSize];
+    // Byte-wide joint tail IDs; FC0 IDs remain packed in the file.
+    alignas(CacheLineSize) uint8_t router[RouterTableSize];
 
     // Ordered STM/OPP material pair selects one full-width FC0 expert.
     alignas(CacheLineSize) uint8_t fc0Router[FC0RouterTableSize];

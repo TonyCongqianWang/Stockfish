@@ -450,7 +450,7 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
             return false;
     }
     if (!read_packed(stream, fc0Router, FC0RouterTableSize, 6)
-        || !read_packed(stream, router, RouterTableSize, 9))
+        || !read_packed(stream, router, RouterTableSize, 8))
         return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
@@ -470,7 +470,7 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
             return false;
     }
     if (!write_packed(stream, fc0Router, FC0RouterTableSize, 6)
-        || !write_packed(stream, router, RouterTableSize, 9))
+        || !write_packed(stream, router, RouterTableSize, 8))
         return false;
     return bool(stream);
 }
