@@ -43,12 +43,19 @@ using PairFeatureSet   = Features::PP_3Wide;
 using PSQFeatureSet    = Features::K32H3;
 
 // Number of input feature dimensions after conversion
+#if defined(NNUE_TEST_SMALL)
+// CPU pipeline CI only; normal builds retain the production architecture.
+constexpr IndexType L1                = 256;
+constexpr IndexType LayerStacks       = 4;
+constexpr IndexType NumFC0Experts     = 4;
+#else
 constexpr IndexType L1 = 1024;
+constexpr IndexType LayerStacks   = 256;
+constexpr IndexType NumFC0Experts = 64;
+#endif
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType LayerStacks        = 256;
-constexpr IndexType NumFC0Experts      = 64;
 constexpr IndexType NumMaterialStates  = 676;
 constexpr IndexType KingStates         = 8;
 constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
