@@ -53,7 +53,7 @@ constexpr IndexType NumMaterialStates  = 676;
 constexpr IndexType KingStates         = 8;
 constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
 constexpr IndexType RouterTableSize    = FC0RouterTableSize * KingStates;
-constexpr u32       RouterHash         = 0x4D6F3835u;
+constexpr u32       RouterHash         = 0x4D6F3836u;  // MoE8.6: expert biases have no shared base
 
 static constexpr u32 get_router_hash() {
     return RouterHash ^ ((NumFC0Experts << 16) | LayerStacks);
