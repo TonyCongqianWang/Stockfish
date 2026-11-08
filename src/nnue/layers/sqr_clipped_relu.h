@@ -76,8 +76,8 @@ class SqrClippedReLU {
                         const InputType* input_lin,
                         OutputType*      squared,
                         OutputType*      clipped) const {
-        static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 8,
-                      "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 8");
+        static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 9,
+                      "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 9");
         static_assert(InputDimensions % 32 == 0,
                       "propagate_pair() needs a tail path if L2/L3 change to multiple of 16");
 
@@ -92,18 +92,38 @@ class SqrClippedReLU {
 
         const __m512i zero = _mm512_setzero_si512();
 
+        const auto loadSqr = [](const __m512i* src) {
+            const auto x = _mm512_load_si512(src);
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm512_abs_epi32(_mm512_max_epi32(x, _mm512_set1_epi32(-65535)));
+            return x;
+        };
+        const auto pack = [](__m512i a, __m512i b) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm512_packus_epi32(a, b);
+            return _mm512_packs_epi32(a, b);
+        };
+        const auto squareHigh = [](__m512i x) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm512_mulhi_epu16(x, x);
+            return _mm512_mulhi_epi16(x, x);
+        };
+        const auto nonnegative = [zero](__m512i x) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return x;
+            return _mm512_max_epi16(x, zero);
+        };
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
-            const __m512i wordsSqr = _mm512_packs_epi32(_mm512_load_si512(&inSqr[i * 2 + 0]),
-                                                        _mm512_load_si512(&inSqr[i * 2 + 1]));
-            const __m512i sqrWords =
-              _mm512_srli_epi16(_mm512_mulhi_epi16(wordsSqr, wordsSqr), SimdShiftAmount);
+            const __m512i wordsSqr = pack(loadSqr(&inSqr[i * 2 + 0]), loadSqr(&inSqr[i * 2 + 1]));
+            const __m512i sqrWords = _mm512_srli_epi16(squareHigh(wordsSqr), SimdShiftAmount);
             _mm256_store_si256(&sqrOut[i], _mm512_cvtsepi16_epi8(sqrWords));
 
-            const __m512i wordsLin = _mm512_packs_epi32(_mm512_load_si512(&inLin[i * 2 + 0]),
-                                                        _mm512_load_si512(&inLin[i * 2 + 1]));
+            const __m512i wordsLin =
+              pack(_mm512_load_si512(&inLin[i * 2 + 0]), _mm512_load_si512(&inLin[i * 2 + 1]));
             const __m512i clipWords =
-              _mm512_srli_epi16(_mm512_max_epi16(wordsLin, zero), WeightScaleBitsLocal);
+              _mm512_srli_epi16(nonnegative(wordsLin), WeightScaleBitsLocal);
             _mm256_store_si256(&clipOut[i], _mm512_cvtsepi16_epi8(clipWords));
         }
 
@@ -115,29 +135,45 @@ class SqrClippedReLU {
 
         const __m256i zero = _mm256_setzero_si256();
 
+        const auto loadSqr = [](const __m256i* src) {
+            const auto x = _mm256_load_si256(src);
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm256_abs_epi32(_mm256_max_epi32(x, _mm256_set1_epi32(-65535)));
+            return x;
+        };
+        const auto pack = [](__m256i a, __m256i b) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm256_packus_epi32(a, b);
+            return _mm256_packs_epi32(a, b);
+        };
+        const auto squareHigh = [](__m256i x) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return _mm256_mulhi_epu16(x, x);
+            return _mm256_mulhi_epi16(x, x);
+        };
+        const auto nonnegative = [zero](__m256i x) {
+            if constexpr (WeightScaleBitsLocal == 9)
+                return x;
+            return _mm256_max_epi16(x, zero);
+        };
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
-            const __m256i wordsSqr0 = _mm256_packs_epi32(_mm256_load_si256(&inSqr[i * 4 + 0]),
-                                                         _mm256_load_si256(&inSqr[i * 4 + 1]));
-            const __m256i wordsSqr1 = _mm256_packs_epi32(_mm256_load_si256(&inSqr[i * 4 + 2]),
-                                                         _mm256_load_si256(&inSqr[i * 4 + 3]));
+            const __m256i wordsSqr0 = pack(loadSqr(&inSqr[i * 4 + 0]), loadSqr(&inSqr[i * 4 + 1]));
+            const __m256i wordsSqr1 = pack(loadSqr(&inSqr[i * 4 + 2]), loadSqr(&inSqr[i * 4 + 3]));
 
-            const __m256i sqr0 =
-              _mm256_srli_epi16(_mm256_mulhi_epi16(wordsSqr0, wordsSqr0), SimdShiftAmount);
-            const __m256i sqr1 =
-              _mm256_srli_epi16(_mm256_mulhi_epi16(wordsSqr1, wordsSqr1), SimdShiftAmount);
+            const __m256i sqr0      = _mm256_srli_epi16(squareHigh(wordsSqr0), SimdShiftAmount);
+            const __m256i sqr1      = _mm256_srli_epi16(squareHigh(wordsSqr1), SimdShiftAmount);
             const __m256i sqrPacked = _mm256_packs_epi16(sqr0, sqr1);
             _mm256_store_si256(&sqrOut[i], sqrPacked);
 
-            const __m256i wordsLin0 = _mm256_packs_epi32(_mm256_load_si256(&inLin[i * 4 + 0]),
-                                                         _mm256_load_si256(&inLin[i * 4 + 1]));
-            const __m256i wordsLin1 = _mm256_packs_epi32(_mm256_load_si256(&inLin[i * 4 + 2]),
-                                                         _mm256_load_si256(&inLin[i * 4 + 3]));
+            const __m256i wordsLin0 =
+              pack(_mm256_load_si256(&inLin[i * 4 + 0]), _mm256_load_si256(&inLin[i * 4 + 1]));
+            const __m256i wordsLin1 =
+              pack(_mm256_load_si256(&inLin[i * 4 + 2]), _mm256_load_si256(&inLin[i * 4 + 3]));
 
-            const __m256i clip0 =
-              _mm256_srli_epi16(_mm256_max_epi16(wordsLin0, zero), WeightScaleBitsLocal);
-            const __m256i clip1 =
-              _mm256_srli_epi16(_mm256_max_epi16(wordsLin1, zero), WeightScaleBitsLocal);
+            const __m256i clip0 = _mm256_srli_epi16(nonnegative(wordsLin0), WeightScaleBitsLocal);
+            const __m256i clip1 = _mm256_srli_epi16(nonnegative(wordsLin1), WeightScaleBitsLocal);
             const __m256i clipPacked = _mm256_packs_epi16(clip0, clip1);
             _mm256_store_si256(&clipOut[i], clipPacked);
         }
@@ -154,8 +190,24 @@ class SqrClippedReLU {
 #if !defined(USE_PAIR_ACTIVATIONS)
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
-        static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 8,
-                      "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 8");
+        if constexpr (WeightScaleBitsLocal == 9)
+        {
+            for (IndexType i = 0; i < InputDimensions; ++i)
+            {
+                IndexType slot = i;
+    #if defined(USE_LASX) && defined(ENABLE_SEQ_OPT)
+                // Match AffineTransform's load-time lane permutation.
+                const IndexType chunk = (i % 32) / 4;
+                slot                  = i / 32 * 32 + ((chunk % 2) * 4 + chunk / 2) * 4 + i % 4;
+    #endif
+                output[slot] =
+                  static_cast<OutputType>(std::min<i64>(127, (i64(input[i]) * input[i]) >> 25));
+            }
+            return;
+        }
+
+        static_assert(WeightScaleBitsLocal >= 5 && WeightScaleBitsLocal <= 9,
+                      "SqrClippedReLU only support WeightScaleBitsLocal between 5 and 9");
         // After squaring we need to shift by WeightScaleBitsLocal * 2 + 7
         // MulHi strips the lower 16 bits (i.e. shift by 16) so we need to shift out the remaining.
         [[maybe_unused]] constexpr int SimdShiftAmount = WeightScaleBitsLocal * 2 + 7 - 16;

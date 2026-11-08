@@ -62,8 +62,10 @@ constexpr IndexType FC0RouterTableSize = NumMaterialStates * NumMaterialStates;
 constexpr IndexType RouterTableSize    = FC0RouterTableSize * KingStates;
 constexpr u32       RouterHash         = 0x4D6F3836u;  // MoE8.6: expert biases have no shared base
 
+constexpr int FC0WeightScaleBits = 9;
+
 static constexpr u32 get_router_hash() {
-    return RouterHash ^ ((NumFC0Experts << 16) | LayerStacks);
+    return RouterHash ^ ((NumFC0Experts << 16) | LayerStacks) ^ ((1U << FC0WeightScaleBits) ^ 256U);
 }
 
 struct InputLayer {
@@ -72,8 +74,8 @@ struct InputLayer {
 
     Layers::AffineTransformSparseInput<TransformedFeatureDimensions, FC_0_OUTPUTS, FC_0_OUTPUTS * 2>
                                                               fc_0;
-    Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2> ac_sqr_0;
-    Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 2>    ac_0;
+    Layers::SqrClippedReLU<FC_0_OUTPUTS, FC0WeightScaleBits>  ac_sqr_0;
+    Layers::ClippedReLU<FC_0_OUTPUTS, FC0WeightScaleBits>     ac_0;
 
     static constexpr u32 get_hash_value() {
         u32 hash = 0xEC42E90Du ^ (TransformedFeatureDimensions * 2);
@@ -158,11 +160,11 @@ struct NetworkArchitecture {
         ac_1.propagate(buffer.lin, buffer.combined + 2 * L2 + L3);
 #endif
         fc_2.propagate(buffer.combined, buffer.output);
-        // The readout has scale 128 and the raw skips scale 256. Preserve
+        // The readout has scale 128 and the raw skips scale 512. Preserve
         // the average of the two bias-free FC0 skip differences.
-        const i64     fwdOut      = (4 * i64(buffer.output[0]) + skips) / 2;
+        const i64     fwdOut      = (8 * i64(buffer.output[0]) + skips) / 2;
         constexpr i64 multiplier  = 600 * OutputScale;
-        constexpr i64 denominator = static_cast<i64>(HiddenOneVal) * (1U << WeightScaleBits) * 4;
+        constexpr i64 denominator = static_cast<i64>(HiddenOneVal) * (1U << FC0WeightScaleBits);
         return i32((fwdOut * multiplier) / denominator);
     }
 
