@@ -69,6 +69,21 @@ class ClippedReLU {
 #if !defined(USE_PAIR_ACTIVATIONS)
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+        if constexpr (WeightScaleBitsLocal == 9)
+        {
+            for (IndexType i = 0; i < InputDimensions; ++i)
+            {
+                IndexType slot = i;
+    #if defined(USE_LASX) && defined(ENABLE_SEQ_OPT)
+                // Match AffineTransform's load-time lane permutation.
+                const IndexType chunk = (i % 32) / 4;
+                slot                  = i / 32 * 32 + ((chunk % 2) * 4 + chunk / 2) * 4 + i % 4;
+    #endif
+                output[slot] = static_cast<OutputType>(std::clamp(input[i] >> 9, 0, 127));
+            }
+            return;
+        }
+
 
     #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
