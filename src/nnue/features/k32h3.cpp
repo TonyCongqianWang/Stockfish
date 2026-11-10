@@ -118,7 +118,7 @@ void K32H3::append_changed_indices(
 }
 
 int K32H3::block(const Position& pos, Color perspective) {
-    return pos.count<QUEEN>(~perspective) ? 2 : bool(pos.pieces(ROOK, QUEEN));
+    return pos.count<QUEEN>(~perspective) ? 2 : pos.count<ROOK>(~perspective) > 0;
 }
 
 K32H3::BlockState K32H3::block_state(const Position& pos) {

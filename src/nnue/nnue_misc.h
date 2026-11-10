@@ -48,9 +48,9 @@ struct EvalFile {
 };
 
 struct NnueEvalTrace {
-    Value positional[LayerStacks];
-    usize correctBucket;
-    usize layerStacks;
+    Value positional;
+    int   fc0Expert;
+    int   tailExpert;
 };
 
 class Network;
