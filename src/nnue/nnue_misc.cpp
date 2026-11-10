@@ -65,23 +65,10 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     auto t = network.trace_evaluate(pos, *accumulators, caches);
 
-    ss << "NNUE network contributions (Normalized, "
-       << (pos.side_to_move() == WHITE ? "White to move)" : "Black to move)") << std::endl
-       << "+------------+------------+\n"
-       << "|   Bucket   | Evaluation |\n"
-       << "+------------+------------+\n";
-
-    for (usize bucket = 0; bucket < t.layerStacks; ++bucket)
-    {
-        ss << "|  " << std::left << std::setw(10) << bucket << std::right << "|  ";
-        format_cp_aligned_dot(t.positional[bucket], ss, pos);
-        ss << "   |";
-        if (bucket == t.correctBucket)
-            ss << " <-- this bucket is used";
-        ss << '\n';
-    }
-
-    ss << "+------------+------------+\n";
+    ss << "NNUE routes: FC0 = " << t.fc0Expert << "; tail = " << t.tailExpert << '\n';
+    ss << "NNUE evaluation: ";
+    format_cp_aligned_dot(t.positional, ss, pos);
+    ss << '\n';
 
     return ss.str();
 }

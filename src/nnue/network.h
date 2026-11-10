@@ -91,24 +91,27 @@ class Network {
     bool read_parameters(std::istream&, std::string&);
     bool write_parameters(std::ostream&, const std::string&) const;
 
-    int layer_stack(const Position& pos) const;
 
     // Input feature converter
     FeatureTransformer featureTransformer;
 
     // Evaluation function
+    InputLayer          firstLayer[NumFC0Experts];
     NetworkArchitecture network[LayerStacks];
-    u16                 layerStackFallback[RawLayerStacks];
-    u16                 layerStackIndex[RawLayerStacks];
-    IndexType           storedLayerStacks = 0;
+
+    // Byte-wide joint tail IDs; FC0 IDs remain packed in the file.
+    alignas(CacheLineSize) uint8_t router[RouterTableSize];
+
+    // Ordered STM/OPP material pair selects one full-width FC0 expert.
+    alignas(CacheLineSize) uint8_t fc0Router[FC0RouterTableSize];
 
     bool initialized = false;
 
-    static constexpr u32 LayerStackTableHash = 0x5A7AB1E5u;
+    i32 propagate_routes(const TransformedFeatureType*, const NNZInfo<L1>&, int, int) const;
 
     // Hash value of evaluation function structure
     static constexpr u32 hash = FeatureTransformer::get_hash_value()
-                              ^ NetworkArchitecture::get_hash_value() ^ LayerStackTableHash;
+                              ^ NetworkArchitecture::get_hash_value() ^ get_router_hash();
 
     friend struct AccumulatorCaches;
 };

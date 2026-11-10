@@ -19,6 +19,7 @@
 #include "network.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -65,6 +66,90 @@ const unsigned int  gEmbeddedNNUESize    = 1;
 namespace Stockfish::Eval::NNUE {
 
 namespace fs = std::filesystem;
+
+namespace {
+
+// Legal material states (non-king pieces, pawns, cascading category, pawn wings).
+constexpr auto MAT_ID_TABLE = [] {
+    std::array<std::array<std::array<std::array<uint16_t, 2>, 4>, 9>, 16> table{};
+    uint16_t                                                              id = 0;
+    for (int t = 0; t < 16; ++t)
+        for (int p = 0; p <= std::min(8, t); ++p)
+            for (int h = 0; h < 4; ++h)
+                if (t - p >= (h < 2 ? 1 : h == 2 ? 2 : 0))
+                    for (int wide = 0; wide <= int(p >= 2); ++wide)
+                        table[t][p][h][wide] = id++;
+    return table;
+}();
+
+inline uint16_t get_material_id(const Position& pos, Color c) {
+    const int      t     = std::clamp(pos.count<ALL_PIECES>(c) - 1, 0, 15);
+    const int      p     = std::clamp(pos.count<PAWN>(c), 0, std::min(8, t));
+    const Bitboard b     = pos.pieces(c, BISHOP);
+    const int      h     = t - p >= 1 && pos.pieces(c, QUEEN) ? 0
+                         : t - p >= 1 && pos.pieces(c, ROOK)  ? 1
+                         : t - p >= 2 && (b & 0x55AA55AA55AA55AAULL) && (b & ~0x55AA55AA55AA55AAULL) ? 2
+                                                                                                     : 3;
+    const Bitboard pawns = pos.pieces(c, PAWN);
+    const int wide = p >= 2 && (pawns & 0x0707070707070707ULL) && (pawns & 0xE0E0E0E0E0E0E0E0ULL);
+    return MAT_ID_TABLE[t][p][h][wide];
+}
+
+std::pair<int, int> router_contexts(const Position& pos) {
+    const Color us       = pos.side_to_move();
+    const int   material = get_material_id(pos, us) * NumMaterialStates + get_material_id(pos, ~us);
+    const int   own      = int(pos.square<KING>(us)) ^ (56 * int(us));
+    const int   enemy    = int(pos.square<KING>(~us)) ^ (56 * int(~us));
+    const int   f1 = own % 8, f2 = enemy % 8;
+    const bool  opposite = (f1 <= 2 && f2 >= 5) || (f2 <= 2 && f1 >= 5);
+    const int   king     = 4 * (own / 8 >= 2) + 2 * (own / 8 > enemy / 8) + opposite;
+    return {material, material * KingStates + king};
+}
+
+// LSB-first packed IDs are expanded once on load; evaluation uses aligned arrays.
+template<typename T>
+bool read_packed(std::istream& stream, T* values, usize count, unsigned bits) {
+    u32       buffer    = 0;
+    unsigned  available = 0;
+    const u32 mask      = (1U << bits) - 1;
+    for (usize i = 0; i < count; ++i)
+    {
+        while (available < bits)
+        {
+            const int byte = stream.get();
+            if (byte == std::char_traits<char>::eof())
+                return false;
+            buffer |= u32(byte) << available;
+            available += 8;
+        }
+        values[i] = T(buffer & mask);
+        buffer >>= bits;
+        available -= bits;
+    }
+    return buffer == 0;
+}
+
+template<typename T>
+bool write_packed(std::ostream& stream, const T* values, usize count, unsigned bits) {
+    u32      buffer    = 0;
+    unsigned available = 0;
+    for (usize i = 0; i < count; ++i)
+    {
+        buffer |= u32(values[i]) << available;
+        available += bits;
+        while (available >= 8)
+        {
+            stream.put(char(buffer & 255));
+            buffer >>= 8;
+            available -= 8;
+        }
+    }
+    if (available)
+        stream.put(char(buffer));
+    return bool(stream);
+}
+
+}  // namespace
 
 namespace Detail {
 
@@ -137,23 +222,11 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
     return saved;
 }
 
-int Network::layer_stack(const Position& pos) const {
-    const Color stm    = pos.side_to_move();
-    const int   band   = (pos.count<ALL_PIECES>() - 1) / 4;
-    const int   queens = 2 * bool(pos.pieces(stm, QUEEN)) + bool(pos.pieces(~stm, QUEEN));
-
-    // Pawn layout: 0 if pawns stand on both board halves, 1 if on one half only, 2 if there are no pawns
-    constexpr Bitboard QueenSide = FileABB | FileBBB | FileCBB | FileDBB;
-    const Bitboard     pawns     = pos.pieces(PAWN);
-    const int          layout    = !pawns ? 2 : (pawns & QueenSide) && (pawns & ~QueenSide) ? 0 : 1;
-
-    // Officers are the pieces other than pawns and kings
-    const auto officers = [&](Color c) {
-        return popcount(pos.pieces(c) & ~pos.pieces(PAWN, KING));
-    };
-    const bool many = std::max(officers(WHITE), officers(BLACK)) >= 2;
-
-    return layerStackIndex[((band * 4 + queens) * 3 + layout) * 2 + many];
+i32 Network::propagate_routes(const TransformedFeatureType* features,
+                              const NNZInfo<L1>&            nnz,
+                              int                           c_us,
+                              int                           c_them) const {
+    return network[router[c_them]].propagate(features, nnz, firstLayer[fc0Router[c_us]]);
 }
 
 Value Network::evaluate(const Position&    pos,
@@ -168,10 +241,10 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int bucket = layer_stack(pos);
+    const auto [us, them] = router_contexts(pos);
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
+    const auto positional = propagate_routes(transformedFeatures, nnzInfo, us, them);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -208,7 +281,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * storedLayerStacks;
+        usize size = sizeof(featureTransformer) + sizeof(firstLayer) + sizeof(network)
+                   + sizeof(router) + sizeof(fc0Router);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -229,20 +303,14 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int bucket = layer_stack(pos);
-
+    const auto [fc0Context, tailContext] = router_contexts(pos);
     NnueEvalTrace t{};
-    t.correctBucket = bucket;
-    t.layerStacks   = storedLayerStacks;
-
+    t.fc0Expert  = fc0Router[fc0Context];
+    t.tailExpert = router[tailContext];
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-
-    for (IndexType b = 0; b < storedLayerStacks; ++b)
-    {
-        const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
-        t.positional[b]       = static_cast<Value>(positional / OutputScale);
-    }
+    t.positional = static_cast<Value>(
+      propagate_routes(transformedFeatures, nnzInfo, fc0Context, tailContext) / OutputScale);
 
     return t;
 }
@@ -289,7 +357,11 @@ void Network::load_internal(EvalFile& evalFile) {
 }
 
 
-void Network::initialize() { initialized = true; }
+void Network::initialize() {
+    initialized = true;
+    std::memset(router, 0, sizeof(router));
+    std::memset(fc0Router, 0, sizeof(fc0Router));
+}
 
 
 bool Network::save(std::ostream& stream, const std::string& netDescription) const {
@@ -311,10 +383,14 @@ usize Network::get_content_hash() const {
 
     usize h = 0;
     hash_combine(h, featureTransformer);
-    for (const u16 f : layerStackFallback)
-        hash_combine(h, f);
-    for (usize i = 0; i < storedLayerStacks; ++i)
-        hash_combine(h, network[i]);
+    for (auto&& first : firstLayer)
+        hash_combine(h, first.get_content_hash());
+    for (auto&& layerstack : network)
+        hash_combine(h, layerstack);
+    for (usize i = 0; i < RouterTableSize; ++i)
+        hash_combine(h, router[i]);
+    for (auto id : fc0Router)
+        hash_combine(h, id);
     return h;
 }
 
@@ -362,35 +438,19 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         return false;
     if (hashValue != Network::hash)
         return false;
-    if (read_little_endian<u32>(stream) != LayerStackTableHash
-        || read_little_endian<u32>(stream) != RawLayerStacks)
-        return false;
-    storedLayerStacks = read_little_endian<u32>(stream);
-    if (storedLayerStacks == 0 || storedLayerStacks > LayerStacks)
-        return false;
-    for (u16& f : layerStackFallback)
-        if ((f = read_little_endian<u16>(stream)) >= RawLayerStacks)
-            return false;
-    IndexType stored = 0;
-    for (IndexType s = 0; s < RawLayerStacks; ++s)
-        if (layerStackFallback[s] == s)
-            layerStackIndex[s] = u16(stored++);
-    if (stored != storedLayerStacks)
-        return false;
-    for (IndexType s = 0; s < RawLayerStacks; ++s)
-    {
-        const u16 f = layerStackFallback[s];
-        if (layerStackFallback[f] != f)
-            return false;
-        layerStackIndex[s] = layerStackIndex[f];
-    }
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < storedLayerStacks; ++i)
+    for (auto& first : firstLayer)
+        if (!Detail::read_parameters(stream, first))
+            return false;
+    for (usize i = 0; i < LayerStacks; ++i)
     {
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
+    if (!read_packed(stream, fc0Router, FC0RouterTableSize, 6)
+        || !read_packed(stream, router, RouterTableSize, 8))
+        return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
 
@@ -398,18 +458,19 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
 bool Network::write_parameters(std::ostream& stream, const std::string& netDescription) const {
     if (!write_header(stream, Network::hash, netDescription))
         return false;
-    write_little_endian<u32>(stream, LayerStackTableHash);
-    write_little_endian<u32>(stream, RawLayerStacks);
-    write_little_endian<u32>(stream, storedLayerStacks);
-    for (const u16 f : layerStackFallback)
-        write_little_endian<u16>(stream, f);
     if (!Detail::write_parameters(stream, featureTransformer))
         return false;
-    for (usize i = 0; i < storedLayerStacks; ++i)
+    for (const auto& first : firstLayer)
+        if (!Detail::write_parameters(stream, first))
+            return false;
+    for (usize i = 0; i < LayerStacks; ++i)
     {
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
+    if (!write_packed(stream, fc0Router, FC0RouterTableSize, 6)
+        || !write_packed(stream, router, RouterTableSize, 8))
+        return false;
     return bool(stream);
 }
 
