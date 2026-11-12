@@ -69,20 +69,47 @@ namespace fs = std::filesystem;
 
 namespace {
 
-// Legal material states (non-king pieces, pawns, cascading category, pawn wings).
-constexpr auto MAT_ID_TABLE = [] {
-    std::array<std::array<std::array<std::array<uint16_t, 2>, 4>, 9>, 16> table{};
-    uint16_t                                                              id = 0;
+constexpr int relative_pawns(int pieces, int pawns) {
+    const int officers = pieces - pawns;
+    return pawns == 0 ? 0 : pawns <= officers ? 1 : pawns <= officers + 2 ? 2 : 3;
+}
+
+constexpr auto MATERIAL_IDS = [] {
+    struct Tables {
+        std::array<std::array<std::array<int, 4>, 9>, 16> tail{};
+        std::array<std::array<std::array<int, 4>, 4>, 16> fc0{};
+        int                                               tailCount = 0, fc0Count = 0;
+    } tables;
     for (int t = 0; t < 16; ++t)
+    {
         for (int p = 0; p <= std::min(8, t); ++p)
             for (int h = 0; h < 4; ++h)
                 if (t - p >= (h < 2 ? 1 : h == 2 ? 2 : 0))
-                    for (int wide = 0; wide <= int(p >= 2); ++wide)
-                        table[t][p][h][wide] = id++;
-    return table;
+                {
+                    tables.tail[t][p][h]                   = tables.tailCount++;
+                    tables.fc0[t][relative_pawns(t, p)][h] = -1;
+                }
+        for (auto& row : tables.fc0[t])
+            for (int& id : row)
+                if (id == -1)
+                    id = tables.fc0Count++;
+    }
+    return tables;
 }();
 
-inline uint16_t get_material_id(const Position& pos, Color c) {
+static_assert(MATERIAL_IDS.fc0Count == 203 && MATERIAL_IDS.tailCount == 396);
+
+int joint_wings(int us, int them) {
+    if (us == 3 || them == 3)
+        return us == them ? 0 : us == 3 ? 1 : 2;
+    return us != 0 && them != 0 && us != them ? 3 : 4;
+}
+
+struct MaterialContext {
+    int fc0, tail, wings;
+};
+
+MaterialContext get_material_context(const Position& pos, Color c) {
     const int      t     = std::clamp(pos.count<ALL_PIECES>(c) - 1, 0, 15);
     const int      p     = std::clamp(pos.count<PAWN>(c), 0, std::min(8, t));
     const Bitboard b     = pos.pieces(c, BISHOP);
@@ -91,19 +118,23 @@ inline uint16_t get_material_id(const Position& pos, Color c) {
                          : t - p >= 2 && (b & 0x55AA55AA55AA55AAULL) && (b & ~0x55AA55AA55AA55AAULL) ? 2
                                                                                                      : 3;
     const Bitboard pawns = pos.pieces(c, PAWN);
-    const int wide = p >= 2 && (pawns & 0x0707070707070707ULL) && (pawns & 0xE0E0E0E0E0E0E0E0ULL);
-    return MAT_ID_TABLE[t][p][h][wide];
+    const int wings = bool(pawns & 0x0707070707070707ULL) + 2 * bool(pawns & 0xE0E0E0E0E0E0E0E0ULL);
+    return {MATERIAL_IDS.fc0[t][relative_pawns(t, p)][h], MATERIAL_IDS.tail[t][p][h], wings};
 }
 
 std::pair<int, int> router_contexts(const Position& pos) {
     const Color us       = pos.side_to_move();
-    const int   material = get_material_id(pos, us) * NumMaterialStates + get_material_id(pos, ~us);
+    const auto  stm      = get_material_context(pos, us);
+    const auto  opp      = get_material_context(pos, ~us);
+    const int   fc0      = stm.fc0 * NumFC0MaterialStates + opp.fc0;
+    const int   tail =
+      (stm.tail * NumMaterialStates + opp.tail) * WingStates + joint_wings(stm.wings, opp.wings);
     const int   own      = int(pos.square<KING>(us)) ^ (56 * int(us));
     const int   enemy    = int(pos.square<KING>(~us)) ^ (56 * int(~us));
     const int   f1 = own % 8, f2 = enemy % 8;
     const bool  opposite = (f1 <= 2 && f2 >= 5) || (f2 <= 2 && f1 >= 5);
     const int   king     = 4 * (own / 8 >= 2) + 2 * (own / 8 > enemy / 8) + opposite;
-    return {material, material * KingStates + king};
+    return {fc0, tail * KingStates + king};
 }
 
 // LSB-first packed IDs are expanded once on load; evaluation uses aligned arrays.
