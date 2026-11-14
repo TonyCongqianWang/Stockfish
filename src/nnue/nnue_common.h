@@ -22,6 +22,7 @@
 #define NNUE_COMMON_H_INCLUDED
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -69,6 +70,41 @@ constexpr int OutputScale     = 16;
 constexpr int WeightScaleBits = 6;
 constexpr int FtMaxVal        = 255;
 constexpr int HiddenOneVal    = 128;
+
+// Output correction fitted against nn-68752b755c93.nnue, applied to the raw
+// network output before division by OutputScale. The side is selected by the
+// clipped fc_0[3] activation, clamp(fc_0[3] >> 7, 0, 127) > 12. On each side the
+// correction is linearly interpolated between 8 knots and constant outside them,
+// which keeps the corrected output monotone in the raw output.
+constexpr i32 OutputCorrectionSplit       = 13 << 7;
+constexpr i32 OutputCorrectionKnots[2][8] = {
+  {-15154, -9239, -6109, -3640, -38, 4134, 6721, 11166},
+  {-14701, -10346, -7398, -4114, -174, 2880, 5544, 10386}};
+constexpr i32 OutputCorrectionValues[2][8] = {{1782, 979, 572, 298, 105, -150, -444, -857},
+                                              {2945, 1755, 1159, 604, 165, -153, -531, -1072}};
+
+// Slope of each segment, scaled by 2^16
+constexpr auto OutputCorrectionSlopes = [] {
+    std::array<std::array<i32, 8>, 2> slopes{};
+    for (int side = 0; side < 2; ++side)
+        for (int i = 0; i < 7; ++i)
+            slopes[side][i] =
+              (OutputCorrectionValues[side][i + 1] - OutputCorrectionValues[side][i]) * (1 << 16)
+              / (OutputCorrectionKnots[side][i + 1] - OutputCorrectionKnots[side][i]);
+    return slopes;
+}();
+
+constexpr i32 correct_output(i32 raw, i32 fc0_3) {
+    const int   side  = fc0_3 >= OutputCorrectionSplit;
+    const auto& knots = OutputCorrectionKnots[side];
+    const i32   x     = std::clamp(raw, knots[0], knots[7]);
+    int         seg   = 0;
+    for (int i = 1; i < 8; ++i)
+        seg += knots[i] < x;
+    const i32 correction = OutputCorrectionValues[side][seg]
+                         + (((x - knots[seg]) * OutputCorrectionSlopes[side][seg]) >> 16);
+    return std::clamp(raw + correction, -512000, 512000);
+}
 
 // Size of cache line (in bytes)
 constexpr usize CacheLineSize = 64;

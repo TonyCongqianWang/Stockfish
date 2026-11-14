@@ -138,7 +138,7 @@ struct NetworkArchitecture {
           static_cast<i64>(HiddenOneVal) * static_cast<i64>(1U << WeightScaleBits) * 2;
 
         i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
-        return outputValue;
+        return correct_output(outputValue, buffer.fc_0_out[3]);
     }
 
     usize get_content_hash() const {
