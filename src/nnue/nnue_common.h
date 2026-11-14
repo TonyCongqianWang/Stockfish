@@ -70,6 +70,20 @@ constexpr int WeightScaleBits = 6;
 constexpr int FtMaxVal        = 255;
 constexpr int HiddenOneVal    = 128;
 
+// Score-only output correction fitted against nn-68752b755c93.nnue, applied to
+// the raw network output before division by OutputScale. The region is the
+// number of thresholds strictly below the raw output.
+constexpr i32 OutputCorrectionThresholds[] = {-9207, -6339, -6052, -5545, -5316,
+                                              -5107, -3585, 2242,  4709};
+constexpr i32 OutputCorrections[] = {1533, 765, 719, 625, 581, 495, 457, 102, 74, -389};
+
+constexpr i32 correct_output(i32 raw) {
+    int region = 0;
+    for (i32 t : OutputCorrectionThresholds)
+        region += t < raw;
+    return std::clamp(raw + OutputCorrections[region], -512000, 512000);
+}
+
 // Size of cache line (in bytes)
 constexpr usize CacheLineSize = 64;
 
