@@ -56,14 +56,14 @@ constexpr IndexType NumFC0Experts = 64;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType NumFC0MaterialStates = 203;
-constexpr IndexType NumMaterialStates    = 396;
+constexpr IndexType NumFC0MaterialStates = 107;
+constexpr IndexType NumMaterialStates    = 207;
 constexpr IndexType KingStates           = 8;
 constexpr IndexType WingStates           = 5;
 constexpr IndexType FC0RouterTableSize   = NumFC0MaterialStates * NumFC0MaterialStates;
 constexpr IndexType RouterTableSize =
   NumMaterialStates * NumMaterialStates * WingStates * KingStates;
-constexpr u32 RouterHash = 0x4D313000u;  // MoE10
+constexpr u32 RouterHash = 0x4D313100u;  // MoE10
 
 constexpr int FC0WeightScaleBits = 8;
 
