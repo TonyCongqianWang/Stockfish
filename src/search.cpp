@@ -1181,7 +1181,7 @@ moves_loop:  // When in check, search starts here
         // Calculate new depth for this move
         newDepth = depth - 1;
 
-        int r = reduction(improving, depth, moveCount);
+        int r = reduction(improving || ss->inCheck, depth, moveCount);
 
         // Decrease reduction for PvNodes
         if (PvNode)
