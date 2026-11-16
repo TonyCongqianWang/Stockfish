@@ -332,8 +332,10 @@ bool Search::Worker::iterative_deepening() {
     multiPV = std::min(multiPV, rootMoves.size());
 
     int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
     bool uciPvSent          = false;
+
+    fuzzyScore = threads.size() == 1 && multiPV == 1 && !skill.enabled() && !limits.mate
+              && !tbConfig.rootInTB && !rootPos.is_chess960();
 
     lowPlyHistory.fill(102);
 
@@ -360,7 +362,7 @@ bool Search::Worker::iterative_deepening() {
         {
             rootMoves[i].previousScore      = rootMoves[i].score;
             rootMoves[i].previousPV         = rootMoves[i].pv;
-            rootMoves[i].previousScoreExact = i < multiPV;
+            rootMoves[i].previousScoreExact = i < multiPV && !rootMoves[i].is_inexact();
         }
 
         usize pvFirst = pvLast = 0;
@@ -400,14 +402,12 @@ bool Search::Worker::iterative_deepening() {
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
             int failedHighCnt = 0;
-            if (!pvIdx)
-                failHighRecovery = std::max(0, failHighRecovery - 2);
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
+                Depth adjustedDepth =
+                  std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
                 bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
@@ -444,6 +444,15 @@ bool Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
+                    // Keep the PV and its established threshold, not the shallow
+                    // fail-soft overshoot. The next iteration resumes at greater depth.
+                    if (fuzzyScore && !seekMate && failedHighCnt >= 1
+                        && !is_decisive(bestValue) && !is_decisive(beta))
+                    {
+                        bestValue = beta;
+                        break;
+                    }
+
                     alpha = std::max(beta - delta, alpha);
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
@@ -455,10 +464,6 @@ bool Search::Worker::iterative_deepening() {
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
-
-            // Gradually increase depth after reduced depth search
-            if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
 
             if (threads.stop && pvIdx)
             {
@@ -583,8 +588,13 @@ bool Search::Worker::iterative_deepening() {
         {
             u64 nodesEffort = rootMoves[0].effort * 100000 / std::max(u64(1), u64(nodes));
 
-            double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - bestValue)
-                                  + 1.1 * (mainThread->iterValue[iterIdx] - bestValue))
+            // A lower bound does not establish an evaluation improvement.
+            Value timeValue = fuzzyScore && rootMoves[0].inexactLower
+                              ? std::min({bestValue, mainThread->bestPreviousAverageScore,
+                                          mainThread->iterValue[iterIdx]})
+                              : bestValue;
+            double fallingEval = (11.48 + 2.30 * (mainThread->bestPreviousAverageScore - timeValue)
+                                  + 1.1 * (mainThread->iterValue[iterIdx] - timeValue))
                                / 100.0;
             fallingEval = std::clamp(fallingEval, 0.576, 1.728);
 
@@ -1488,15 +1498,21 @@ moves_loop:  // When in check, search starts here
                                      / (N * ChiDenominator + ChiNumerator * E_prev),
                                    MinWeight, MaxWeight);
             u64 w_mss = std::min(w, u64(16));
-            i64 v2    = i64(value) * std::abs(value);
+
+            // A fail-high only establishes beta. Do not train the aspiration
+            // predictor (or optimism) on a fail-soft overshoot.
+            Value sample = fuzzyScore && !seekMate && !is_decisive(value)
+                             ? std::min(value, beta)
+                             : value;
+            i64 v2 = i64(sample) * std::abs(sample);
 
             if (rm.averageScore == -VALUE_INFINITE)
-                rm.averageScore = value;
+                rm.averageScore = sample;
             else
-                rm.averageScore = Value((value * w + rm.averageScore * (Scale - w)) / Scale);
+                rm.averageScore = Value((sample * w + rm.averageScore * (Scale - w)) / Scale);
 
             if (rm.meanSquaredScore == -VALUE_INFINITE * VALUE_INFINITE)
-                rm.meanSquaredScore = value * std::abs(value);
+                rm.meanSquaredScore = sample * std::abs(sample);
             else
                 rm.meanSquaredScore =
                   Value((v2 * w_mss + int64_t(rm.meanSquaredScore) * (Scale - w_mss)) / Scale);
@@ -1506,12 +1522,15 @@ moves_loop:  // When in check, search starts here
             {
                 rm.score = rm.uciScore = value;
                 rm.selDepth            = selDepth;
+                rm.effectiveDepth      = depth;
                 rm.unset_inexact();
 
                 if (value >= beta)
                 {
                     rm.inexactLower = true;
                     rm.uciScore     = beta;
+                    if (fuzzyScore && !seekMate && !is_decisive(value) && !is_decisive(beta))
+                        rm.score = beta;
                 }
                 else if (value <= alpha)
                 {
@@ -2315,6 +2334,8 @@ void SearchManager::output_pv(Search::Worker&           worker,
             continue;
 
         Depth d = usePreviousScore ? std::max(1, depth - 1) : depth;
+        if (worker.fuzzyScore && !usePreviousScore && rootMoves[i].inexactLower)
+            d = rootMoves[i].effectiveDepth;
         Value v = usePreviousScore ? rootMoves[i].previousScore : rootMoves[i].uciScore;
 
         if (v == -VALUE_INFINITE)

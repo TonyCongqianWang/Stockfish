@@ -161,6 +161,7 @@ struct RootMove {
     bool        inexactUpper     = false;  // one-sided bound here. See also `enum Bound` in types.h
     bool        previousScoreExact = false;
     int         selDepth           = 0;
+    Depth       effectiveDepth     = 0;
     int         tbRank             = 0;
     Value       tbScore;
     RootPVMoves pv, previousPV;
@@ -386,6 +387,7 @@ class Worker {
     RootMoves rootMoves;
     Depth     rootDepth;
     bool      seekMate = false;
+    bool      fuzzyScore = false;
 
     PVMoves lastIterationIdxPV;
 
