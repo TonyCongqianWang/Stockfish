@@ -99,15 +99,12 @@ class Network {
     InputLayer          firstLayer[NumFC0Experts];
     NetworkArchitecture network[LayerStacks];
 
-    // Byte-wide joint tail IDs; FC0 IDs remain packed in the file.
+    // Shared stack IDs are expanded from six bits on load.
     alignas(CacheLineSize) uint8_t router[RouterTableSize];
-
-    // Ordered STM/OPP material pair selects one full-width FC0 expert.
-    alignas(CacheLineSize) uint8_t fc0Router[FC0RouterTableSize];
 
     bool initialized = false;
 
-    i32 propagate_routes(const TransformedFeatureType*, const NNZInfo<L1>&, int, int) const;
+    i32 propagate_routes(const TransformedFeatureType*, const NNZInfo<L1>&, int) const;
 
     // Hash value of evaluation function structure
     static constexpr u32 hash = FeatureTransformer::get_hash_value()

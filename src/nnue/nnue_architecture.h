@@ -50,20 +50,18 @@ constexpr IndexType LayerStacks       = 4;
 constexpr IndexType NumFC0Experts     = 4;
 #else
 constexpr IndexType L1 = 1024;
-constexpr IndexType LayerStacks   = 256;
-constexpr IndexType NumFC0Experts = 64;
+constexpr IndexType LayerStacks = 64;
+constexpr IndexType NumFC0Experts = LayerStacks;
 #endif
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType NumFC0MaterialStates = 240;
 constexpr IndexType NumMaterialStates    = 468;
 constexpr IndexType KingStates           = 8;
 constexpr IndexType WingStates           = 5;
-constexpr IndexType FC0RouterTableSize   = NumFC0MaterialStates * NumFC0MaterialStates;
 constexpr IndexType RouterTableSize =
   NumMaterialStates * NumMaterialStates * WingStates * KingStates;
-constexpr u32 RouterHash = 0x4D313200u;  // MoE10
+constexpr u32 RouterHash = 0x4D313300u;  // Shared stack router
 
 constexpr int FC0WeightScaleBits = 8;
 

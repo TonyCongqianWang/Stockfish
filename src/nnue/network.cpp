@@ -69,36 +69,19 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr int relative_pawns(int pieces, int pawns) {
-    const int officers = pieces - pawns;
-    return pawns == 0 ? 0 : pawns <= officers ? 1 : pawns <= officers + 2 ? 2 : 3;
-}
-
 constexpr auto MATERIAL_IDS = [] {
-    struct Tables {
-        std::array<std::array<std::array<int, 6>, 9>, 16> tail{};
-        std::array<std::array<std::array<int, 6>, 4>, 16> fc0{};
-        int                                               tailCount = 0, fc0Count = 0;
-    } tables;
+    std::array<std::array<std::array<int, 6>, 9>, 16> tables{};
+    int count = 0;
     for (int t = 0; t < 16; ++t)
-    {
         for (int p = 0; p <= std::min(8, t); ++p)
             for (int h = 0; h < 6; ++h)
                 if (constexpr int minimum[] = {1, 3, 1, 3, 0, 1};
                     t - p >= minimum[h] && (h != 4 || t == p))
-                {
-                    tables.tail[t][p][h]                   = tables.tailCount++;
-                    tables.fc0[t][relative_pawns(t, p)][h] = -1;
-                }
-        for (auto& row : tables.fc0[t])
-            for (int& id : row)
-                if (id == -1)
-                    id = tables.fc0Count++;
-    }
+                    tables[t][p][h] = count++;
     return tables;
 }();
 
-static_assert(MATERIAL_IDS.fc0Count == 240 && MATERIAL_IDS.tailCount == 468);
+static_assert(MATERIAL_IDS[15][8][5] == NumMaterialStates - 1);
 
 int joint_wings(int us, int them) {
     if (us == 3 || them == 3)
@@ -107,7 +90,7 @@ int joint_wings(int us, int them) {
 }
 
 struct MaterialContext {
-    int fc0, tail, wings;
+    int material, wings;
 };
 
 MaterialContext get_material_context(const Position& pos, Color c) {
@@ -124,22 +107,21 @@ MaterialContext get_material_context(const Position& pos, Color c) {
                 + (t - p - rooks - queens + pair > rooks + 2 * queens);
     const Bitboard pawns = pos.pieces(c, PAWN);
     const int wings = bool(pawns & 0x0F0F0F0F0F0F0F0FULL) + 2 * bool(pawns & 0xF0F0F0F0F0F0F0F0ULL);
-    return {MATERIAL_IDS.fc0[t][relative_pawns(t, p)][h], MATERIAL_IDS.tail[t][p][h], wings};
+    return {MATERIAL_IDS[t][p][h], wings};
 }
 
-std::pair<int, int> router_contexts(const Position& pos) {
+int router_context(const Position& pos) {
     const Color us       = pos.side_to_move();
     const auto  stm      = get_material_context(pos, us);
     const auto  opp      = get_material_context(pos, ~us);
-    const int   fc0      = stm.fc0 * NumFC0MaterialStates + opp.fc0;
-    const int   tail =
-      (stm.tail * NumMaterialStates + opp.tail) * WingStates + joint_wings(stm.wings, opp.wings);
+    const int   material =
+      (stm.material * NumMaterialStates + opp.material) * WingStates + joint_wings(stm.wings, opp.wings);
     const int   own      = int(pos.square<KING>(us)) ^ (56 * int(us));
     const int   enemy    = int(pos.square<KING>(~us)) ^ (56 * int(~us));
     const int   f1 = own % 8, f2 = enemy % 8;
     const bool  opposite = (f1 < 4) != (f2 < 4);
     const int   king     = 4 * (own / 8 >= 2) + 2 * (own / 8 > enemy / 8) + opposite;
-    return {fc0, tail * KingStates + king};
+    return material * KingStates + king;
 }
 
 // LSB-first packed IDs are expanded once on load; evaluation uses aligned arrays.
@@ -260,9 +242,8 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
 
 i32 Network::propagate_routes(const TransformedFeatureType* features,
                               const NNZInfo<L1>&            nnz,
-                              int                           c_us,
-                              int                           c_them) const {
-    return network[router[c_them]].propagate(features, nnz, firstLayer[fc0Router[c_us]]);
+                              int                           expert) const {
+    return network[expert].propagate(features, nnz, firstLayer[expert]);
 }
 
 Value Network::evaluate(const Position&    pos,
@@ -277,10 +258,10 @@ Value Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const auto [us, them] = router_contexts(pos);
+    const int expert = router[router_context(pos)];
 
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
-    const auto positional = propagate_routes(transformedFeatures, nnzInfo, us, them);
+    const auto positional = propagate_routes(transformedFeatures, nnzInfo, expert);
     return static_cast<Value>(positional / OutputScale);
 }
 
@@ -318,7 +299,7 @@ void Network::verify(const std::function<void(std::string_view)>& f,
     if (f)
     {
         usize size = sizeof(featureTransformer) + sizeof(firstLayer) + sizeof(network)
-                   + sizeof(router) + sizeof(fc0Router);
+                   + sizeof(router);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -339,14 +320,14 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const auto [fc0Context, tailContext] = router_contexts(pos);
+    const int expert = router[router_context(pos)];
     NnueEvalTrace t{};
-    t.fc0Expert  = fc0Router[fc0Context];
-    t.tailExpert = router[tailContext];
+    t.fc0Expert  = expert;
+    t.tailExpert = expert;
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
     t.positional = static_cast<Value>(
-      propagate_routes(transformedFeatures, nnzInfo, fc0Context, tailContext) / OutputScale);
+      propagate_routes(transformedFeatures, nnzInfo, expert) / OutputScale);
 
     return t;
 }
@@ -396,7 +377,6 @@ void Network::load_internal(EvalFile& evalFile) {
 void Network::initialize() {
     initialized = true;
     std::memset(router, 0, sizeof(router));
-    std::memset(fc0Router, 0, sizeof(fc0Router));
 }
 
 
@@ -425,8 +405,6 @@ usize Network::get_content_hash() const {
         hash_combine(h, layerstack);
     for (usize i = 0; i < RouterTableSize; ++i)
         hash_combine(h, router[i]);
-    for (auto id : fc0Router)
-        hash_combine(h, id);
     return h;
 }
 
@@ -484,8 +462,7 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         if (!Detail::read_parameters(stream, network[i]))
             return false;
     }
-    if (!read_packed(stream, fc0Router, FC0RouterTableSize, 6)
-        || !read_packed(stream, router, RouterTableSize, 8))
+    if (!read_packed(stream, router, RouterTableSize, 6))
         return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
 }
@@ -504,8 +481,7 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
         if (!Detail::write_parameters(stream, network[i]))
             return false;
     }
-    if (!write_packed(stream, fc0Router, FC0RouterTableSize, 6)
-        || !write_packed(stream, router, RouterTableSize, 8))
+    if (!write_packed(stream, router, RouterTableSize, 6))
         return false;
     return bool(stream);
 }
