@@ -97,3 +97,7 @@ The tracer records nominal depth, requested effective depth, alpha, beta, fail-s
 Score fuzziness substantially reduced node work in this corpus. It did not establish that all the saved work was wasted: comparisons were deferred, bounds reversed, and the predictor could remain behind a staircase of bounds. Strength must decide whether the deeper PV/TT work compensates for those omissions. This patch should remain experimental until a properly powered paired test passes.
 
 The smallest next experiment is one change at the accepted bound: raise `averageScore` to at least its established beta threshold, leaving the existing signed-moment update and two-high cutoff unchanged. This tests whether preventing a known lower bound from remaining above the next prediction reduces cascades without feeding the last fail-soft overshoot into the predictor. Keep final verification as a separate subsequent experiment so its cost and benefit can be measured independently.
+
+## Follow-up: recorded LTC move agreement
+
+A separate [complete-game replay](ltc-replay/README.md) compares A/B/C at 10k and 100k nodes per move on 2,423 recorded positions from 16 sampled eight-thread LTC games. It always follows the recorded continuation and preserves per-color search state. Aggregate agreement differences are small and the paired game-bootstrap intervals include zero. The engine patch is unchanged.

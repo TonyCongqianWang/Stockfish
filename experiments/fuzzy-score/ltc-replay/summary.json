@@ -1,0 +1,729 @@
+{
+  "positions": 2423,
+  "games": 16,
+  "searches": 14538,
+  "rates": {
+    "A-10000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1444,
+        "percent": 59.59554271564177,
+        "lower_bounds": 461,
+        "upper_bounds": 917,
+        "game_mean_percent": 59.72947628512384
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1425,
+        "percent": 59.27620632279534,
+        "lower_bounds": 460,
+        "upper_bounds": 913,
+        "game_mean_percent": 59.43046939815958
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 393,
+        "percent": 61.40625,
+        "lower_bounds": 161,
+        "upper_bounds": 331,
+        "game_mean_percent": 61.40625
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 998,
+        "percent": 54.23913043478261,
+        "lower_bounds": 342,
+        "upper_bounds": 714,
+        "game_mean_percent": 54.315337624753845
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 646,
+        "percent": 61.93672099712368,
+        "lower_bounds": 246,
+        "upper_bounds": 555,
+        "game_mean_percent": 62.08923916561544
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 553,
+        "percent": 61.64994425863991,
+        "lower_bounds": 195,
+        "upper_bounds": 326,
+        "game_mean_percent": 62.57959877687628
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 226,
+        "percent": 48.706896551724135,
+        "lower_bounds": 19,
+        "upper_bounds": 32,
+        "game_mean_percent": 50.779400143401986
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 724,
+        "percent": 60.033167495854066,
+        "lower_bounds": 245,
+        "upper_bounds": 443,
+        "game_mean_percent": 60.163223364712216
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 701,
+        "percent": 58.51419031719533,
+        "lower_bounds": 215,
+        "upper_bounds": 470,
+        "game_mean_percent": 58.64182528272695
+      },
+      "nodes_reported": 24144196,
+      "median_reported_depth": 12
+    },
+    "A-100000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1665,
+        "percent": 68.71646718943458,
+        "lower_bounds": 574,
+        "upper_bounds": 544,
+        "game_mean_percent": 68.74699846430303
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1646,
+        "percent": 68.46921797004991,
+        "lower_bounds": 574,
+        "upper_bounds": 544,
+        "game_mean_percent": 68.51052045366517
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 462,
+        "percent": 72.1875,
+        "lower_bounds": 201,
+        "upper_bounds": 215,
+        "game_mean_percent": 72.1875
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 1182,
+        "percent": 64.23913043478261,
+        "lower_bounds": 433,
+        "upper_bounds": 423,
+        "game_mean_percent": 64.25967572368698
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 749,
+        "percent": 71.81208053691275,
+        "lower_bounds": 352,
+        "upper_bounds": 347,
+        "game_mean_percent": 72.19471785443409
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 635,
+        "percent": 70.79152731326644,
+        "lower_bounds": 203,
+        "upper_bounds": 182,
+        "game_mean_percent": 70.77511798062521
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 262,
+        "percent": 56.46551724137931,
+        "lower_bounds": 19,
+        "upper_bounds": 15,
+        "game_mean_percent": 58.804559134362
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 833,
+        "percent": 69.07131011608624,
+        "lower_bounds": 277,
+        "upper_bounds": 259,
+        "game_mean_percent": 69.53332296459419
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 813,
+        "percent": 67.86310517529215,
+        "lower_bounds": 297,
+        "upper_bounds": 285,
+        "game_mean_percent": 67.46650592734625
+      },
+      "nodes_reported": 239186127,
+      "median_reported_depth": 17
+    },
+    "B-10000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1452,
+        "percent": 59.92571192736278,
+        "lower_bounds": 499,
+        "upper_bounds": 902,
+        "game_mean_percent": 60.47561927403458
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1433,
+        "percent": 59.6089850249584,
+        "lower_bounds": 499,
+        "upper_bounds": 899,
+        "game_mean_percent": 60.17748648371687
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 404,
+        "percent": 63.125,
+        "lower_bounds": 165,
+        "upper_bounds": 320,
+        "game_mean_percent": 63.125
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 1002,
+        "percent": 54.45652173913044,
+        "lower_bounds": 372,
+        "upper_bounds": 705,
+        "game_mean_percent": 55.18148821678332
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 658,
+        "percent": 63.08724832214765,
+        "lower_bounds": 286,
+        "upper_bounds": 518,
+        "game_mean_percent": 63.772445832268595
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 537,
+        "percent": 59.86622073578595,
+        "lower_bounds": 199,
+        "upper_bounds": 347,
+        "game_mean_percent": 59.85890841149656
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 238,
+        "percent": 51.293103448275865,
+        "lower_bounds": 14,
+        "upper_bounds": 34,
+        "game_mean_percent": 53.13641234595195
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 712,
+        "percent": 59.03814262023217,
+        "lower_bounds": 258,
+        "upper_bounds": 433,
+        "game_mean_percent": 59.63453684438734
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 721,
+        "percent": 60.18363939899833,
+        "lower_bounds": 241,
+        "upper_bounds": 466,
+        "game_mean_percent": 60.70392339031663
+      },
+      "nodes_reported": 24144042,
+      "median_reported_depth": 12
+    },
+    "B-100000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1676,
+        "percent": 69.17044985555097,
+        "lower_bounds": 543,
+        "upper_bounds": 590,
+        "game_mean_percent": 69.44749654474258
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1657,
+        "percent": 68.92678868552413,
+        "lower_bounds": 542,
+        "upper_bounds": 589,
+        "game_mean_percent": 69.22072191599054
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 473,
+        "percent": 73.90625,
+        "lower_bounds": 196,
+        "upper_bounds": 226,
+        "game_mean_percent": 73.90625
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 1184,
+        "percent": 64.34782608695652,
+        "lower_bounds": 404,
+        "upper_bounds": 458,
+        "game_mean_percent": 64.70210471017762
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 754,
+        "percent": 72.29146692233941,
+        "lower_bounds": 343,
+        "upper_bounds": 368,
+        "game_mean_percent": 72.97117989380843
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 642,
+        "percent": 71.57190635451505,
+        "lower_bounds": 186,
+        "upper_bounds": 210,
+        "game_mean_percent": 71.64068951969355
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 261,
+        "percent": 56.25,
+        "lower_bounds": 13,
+        "upper_bounds": 11,
+        "game_mean_percent": 59.31405056058133
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 837,
+        "percent": 69.40298507462687,
+        "lower_bounds": 272,
+        "upper_bounds": 290,
+        "game_mean_percent": 69.7885481885766
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 820,
+        "percent": 68.44741235392321,
+        "lower_bounds": 270,
+        "upper_bounds": 299,
+        "game_mean_percent": 68.61626163949974
+      },
+      "nodes_reported": 239186780,
+      "median_reported_depth": 16
+    },
+    "C-10000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1460,
+        "percent": 60.25588113908378,
+        "lower_bounds": 805,
+        "upper_bounds": 746,
+        "game_mean_percent": 60.74406981287009
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1441,
+        "percent": 59.94176372712146,
+        "lower_bounds": 803,
+        "upper_bounds": 746,
+        "game_mean_percent": 60.44891289146038
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 392,
+        "percent": 61.25,
+        "lower_bounds": 295,
+        "upper_bounds": 259,
+        "game_mean_percent": 61.25
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 1001,
+        "percent": 54.40217391304348,
+        "lower_bounds": 588,
+        "upper_bounds": 582,
+        "game_mean_percent": 54.90931248944568
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 648,
+        "percent": 62.12847555129434,
+        "lower_bounds": 486,
+        "upper_bounds": 420,
+        "game_mean_percent": 62.13712078172436
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 571,
+        "percent": 63.65663322185061,
+        "lower_bounds": 287,
+        "upper_bounds": 298,
+        "game_mean_percent": 63.39657743270085
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 222,
+        "percent": 47.8448275862069,
+        "lower_bounds": 30,
+        "upper_bounds": 28,
+        "game_mean_percent": 49.21026353638198
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 720,
+        "percent": 59.701492537313435,
+        "lower_bounds": 429,
+        "upper_bounds": 349,
+        "game_mean_percent": 60.62263164094816
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 721,
+        "percent": 60.18363939899833,
+        "lower_bounds": 374,
+        "upper_bounds": 397,
+        "game_mean_percent": 60.237296885716596
+      },
+      "nodes_reported": 24144248,
+      "median_reported_depth": 12
+    },
+    "C-100000": {
+      "all": {
+        "positions": 2423,
+        "matches": 1672,
+        "percent": 69.00536524969047,
+        "lower_bounds": 747,
+        "upper_bounds": 553,
+        "game_mean_percent": 69.2545065775609
+      },
+      "nonforced": {
+        "positions": 2404,
+        "matches": 1653,
+        "percent": 68.7603993344426,
+        "lower_bounds": 747,
+        "upper_bounds": 552,
+        "game_mean_percent": 69.02855178059004
+      },
+      "first_40_plies_nonforced": {
+        "positions": 640,
+        "matches": 476,
+        "percent": 74.375,
+        "lower_bounds": 283,
+        "upper_bounds": 215,
+        "game_mean_percent": 74.375
+      },
+      "quiet_nonforced": {
+        "positions": 1840,
+        "matches": 1193,
+        "percent": 64.83695652173913,
+        "lower_bounds": 582,
+        "upper_bounds": 422,
+        "game_mean_percent": 65.06199218246466
+      },
+      "17plus_pieces_nonforced": {
+        "positions": 1043,
+        "matches": 759,
+        "percent": 72.77085330776606,
+        "lower_bounds": 477,
+        "upper_bounds": 351,
+        "game_mean_percent": 73.28034745965819
+      },
+      "9to16_pieces_nonforced": {
+        "positions": 897,
+        "matches": 630,
+        "percent": 70.23411371237458,
+        "lower_bounds": 248,
+        "upper_bounds": 182,
+        "game_mean_percent": 69.72384719324684
+      },
+      "8orless_pieces_nonforced": {
+        "positions": 464,
+        "matches": 264,
+        "percent": 56.89655172413793,
+        "lower_bounds": 22,
+        "upper_bounds": 19,
+        "game_mean_percent": 59.854132629393476
+      },
+      "teacher_new_nonforced": {
+        "positions": 1206,
+        "matches": 835,
+        "percent": 69.23714759535655,
+        "lower_bounds": 388,
+        "upper_bounds": 272,
+        "game_mean_percent": 69.78878463846934
+      },
+      "teacher_base_nonforced": {
+        "positions": 1198,
+        "matches": 818,
+        "percent": 68.2804674457429,
+        "lower_bounds": 359,
+        "upper_bounds": 280,
+        "game_mean_percent": 68.21936406087667
+      },
+      "nodes_reported": 239190183,
+      "median_reported_depth": 17
+    }
+  },
+  "paired_differences": {
+    "B-vs-A-10000-all": {
+      "delta_percentage_points": 0.330169211721007,
+      "bootstrap_95_interval": [
+        -1.3440860215053763,
+        2.245388933440257
+      ],
+      "candidate_only_matches": 259,
+      "reference_only_matches": 251,
+      "changed_moves": 783,
+      "games": 16
+    },
+    "B-vs-A-10000-nonforced": {
+      "delta_percentage_points": 0.33277870216306155,
+      "bootstrap_95_interval": [
+        -1.3553113553113554,
+        2.262234533702678
+      ],
+      "candidate_only_matches": 259,
+      "reference_only_matches": 251,
+      "changed_moves": 783,
+      "games": 16
+    },
+    "B-vs-A-10000-first_40_plies_nonforced": {
+      "delta_percentage_points": 1.71875,
+      "bootstrap_95_interval": [
+        -2.5,
+        6.09375
+      ],
+      "candidate_only_matches": 78,
+      "reference_only_matches": 67,
+      "changed_moves": 208,
+      "games": 16
+    },
+    "B-vs-A-10000-quiet_nonforced": {
+      "delta_percentage_points": 0.21739130434782608,
+      "bootstrap_95_interval": [
+        -1.9441674975074776,
+        2.6172300981461287
+      ],
+      "candidate_only_matches": 216,
+      "reference_only_matches": 212,
+      "changed_moves": 677,
+      "games": 16
+    },
+    "C-vs-A-10000-all": {
+      "delta_percentage_points": 0.660338423442014,
+      "bootstrap_95_interval": [
+        -0.48608042421564296,
+        2.1087160262417997
+      ],
+      "candidate_only_matches": 248,
+      "reference_only_matches": 232,
+      "changed_moves": 768,
+      "games": 16
+    },
+    "C-vs-A-10000-nonforced": {
+      "delta_percentage_points": 0.6655574043261231,
+      "bootstrap_95_interval": [
+        -0.4889975550122249,
+        2.124773960216998
+      ],
+      "candidate_only_matches": 248,
+      "reference_only_matches": 232,
+      "changed_moves": 768,
+      "games": 16
+    },
+    "C-vs-A-10000-first_40_plies_nonforced": {
+      "delta_percentage_points": -0.15625,
+      "bootstrap_95_interval": [
+        -3.4375,
+        3.4375
+      ],
+      "candidate_only_matches": 71,
+      "reference_only_matches": 72,
+      "changed_moves": 217,
+      "games": 16
+    },
+    "C-vs-A-10000-quiet_nonforced": {
+      "delta_percentage_points": 0.16304347826086957,
+      "bootstrap_95_interval": [
+        -1.6238868517548455,
+        2.2136137244050915
+      ],
+      "candidate_only_matches": 205,
+      "reference_only_matches": 202,
+      "changed_moves": 661,
+      "games": 16
+    },
+    "C-vs-B-10000-all": {
+      "delta_percentage_points": 0.330169211721007,
+      "bootstrap_95_interval": [
+        -1.3205828779599271,
+        1.8691588785046729
+      ],
+      "candidate_only_matches": 265,
+      "reference_only_matches": 257,
+      "changed_moves": 802,
+      "games": 16
+    },
+    "C-vs-B-10000-nonforced": {
+      "delta_percentage_points": 0.33277870216306155,
+      "bootstrap_95_interval": [
+        -1.3314967860422406,
+        1.884522854851644
+      ],
+      "candidate_only_matches": 265,
+      "reference_only_matches": 257,
+      "changed_moves": 802,
+      "games": 16
+    },
+    "C-vs-B-10000-first_40_plies_nonforced": {
+      "delta_percentage_points": -1.875,
+      "bootstrap_95_interval": [
+        -5.46875,
+        1.875
+      ],
+      "candidate_only_matches": 70,
+      "reference_only_matches": 82,
+      "changed_moves": 214,
+      "games": 16
+    },
+    "C-vs-B-10000-quiet_nonforced": {
+      "delta_percentage_points": -0.05434782608695652,
+      "bootstrap_95_interval": [
+        -2.6507276507276507,
+        2.4279210925644916
+      ],
+      "candidate_only_matches": 220,
+      "reference_only_matches": 221,
+      "changed_moves": 696,
+      "games": 16
+    },
+    "B-vs-A-100000-all": {
+      "delta_percentage_points": 0.45398266611638466,
+      "bootstrap_95_interval": [
+        -0.872865275142315,
+        1.9299820466786355
+      ],
+      "candidate_only_matches": 211,
+      "reference_only_matches": 200,
+      "changed_moves": 584,
+      "games": 16
+    },
+    "B-vs-A-100000-nonforced": {
+      "delta_percentage_points": 0.45757071547420963,
+      "bootstrap_95_interval": [
+        -0.8785942492012779,
+        1.9462465245597775
+      ],
+      "candidate_only_matches": 211,
+      "reference_only_matches": 200,
+      "changed_moves": 584,
+      "games": 16
+    },
+    "B-vs-A-100000-first_40_plies_nonforced": {
+      "delta_percentage_points": 1.71875,
+      "bootstrap_95_interval": [
+        -1.40625,
+        5.0
+      ],
+      "candidate_only_matches": 62,
+      "reference_only_matches": 51,
+      "changed_moves": 143,
+      "games": 16
+    },
+    "B-vs-A-100000-quiet_nonforced": {
+      "delta_percentage_points": 0.10869565217391304,
+      "bootstrap_95_interval": [
+        -1.6129032258064515,
+        2.044989775051125
+      ],
+      "candidate_only_matches": 174,
+      "reference_only_matches": 172,
+      "changed_moves": 506,
+      "games": 16
+    },
+    "C-vs-A-100000-all": {
+      "delta_percentage_points": 0.28889806025588116,
+      "bootstrap_95_interval": [
+        -1.1884550084889642,
+        1.8251681075888568
+      ],
+      "candidate_only_matches": 228,
+      "reference_only_matches": 221,
+      "changed_moves": 622,
+      "games": 16
+    },
+    "C-vs-A-100000-nonforced": {
+      "delta_percentage_points": 0.2911813643926789,
+      "bootstrap_95_interval": [
+        -1.1966493817311528,
+        1.8419777023751818
+      ],
+      "candidate_only_matches": 228,
+      "reference_only_matches": 221,
+      "changed_moves": 622,
+      "games": 16
+    },
+    "C-vs-A-100000-first_40_plies_nonforced": {
+      "delta_percentage_points": 2.1875,
+      "bootstrap_95_interval": [
+        -1.25,
+        5.78125
+      ],
+      "candidate_only_matches": 68,
+      "reference_only_matches": 54,
+      "changed_moves": 159,
+      "games": 16
+    },
+    "C-vs-A-100000-quiet_nonforced": {
+      "delta_percentage_points": 0.5978260869565217,
+      "bootstrap_95_interval": [
+        -1.2269938650306749,
+        2.559821925431274
+      ],
+      "candidate_only_matches": 193,
+      "reference_only_matches": 182,
+      "changed_moves": 533,
+      "games": 16
+    },
+    "C-vs-B-100000-all": {
+      "delta_percentage_points": -0.1650846058605035,
+      "bootstrap_95_interval": [
+        -1.1978704525288377,
+        0.8852963818321786
+      ],
+      "candidate_only_matches": 215,
+      "reference_only_matches": 219,
+      "changed_moves": 596,
+      "games": 16
+    },
+    "C-vs-B-100000-nonforced": {
+      "delta_percentage_points": -0.16638935108153077,
+      "bootstrap_95_interval": [
+        -1.206973625391149,
+        0.8928571428571429
+      ],
+      "candidate_only_matches": 215,
+      "reference_only_matches": 219,
+      "changed_moves": 596,
+      "games": 16
+    },
+    "C-vs-B-100000-first_40_plies_nonforced": {
+      "delta_percentage_points": 0.46875,
+      "bootstrap_95_interval": [
+        -1.875,
+        2.65625
+      ],
+      "candidate_only_matches": 58,
+      "reference_only_matches": 55,
+      "changed_moves": 139,
+      "games": 16
+    },
+    "C-vs-B-100000-quiet_nonforced": {
+      "delta_percentage_points": 0.4891304347826087,
+      "bootstrap_95_interval": [
+        -1.2089810017271156,
+        2.216358839050132
+      ],
+      "candidate_only_matches": 191,
+      "reference_only_matches": 182,
+      "changed_moves": 519,
+      "games": 16
+    }
+  }
+}

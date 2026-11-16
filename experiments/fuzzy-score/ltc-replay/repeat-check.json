@@ -1,0 +1,16 @@
+{
+  "variant": "C",
+  "budget": 10000,
+  "game": 0,
+  "positions": 201,
+  "deterministic_fields": [
+    "fen",
+    "played",
+    "chosen",
+    "nodes",
+    "depth",
+    "lower",
+    "upper"
+  ],
+  "result": "identical"
+}

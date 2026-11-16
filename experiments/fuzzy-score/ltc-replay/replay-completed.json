@@ -1,0 +1,38 @@
+[
+  {
+    "variant": "A",
+    "budget": 10000,
+    "positions": 2423,
+    "matches": 1444
+  },
+  {
+    "variant": "B",
+    "budget": 10000,
+    "positions": 2423,
+    "matches": 1452
+  },
+  {
+    "variant": "C",
+    "budget": 10000,
+    "positions": 2423,
+    "matches": 1460
+  },
+  {
+    "variant": "A",
+    "budget": 100000,
+    "positions": 2423,
+    "matches": 1665
+  },
+  {
+    "variant": "B",
+    "budget": 100000,
+    "positions": 2423,
+    "matches": 1676
+  },
+  {
+    "variant": "C",
+    "budget": 100000,
+    "positions": 2423,
+    "matches": 1672
+  }
+]
