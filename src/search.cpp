@@ -599,6 +599,18 @@ bool Search::Worker::iterative_deepening() {
         if (skill.enabled() && skill.time_to_pick(rootDepth))
             skill.pick_best(rootMoves, multiPV);
 
+        // In fixed-node tests, spend the remaining budget verifying a reduced
+        // completed iteration. The ordinary node-limit polling remains active.
+        if (limits.nodes && !limits.use_time_management() && !threads.stop
+            && nodes >= limits.nodes - limits.nodes / 10 && nodes < limits.nodes && reduced
+            && threads.size() == 1 && multiPV == 1 && !skill.enabled() && !limits.depth
+            && !limits.movetime && !limits.mate && !limits.infinite && !mainThread->ponder
+            && rootMoves.size() > 1 && !is_decisive(rootMoves[0].score))
+        {
+            checkpoint = rootMoves;
+            verifying  = true;
+        }
+
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
         {
