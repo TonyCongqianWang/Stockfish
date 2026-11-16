@@ -335,6 +335,8 @@ bool Search::Worker::iterative_deepening() {
     bool      uciPvSent          = false;
     bool      verifying          = false;
     RootMoves checkpoint;
+    Depth     checkpointDepth       = 0;
+    bool      verificationNextDepth = false;
 
     lowPlyHistory.fill(102);
 
@@ -346,9 +348,9 @@ bool Search::Worker::iterative_deepening() {
     while (rootDepth + 1 < MAX_PLY && !threads.stop
            && !(limits.depth && mainThread && rootDepth >= limits.depth))
     {
-        if (!verifying)
+        if (!verifying || verificationNextDepth)
             rootDepth++;
-        bool reduced             = false;
+        verificationNextDepth    = false;
         bool verificationFailLow = false;
 
         // Do not tune these values. They are not intended for playing strength.
@@ -403,15 +405,16 @@ bool Search::Worker::iterative_deepening() {
 
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
-            // Terminal verification starts at D-2 and never reduces further.
+            // Verification starts at nominal depth and caps fail-high reductions at two plies.
             int failedHighCnt = 0;
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(
-                  1,
-                  rootDepth - (verifying ? 2 : failedHighCnt + 3 * (searchAgainCounter + 1) / 4));
+                Depth adjustedDepth =
+                  std::max(1, rootDepth
+                                - (verifying ? std::min(failedHighCnt, 2)
+                                             : failedHighCnt + 3 * (searchAgainCounter + 1) / 4));
                 bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
@@ -461,7 +464,6 @@ bool Search::Worker::iterative_deepening() {
                 }
                 else
                 {
-                    reduced = adjustedDepth < rootDepth;
                     break;
                 }
 
@@ -537,7 +539,10 @@ bool Search::Worker::iterative_deepening() {
         {
             // Restore all scores, bounds, PVs and ordering, including on an external stop.
             if (threads.stop || verificationFailLow)
+            {
                 rootMoves = std::move(checkpoint);
+                rootDepth = checkpointDepth;
+            }
             uciPvSent    = false;
             threads.stop = true;
             break;
@@ -599,16 +604,19 @@ bool Search::Worker::iterative_deepening() {
         if (skill.enabled() && skill.time_to_pick(rootDepth))
             skill.pick_best(rootMoves, multiPV);
 
-        // In fixed-node tests, spend the remaining budget verifying a reduced
-        // completed iteration. The ordinary node-limit polling remains active.
-        if (limits.nodes && !limits.use_time_management() && !threads.stop
-            && nodes >= limits.nodes - limits.nodes / 10 && nodes < limits.nodes && reduced
-            && threads.size() == 1 && multiPV == 1 && !skill.enabled() && !limits.depth
-            && !limits.movetime && !limits.mate && !limits.infinite && !mainThread->ponder
-            && rootMoves.size() > 1 && !is_decisive(rootMoves[0].score))
+        const bool canVerify = threads.size() == 1 && multiPV == 1 && !skill.enabled()
+                            && !limits.depth && !limits.movetime && !limits.mate && !limits.infinite
+                            && !mainThread->ponder && rootMoves.size() > 1
+                            && !is_decisive(rootMoves[0].score);
+
+        // Use the same three-way decision with a deterministic fixed-node budget.
+        if (canVerify && limits.nodes && !limits.use_time_management() && !threads.stop
+            && nodes >= limits.nodes / 4 && nodes < limits.nodes)
         {
-            checkpoint = rootMoves;
-            verifying  = true;
+            checkpoint            = rootMoves;
+            checkpointDepth       = rootDepth;
+            verifying             = true;
+            verificationNextDepth = nodes < limits.nodes / 2;
         }
 
         // Do we have time for the next iteration? Can we stop searching now?
@@ -653,22 +661,22 @@ bool Search::Worker::iterative_deepening() {
 
             // Stop the search if we have exceeded totalTime or maximum time,
             // or if we know that there are no better moves in the analysed line(s).
-            if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
-                || rootMoves[multiPV - 1].score >= mate_in(3) || rootMoves[0].score == mated_in(2))
+            if (canVerify && !limits.nodes && elapsedTime >= totalTime * 0.25
+                && elapsedTime < mainThread->tm.maximum())
+            {
+                checkpoint            = rootMoves;
+                checkpointDepth       = rootDepth;
+                verifying             = true;
+                verificationNextDepth = elapsedTime < totalTime * 0.50;
+            }
+            else if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
+                     || rootMoves[multiPV - 1].score >= mate_in(3)
+                     || rootMoves[0].score == mated_in(2))
             {
                 // If we are allowed to ponder do not stop the search now but
                 // keep pondering until the GUI sends "ponderhit" or "stop".
                 if (mainThread->ponder)
                     mainThread->stopOnPonderhit = true;
-                else if (elapsedTime > totalTime && elapsedTime < mainThread->tm.maximum()
-                         && reduced && threads.size() == 1 && multiPV == 1 && !skill.enabled()
-                         && !limits.depth && !limits.nodes && !limits.movetime && !limits.mate
-                         && !limits.infinite && rootMoves.size() > 1
-                         && !is_decisive(rootMoves[0].score))
-                {
-                    checkpoint = rootMoves;
-                    verifying  = true;
-                }
                 else
                     threads.stop = true;
             }
