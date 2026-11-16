@@ -69,19 +69,32 @@ namespace fs = std::filesystem;
 
 namespace {
 
+constexpr int relative_pawns(int pieces, int pawns) {
+    const int officers = pieces - pawns;
+    return pawns == 0 ? 0 : pawns <= officers ? 1 : pawns <= officers + 2 ? 2 : 3;
+}
+
 constexpr auto MATERIAL_IDS = [] {
-    std::array<std::array<std::array<int, 6>, 9>, 16> tables{};
-    int count = 0;
+    struct Tables {
+        std::array<std::array<std::array<int, 6>, 4>, 16> ids{};
+        int count = 0;
+    } tables;
     for (int t = 0; t < 16; ++t)
+    {
         for (int p = 0; p <= std::min(8, t); ++p)
             for (int h = 0; h < 6; ++h)
                 if (constexpr int minimum[] = {1, 3, 1, 3, 0, 1};
                     t - p >= minimum[h] && (h != 4 || t == p))
-                    tables[t][p][h] = count++;
+                    tables.ids[t][relative_pawns(t, p)][h] = -1;
+        for (auto& row : tables.ids[t])
+            for (int& id : row)
+                if (id == -1)
+                    id = tables.count++;
+    }
     return tables;
 }();
 
-static_assert(MATERIAL_IDS[15][8][5] == NumMaterialStates - 1);
+static_assert(MATERIAL_IDS.count == NumMaterialStates);
 
 int joint_wings(int us, int them) {
     if (us == 3 || them == 3)
@@ -107,7 +120,7 @@ MaterialContext get_material_context(const Position& pos, Color c) {
                 + (t - p - rooks - queens + pair > rooks + 2 * queens);
     const Bitboard pawns = pos.pieces(c, PAWN);
     const int wings = bool(pawns & 0x0F0F0F0F0F0F0F0FULL) + 2 * bool(pawns & 0xF0F0F0F0F0F0F0F0ULL);
-    return {MATERIAL_IDS[t][p][h], wings};
+    return {MATERIAL_IDS.ids[t][relative_pawns(t, p)][h], wings};
 }
 
 int router_context(const Position& pos) {

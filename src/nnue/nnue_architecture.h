@@ -56,12 +56,12 @@ constexpr IndexType NumFC0Experts = LayerStacks;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
-constexpr IndexType NumMaterialStates    = 468;
+constexpr IndexType NumMaterialStates    = 240;
 constexpr IndexType KingStates           = 8;
 constexpr IndexType WingStates           = 5;
 constexpr IndexType RouterTableSize =
   NumMaterialStates * NumMaterialStates * WingStates * KingStates;
-constexpr u32 RouterHash = 0x4D313300u;  // Shared stack router
+constexpr u32 RouterHash = 0x4D313400u;  // Shared stack router
 
 constexpr int FC0WeightScaleBits = 8;
 
