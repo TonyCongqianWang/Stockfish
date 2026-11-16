@@ -78,3 +78,39 @@ python3 experiments/fuzzy-score/ltc-replay/sample_pgn.py \
 ```
 
 The delivered `ltc-replay-results.zip` contains the raw per-position JSONL records, sample PGNs, source metadata, scripts, and summary.
+
+## Larger, checkpointed runs
+
+`run_resumable.py` uses the same search protocol while scheduling complete games
+across workers. Each worker reuses its engine processes but clears both colors'
+state before every game. Completed games are stored atomically, with checksums.
+On resume, input and binary hashes must match, and completed games are reused.
+Concurrent runs cannot write to the same output directory.
+
+For the 500-game follow-up, a new uniform sample uses the same seed and source
+archive. It contains 75,226 recorded moves, giving 451,356 searches over all six
+variant/budget combinations. It is not a pool with the pilot's results.
+
+```sh
+python3 experiments/fuzzy-score/ltc-replay/sample_pgn.py \
+  --source /path/to/games.pgn.gz --out /tmp/ltc-500 \
+  --games 500 --seed 20261116
+python3 experiments/fuzzy-score/ltc-replay/run_resumable.py \
+  --pgn /tmp/ltc-500/sample.pgn --bin-dir /path/to/fuzzy-builds \
+  --out /tmp/ltc-500 --budgets 10000 100000 --jobs 2
+```
+
+Repeat the second command to resume. `progress.json` records status and a
+budget-weighted search-time estimate; `run.log` captures per-game completions.
+SIGINT/SIGTERM pause at the next move boundary, preserving completed games.
+In-progress games are replayed from their recorded starting position on resume.
+The runner automatically merges records, runs the same comparison script, writes
+`REPORT.md`, and verifies `ltc-replay-500-results.zip`. Analysis and packaging run
+after the engines close. Failures are recorded in `error.txt` and the progress
+status; no completed games need to be searched again.
+
+Before the long run, the new scheduler reproduced all choices, reported nodes,
+depths and bound flags on two pilot games (361 positions). A resume test verified
+that completed game files were reused without being rewritten. The automatic
+report renderer was checked against the completed pilot summary. No engine
+search code changed.
