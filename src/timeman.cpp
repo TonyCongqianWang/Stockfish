@@ -57,6 +57,14 @@ void TimeManagement::init(Search::LimitsType& limits,
     startTime    = limits.startTime;
     useNodesTime = npmsec != 0;
 
+    // A pure node limit is a fresh per-search budget, already in node units.
+    if (limits.use_node_budget_management())
+    {
+        useNodesTime = true;
+        optimumTime = maximumTime = TimePoint(std::min<u64>(limits.nodes, NoBound));
+        return;
+    }
+
     if (useNodesTime)
         limits.movetime *= npmsec;
 
