@@ -1,0 +1,627 @@
+[
+  {
+    "variant": "A",
+    "perft": 3,
+    "reproducibility": 5,
+    "scenarios": [
+      {
+        "options": [
+          "MultiPV value 4"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 21200 hashfull 0 tbhits 0 time 5 pv b1c3",
+          "info depth 1 seldepth 2 multipv 2 score cp 8 nodes 106 nps 21200 hashfull 0 tbhits 0 time 5 pv g1f3",
+          "info depth 1 seldepth 2 multipv 3 score cp 5 nodes 106 nps 21200 hashfull 0 tbhits 0 time 5 pv c2c3",
+          "info depth 1 seldepth 2 multipv 4 score cp 4 nodes 106 nps 21200 hashfull 0 tbhits 0 time 5 pv d2d4",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 224 nps 44800 hashfull 0 tbhits 0 time 5 pv b1c3",
+          "info depth 2 seldepth 2 multipv 2 score cp 10 nodes 224 nps 44800 hashfull 0 tbhits 0 time 5 pv g1f3",
+          "info depth 2 seldepth 2 multipv 3 score cp 6 nodes 224 nps 44800 hashfull 0 tbhits 0 time 5 pv c2c3",
+          "info depth 2 seldepth 2 multipv 4 score cp 4 nodes 224 nps 44800 hashfull 0 tbhits 0 time 5 pv d2d4",
+          "info depth 3 seldepth 2 multipv 1 score cp 25 nodes 354 nps 70800 hashfull 0 tbhits 0 time 5 pv b1c3",
+          "info depth 3 seldepth 2 multipv 2 score cp 10 nodes 354 nps 70800 hashfull 0 tbhits 0 time 5 pv g1f3",
+          "info depth 3 seldepth 2 multipv 3 score cp 6 nodes 354 nps 70800 hashfull 0 tbhits 0 time 5 pv c2c3",
+          "info depth 3 seldepth 2 multipv 4 score cp 4 nodes 354 nps 70800 hashfull 0 tbhits 0 time 5 pv d2d4",
+          "info depth 4 seldepth 4 multipv 1 score cp 33 nodes 571 nps 95166 hashfull 0 tbhits 0 time 6 pv e2e4",
+          "info depth 4 seldepth 2 multipv 2 score cp 19 nodes 571 nps 95166 hashfull 0 tbhits 0 time 6 pv d2d4",
+          "info depth 4 seldepth 2 multipv 3 score cp 15 nodes 571 nps 95166 hashfull 0 tbhits 0 time 6 pv c2c3",
+          "info depth 4 seldepth 2 multipv 4 score cp 15 nodes 571 nps 95166 hashfull 0 tbhits 0 time 6 pv b1c3",
+          "info depth 5 seldepth 4 multipv 1 score cp 26 nodes 1046 nps 174333 hashfull 0 tbhits 0 time 6 pv e2e4 c7c5 b1c3",
+          "info depth 5 seldepth 4 multipv 2 score cp 18 nodes 1046 nps 174333 hashfull 0 tbhits 0 time 6 pv c2c4",
+          "info depth 5 seldepth 3 multipv 3 score cp 14 nodes 1046 nps 174333 hashfull 0 tbhits 0 time 6 pv d2d4 g8f6",
+          "info depth 5 seldepth 4 multipv 4 score cp 11 nodes 1046 nps 174333 hashfull 0 tbhits 0 time 6 pv g1f3",
+          "info depth 6 seldepth 9 multipv 1 score cp 16 nodes 2735 nps 341875 hashfull 0 tbhits 0 time 8 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 6 seldepth 5 multipv 2 score cp 15 nodes 2735 nps 341875 hashfull 0 tbhits 0 time 8 pv d2d4",
+          "info depth 6 seldepth 4 multipv 3 score cp 13 nodes 2735 nps 341875 hashfull 0 tbhits 0 time 8 pv c2c4 c7c5 b1c3",
+          "info depth 6 seldepth 6 multipv 4 score cp 13 nodes 2735 nps 341875 hashfull 0 tbhits 0 time 8 pv g1f3 d7d5 d2d4 g8f6",
+          "info depth 7 seldepth 8 multipv 1 score cp 18 nodes 4309 nps 307785 hashfull 0 tbhits 0 time 14 pv e2e4 e7e5 b1c3 b8c6 g1f3",
+          "info depth 7 seldepth 6 multipv 2 score cp 13 nodes 4309 nps 307785 hashfull 0 tbhits 0 time 14 pv c2c3",
+          "info depth 7 seldepth 7 multipv 3 score cp 11 nodes 4309 nps 307785 hashfull 0 tbhits 0 time 14 pv d2d4 d7d5",
+          "info depth 7 seldepth 10 multipv 4 score cp 11 nodes 4309 nps 307785 hashfull 0 tbhits 0 time 14 pv g1f3 g8f6",
+          "info depth 8 seldepth 9 multipv 1 score cp 15 nodes 6672 nps 392470 hashfull 0 tbhits 0 time 17 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 8 seldepth 10 multipv 2 score cp 14 nodes 6672 nps 392470 hashfull 0 tbhits 0 time 17 pv d2d4 d7d5 c2c3 c7c6 c1f4 c8f5",
+          "info depth 8 seldepth 9 multipv 3 score cp 10 nodes 6672 nps 392470 hashfull 0 tbhits 0 time 17 pv c2c4 c7c5 b1c3 g8f6",
+          "info depth 8 seldepth 9 multipv 4 score cp 9 nodes 6672 nps 392470 hashfull 0 tbhits 0 time 17 pv c2c3 d7d5 d2d4 c8f5 c1f4 b8d7",
+          "info depth 9 seldepth 12 multipv 1 score cp 18 nodes 7938 nps 396900 hashfull 0 tbhits 0 time 20 pv e2e4 g8f6 b1c3 d7d5 e4d5 f6d5 g1f3",
+          "info depth 9 seldepth 9 multipv 2 score cp 12 nodes 7938 nps 360818 hashfull 0 tbhits 0 time 22 pv d2d4 d7d5 c1f4 c8f5 c2c3 b8d7 b1d2 g8f6",
+          "info depth 9 seldepth 8 multipv 3 score cp 12 nodes 7938 nps 360818 hashfull 0 tbhits 0 time 22 pv c2c4 g8f6",
+          "info depth 9 seldepth 7 multipv 4 score cp 12 nodes 7938 nps 360818 hashfull 0 tbhits 0 time 22 pv c2c3 c7c6",
+          "info depth 10 seldepth 10 multipv 1 score cp 21 nodes 9769 nps 407041 hashfull 0 tbhits 0 time 24 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4",
+          "info depth 10 seldepth 11 multipv 2 score cp 16 nodes 9769 nps 165576 hashfull 0 tbhits 0 time 59 pv g1f3 d7d5 d2d4 g8f6 e2e3",
+          "info depth 10 seldepth 10 multipv 3 score cp 14 nodes 9769 nps 165576 hashfull 0 tbhits 0 time 59 pv d2d4 d7d5 g1f3 g8f6 c1f4 c8f5 e2e3 c7c6",
+          "info depth 10 seldepth 12 multipv 4 score cp 14 nodes 9769 nps 165576 hashfull 0 tbhits 0 time 59 pv c2c4 g8f6 g1f3 c7c5 b1c3 b8c6 d2d4 c5d4 f3d4 e7e6",
+          "info depth 11 seldepth 16 multipv 1 score cp 29 nodes 12599 nps 190893 hashfull 1 tbhits 0 time 66 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4",
+          "info depth 11 seldepth 11 multipv 2 score cp 22 nodes 12599 nps 190893 hashfull 1 tbhits 0 time 66 pv d2d4 d7d5 c2c4",
+          "info depth 11 seldepth 9 multipv 3 score cp 19 nodes 12599 nps 190893 hashfull 1 tbhits 0 time 66 pv g1f3 d7d5 d2d4 g8f6 c1f4 c8f5",
+          "info depth 11 seldepth 11 multipv 4 score cp 15 nodes 12599 nps 190893 hashfull 1 tbhits 0 time 66 pv c2c4 c7c5 b1c3 g8f6 e2e3 b8c6 g1f3",
+          "info depth 12 seldepth 15 multipv 1 score cp 70 nodes 19064 nps 244410 hashfull 2 tbhits 0 time 78 pv e2e4 d7d5 e4d5 d8d5 d2d4 d5e4 c1e3 g8f6",
+          "info depth 12 seldepth 11 multipv 2 score cp 28 nodes 19064 nps 244410 hashfull 2 tbhits 0 time 78 pv d2d4 d7d5 c2c4 d5c4 g1f3 g8f6",
+          "info depth 12 seldepth 13 multipv 3 score cp 26 nodes 19064 nps 244410 hashfull 2 tbhits 0 time 78 pv g1f3 d7d5",
+          "info depth 12 seldepth 16 multipv 4 score cp 25 nodes 19064 nps 244410 hashfull 2 tbhits 0 time 78 pv c2c4 g7g6 d2d4 f8g7 g1f3 g8f6 c1f4 e8g8 b1c3 d7d5",
+          "bestmove e2e4 ponder d7d5"
+        ]
+      },
+      {
+        "options": [
+          "MultiPV value 1",
+          "Threads value 2"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 2 threads",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 4 multipv 1 score cp 20 nodes 1572 nps 524000 hashfull 0 tbhits 0 time 3 pv e2e4",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 1602 nps 534000 hashfull 0 tbhits 0 time 3 pv e2e4",
+          "info depth 3 seldepth 3 multipv 1 score cp 28 nodes 1632 nps 544000 hashfull 0 tbhits 0 time 3 pv e2e4",
+          "info depth 4 seldepth 6 multipv 1 score cp 21 nodes 1730 nps 576666 hashfull 0 tbhits 0 time 3 pv e2e4 e7e5 b1c3",
+          "info depth 5 seldepth 6 multipv 1 score cp 18 nodes 1857 nps 619000 hashfull 0 tbhits 0 time 3 pv e2e4 e7e5 b1c3 b8c6 g1f3",
+          "info depth 6 seldepth 12 multipv 1 score cp 20 nodes 3173 nps 634600 hashfull 0 tbhits 0 time 5 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 7 seldepth 12 multipv 1 score cp 18 nodes 4394 nps 627714 hashfull 0 tbhits 0 time 7 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6",
+          "info depth 8 seldepth 11 multipv 1 score cp 24 nodes 4792 nps 684571 hashfull 0 tbhits 0 time 7 pv e2e4 e7e5 b1c3 b8c6 g1f3 f8c5",
+          "info depth 9 seldepth 11 multipv 1 score cp 34 nodes 6115 nps 679444 hashfull 0 tbhits 0 time 9 pv e2e4 c7c5 b1c3 b8c6 g1f3 e7e6 d2d4",
+          "info depth 10 seldepth 11 multipv 1 score cp 33 nodes 8708 nps 580533 hashfull 0 tbhits 0 time 15 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 e5d4 f3d4",
+          "info depth 11 seldepth 11 multipv 1 score cp 36 nodes 9221 nps 614733 hashfull 0 tbhits 0 time 15 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 f1b5",
+          "info depth 12 seldepth 11 multipv 1 score cp 40 nodes 10887 nps 640411 hashfull 0 tbhits 0 time 17 pv e2e4 c7c5 g1f3 b8c6 b1c3 e7e6 d2d4 c5d4 f3d4",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      },
+      {
+        "options": [
+          "Threads value 1",
+          "Skill Level value 5"
+        ],
+        "pos": "startpos",
+        "go": "depth 8",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 224 nps 224000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 2 multipv 1 score cp 25 nodes 354 nps 354000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 4 seldepth 4 multipv 1 score cp 33 nodes 571 nps 571000 hashfull 0 tbhits 0 time 1 pv e2e4",
+          "info depth 5 seldepth 4 multipv 1 score cp 26 nodes 1046 nps 1046000 hashfull 0 tbhits 0 time 1 pv e2e4 c7c5 b1c3",
+          "info depth 6 seldepth 9 multipv 1 score cp 16 nodes 2735 nps 911666 hashfull 0 tbhits 0 time 3 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 7 seldepth 8 multipv 1 score cp 18 nodes 4309 nps 1077250 hashfull 0 tbhits 0 time 4 pv e2e4 e7e5 b1c3 b8c6 g1f3",
+          "info depth 8 seldepth 9 multipv 1 score cp 15 nodes 6672 nps 953142 hashfull 0 tbhits 0 time 7 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      },
+      {
+        "options": [
+          "Skill Level value 20",
+          "UCI_Chess960 value true"
+        ],
+        "pos": "fen nqbnrkrb/pppppppp/8/8/8/8/PPPPPPPP/NQBNRKRB w KQkq - 0 1",
+        "go": "depth 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 47 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv f1g1",
+          "info depth 2 seldepth 3 multipv 1 score cp 68 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv f1g1",
+          "info depth 3 seldepth 2 multipv 1 score cp 68 nodes 68 nps 68000 hashfull 0 tbhits 0 time 1 pv f1g1",
+          "info depth 4 seldepth 4 multipv 1 score cp 52 nodes 421 nps 421000 hashfull 0 tbhits 0 time 1 pv f1g1 b7b5",
+          "info depth 5 seldepth 10 multipv 1 score cp 1 nodes 2351 nps 587750 hashfull 1 tbhits 0 time 4 pv e2e4",
+          "info depth 6 seldepth 10 multipv 1 score cp -2 nodes 3801 nps 633500 hashfull 1 tbhits 0 time 6 pv f1g1 f8g8 b2b4 c7c6 e2e4",
+          "info depth 7 seldepth 9 multipv 1 score cp 2 nodes 4417 nps 631000 hashfull 1 tbhits 0 time 7 pv b2b4 f8g8 f1g1 e7e5 d2d3 c7c6 e2e4 g7g6",
+          "info depth 8 seldepth 10 multipv 1 score cp 4 nodes 5306 nps 663250 hashfull 1 tbhits 0 time 8 pv b2b4 f8g8 f1g1 b7b5 d2d3",
+          "info depth 9 seldepth 11 multipv 1 score cp 8 nodes 6601 nps 733444 hashfull 1 tbhits 0 time 9 pv f1g1 f8g8 b2b4 b7b5 d2d3 d7d6 a1b3 a8b6 e2e4",
+          "info depth 10 seldepth 10 multipv 1 score cp 6 nodes 7016 nps 701600 hashfull 1 tbhits 0 time 10 pv f1g1 f8g8 b2b4 e7e5",
+          "bestmove f1g1 ponder f8g8"
+        ]
+      },
+      {
+        "options": [
+          "UCI_Chess960 value false"
+        ],
+        "pos": "fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+        "go": "mate 2",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score mate 1 nodes 28 nps 28000 hashfull 0 tbhits 0 time 1 pv g6g7",
+          "bestmove g6g7"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "wtime 1000 btime 1000 winc 10 binc 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 2 multipv 1 score cp 25 nodes 68 nps 68000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 4 seldepth 4 multipv 1 score cp 34 nodes 166 nps 166000 hashfull 0 tbhits 0 time 1 pv e2e4",
+          "info depth 5 seldepth 5 multipv 1 score cp 18 nodes 709 nps 709000 hashfull 0 tbhits 0 time 1 pv c2c4 g8f6 d2d4 c7c6",
+          "info depth 6 seldepth 12 multipv 1 score cp 20 nodes 1282 nps 1282000 hashfull 0 tbhits 0 time 1 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 7 seldepth 7 multipv 1 score cp 20 nodes 1336 nps 668000 hashfull 0 tbhits 0 time 2 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 8 seldepth 11 multipv 1 score cp 20 nodes 1440 nps 720000 hashfull 0 tbhits 0 time 2 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 9 seldepth 11 multipv 1 score cp 30 nodes 3526 nps 881500 hashfull 0 tbhits 0 time 4 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 10 seldepth 10 multipv 1 score cp 32 nodes 4543 nps 908600 hashfull 0 tbhits 0 time 5 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 11 seldepth 11 multipv 1 score cp 41 nodes 5349 nps 891500 hashfull 0 tbhits 0 time 6 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 e5d4 f3d4",
+          "info depth 12 seldepth 15 multipv 1 score cp 33 upperbound nodes 10593 nps 246348 hashfull 2 tbhits 0 time 43 pv e2e4 e7e5",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "movetime 50",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 2 multipv 1 score cp 25 nodes 68 nps 68000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 4 seldepth 4 multipv 1 score cp 34 nodes 166 nps 166000 hashfull 0 tbhits 0 time 1 pv e2e4",
+          "info depth 5 seldepth 5 multipv 1 score cp 18 nodes 709 nps 709000 hashfull 0 tbhits 0 time 1 pv c2c4 g8f6 d2d4 c7c6",
+          "info depth 6 seldepth 12 multipv 1 score cp 20 nodes 1282 nps 1282000 hashfull 0 tbhits 0 time 1 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 7 seldepth 7 multipv 1 score cp 20 nodes 1336 nps 1336000 hashfull 0 tbhits 0 time 1 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 8 seldepth 11 multipv 1 score cp 20 nodes 1440 nps 1440000 hashfull 0 tbhits 0 time 1 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 9 seldepth 11 multipv 1 score cp 30 nodes 3526 nps 881500 hashfull 0 tbhits 0 time 4 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 10 seldepth 10 multipv 1 score cp 32 nodes 4543 nps 908600 hashfull 0 tbhits 0 time 5 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 11 seldepth 11 multipv 1 score cp 41 nodes 5349 nps 891500 hashfull 0 tbhits 0 time 6 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 e5d4 f3d4",
+          "info depth 12 seldepth 19 multipv 1 score cp 27 nodes 17229 nps 662653 hashfull 3 tbhits 0 time 26 pv e2e4 e7e6 d2d4 d7d5 e4e5 c7c5 c2c3 b8c6",
+          "info depth 13 seldepth 23 multipv 1 score cp 25 nodes 29126 nps 661954 hashfull 6 tbhits 0 time 44 pv e2e4 e7e5 g1f3 b8c6 f1b5 g8e7 b1c3 a7a6 b5c6 e7c6 d2d4",
+          "info depth 14 seldepth 15 multipv 1 score cp 28 nodes 30374 nps 660304 hashfull 6 tbhits 0 time 46 pv e2e4 e7e5 g1f3 b8c6 f1b5 f8d6 e1g1 g8e7 d2d4 e5d4 f3d4",
+          "info depth 15 seldepth 15 multipv 1 score cp 28 nodes 32767 nps 642490 hashfull 7 tbhits 0 time 51 pv e2e4 e7e5 g1f3 b8c6 f1b5 f8d6 e1g1 g8e7 d2d4 e5d4 f3d4",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "B",
+    "perft": 3,
+    "reproducibility": 5,
+    "scenarios": [
+      {
+        "options": [
+          "MultiPV value 4"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 26500 hashfull 0 tbhits 0 time 4 pv b1c3",
+          "info depth 1 seldepth 2 multipv 2 score cp 8 nodes 106 nps 26500 hashfull 0 tbhits 0 time 4 pv g1f3",
+          "info depth 1 seldepth 2 multipv 3 score cp 5 nodes 106 nps 26500 hashfull 0 tbhits 0 time 4 pv c2c3",
+          "info depth 1 seldepth 2 multipv 4 score cp 4 nodes 106 nps 26500 hashfull 0 tbhits 0 time 4 pv d2d4",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 363 nps 90750 hashfull 0 tbhits 0 time 4 pv b1c3",
+          "info depth 2 seldepth 3 multipv 2 score cp 21 nodes 363 nps 90750 hashfull 0 tbhits 0 time 4 pv e2e4",
+          "info depth 2 seldepth 3 multipv 3 score cp 18 nodes 363 nps 72600 hashfull 0 tbhits 0 time 5 pv d2d4",
+          "info depth 2 seldepth 3 multipv 4 score cp 14 nodes 363 nps 72600 hashfull 0 tbhits 0 time 5 pv c2c4",
+          "info depth 3 seldepth 6 multipv 1 score cp 21 nodes 953 nps 158833 hashfull 0 tbhits 0 time 6 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 3 seldepth 5 multipv 2 score cp 18 nodes 953 nps 158833 hashfull 0 tbhits 0 time 6 pv c2c4 g8f6 b1c3",
+          "info depth 3 seldepth 7 multipv 3 score cp 14 nodes 953 nps 158833 hashfull 0 tbhits 0 time 6 pv d2d4 d7d5",
+          "info depth 3 seldepth 5 multipv 4 score cp 14 nodes 953 nps 158833 hashfull 0 tbhits 0 time 6 pv c2c3 b8c6",
+          "info depth 4 seldepth 7 multipv 1 score cp 15 nodes 2104 nps 175333 hashfull 0 tbhits 0 time 12 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 4 seldepth 7 multipv 2 score cp 15 nodes 2104 nps 175333 hashfull 0 tbhits 0 time 12 pv d2d4 d7d5",
+          "info depth 4 seldepth 5 multipv 3 score cp 8 nodes 2104 nps 175333 hashfull 0 tbhits 0 time 12 pv c2c4 c7c5 b1c3 b8c6",
+          "info depth 4 seldepth 6 multipv 4 score cp 8 nodes 2104 nps 175333 hashfull 0 tbhits 0 time 12 pv g1f3",
+          "info depth 5 seldepth 8 multipv 1 score cp 16 nodes 3146 nps 224714 hashfull 0 tbhits 0 time 14 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 5 seldepth 8 multipv 2 score cp 14 nodes 3146 nps 224714 hashfull 0 tbhits 0 time 14 pv d2d4 d7d5 c2c3",
+          "info depth 5 seldepth 9 multipv 3 score cp 8 nodes 3146 nps 224714 hashfull 0 tbhits 0 time 14 pv c2c3",
+          "info depth 5 seldepth 6 multipv 4 score cp 8 nodes 3146 nps 224714 hashfull 0 tbhits 0 time 14 pv c2c4 c7c5 b1c3 g8f6 g1f3",
+          "info depth 6 seldepth 8 multipv 1 score cp 29 nodes 4424 nps 221200 hashfull 0 tbhits 0 time 20 pv e2e4 c7c5",
+          "info depth 6 seldepth 7 multipv 2 score cp 13 nodes 4424 nps 221200 hashfull 0 tbhits 0 time 20 pv d2d4 d7d5 c2c3 g8f6 c1f4 b8d7",
+          "info depth 6 seldepth 9 multipv 3 score cp 10 nodes 4424 nps 221200 hashfull 0 tbhits 0 time 20 pv c2c3 d7d5 d2d4 e7e6 b1d2",
+          "info depth 6 seldepth 10 multipv 4 score cp 9 nodes 4424 nps 221200 hashfull 0 tbhits 0 time 20 pv c2c4 c7c5 b1c3 g8f6 e2e3",
+          "info depth 7 seldepth 12 multipv 1 score cp 21 nodes 10056 nps 111733 hashfull 2 tbhits 0 time 90 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 7 seldepth 13 multipv 2 score cp 16 nodes 10056 nps 111733 hashfull 2 tbhits 0 time 90 pv g1f3 d7d5 d2d4 g8f6 c2c4",
+          "info depth 7 seldepth 14 multipv 3 score cp 13 nodes 10056 nps 111733 hashfull 2 tbhits 0 time 90 pv c2c4 c7c5",
+          "info depth 7 seldepth 13 multipv 4 score cp 12 nodes 10056 nps 111733 hashfull 2 tbhits 0 time 90 pv d2d4 g8f6",
+          "info depth 8 seldepth 13 multipv 1 score cp 25 nodes 13841 nps 131819 hashfull 3 tbhits 0 time 105 pv d2d4 d7d5 g1f3 c7c6 c2c4 g8f6 b1c3 c8f5 c4d5 c6d5",
+          "info depth 8 seldepth 10 multipv 2 score cp 22 nodes 13841 nps 131819 hashfull 3 tbhits 0 time 105 pv e2e4 g8f6 b1c3 e7e5 d2d4 e5d4 d1d4 b8c6",
+          "info depth 8 seldepth 11 multipv 3 score cp 21 nodes 13841 nps 131819 hashfull 3 tbhits 0 time 105 pv g1f3 g8f6",
+          "info depth 8 seldepth 11 multipv 4 score cp 18 nodes 13841 nps 131819 hashfull 3 tbhits 0 time 105 pv e2e3 g8f6 d2d4",
+          "info depth 9 seldepth 11 multipv 1 score cp 40 nodes 17767 nps 148058 hashfull 5 tbhits 0 time 120 pv e2e4 c7c5 g1f3 b8c6",
+          "info depth 9 seldepth 13 multipv 2 score cp 30 nodes 17767 nps 148058 hashfull 5 tbhits 0 time 120 pv e2e3 e7e5 c2c4",
+          "info depth 9 seldepth 14 multipv 3 score cp 25 nodes 17767 nps 148058 hashfull 5 tbhits 0 time 120 pv g1f3 d7d5 c2c4 d5c4 b1c3",
+          "info depth 9 seldepth 11 multipv 4 score cp 23 nodes 17767 nps 148058 hashfull 5 tbhits 0 time 120 pv d2d4 d7d5 g1f3 c7c6 c1f4",
+          "info depth 10 seldepth 13 multipv 1 score cp 32 nodes 31334 nps 157457 hashfull 9 tbhits 0 time 199 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 e7e6 d4c6",
+          "info depth 10 seldepth 15 multipv 2 score cp 21 nodes 31334 nps 157457 hashfull 9 tbhits 0 time 199 pv d2d4 g8f6 c2c4 e7e6 b1c3 d7d5 g1f3 f8e7 c1f4 e8g8",
+          "info depth 10 seldepth 13 multipv 3 score cp 14 nodes 31334 nps 157457 hashfull 9 tbhits 0 time 199 pv g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 b1c3 c8f5 c4d5 c6d5",
+          "info depth 10 seldepth 13 multipv 4 score cp 13 nodes 31334 nps 157457 hashfull 9 tbhits 0 time 199 pv e2e3 c7c5 c2c4 b8c6 b1c3 e7e6 d2d4 c5d4 e3d4",
+          "info depth 11 seldepth 21 multipv 1 score cp 39 nodes 60463 nps 147831 hashfull 18 tbhits 0 time 409 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 h7h6 a2a4 e7e6",
+          "info depth 11 seldepth 18 multipv 2 score cp 11 nodes 60463 nps 147831 hashfull 18 tbhits 0 time 409 pv d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 c1g5 f8e7 b1c3 h7h6 g5f6 e7f6 e2e3 c7c6 a2a3",
+          "info depth 11 seldepth 16 multipv 3 score cp 10 nodes 60463 nps 147831 hashfull 18 tbhits 0 time 409 pv g1f3 g8f6 d2d4 e7e6 c1f4 c7c5 e2e3 f8e7 d4c5 e7c5 f1d3",
+          "info depth 11 seldepth 19 multipv 4 score cp 5 nodes 60463 nps 147831 hashfull 18 tbhits 0 time 409 pv e2e3 g8f6 g1f3 e7e6 d2d4 d7d5 c2c4 c7c5 d4c5 f8c5",
+          "info depth 12 seldepth 20 multipv 1 score cp 33 nodes 89847 nps 148753 hashfull 26 tbhits 0 time 604 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 e7e6",
+          "info depth 12 seldepth 24 multipv 2 score cp 17 nodes 89847 nps 148753 hashfull 26 tbhits 0 time 604 pv g1f3 g8f6 d2d4 e7e6 c2c4 f8e7 b1c3 d7d5 c1g5 h7h6 g5f6 e7f6 e2e3 e8g8 a1c1 c7c5 d4c5",
+          "info depth 12 seldepth 24 multipv 3 score cp 14 nodes 89847 nps 148753 hashfull 26 tbhits 0 time 604 pv d2d4 g8f6 c2c4 c7c6 b1c3 d7d5 c4d5 c6d5 c1f4 e7e6 g1f3 f8e7 e2e3",
+          "info depth 12 seldepth 16 multipv 4 score cp 4 nodes 89847 nps 148753 hashfull 26 tbhits 0 time 604 pv e2e3 g8f6 g1f3 e7e6 d2d4 f8e7 c2c4 d7d5 a2a3 e8g8 b2b4",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      },
+      {
+        "options": [
+          "MultiPV value 1",
+          "Threads value 2"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 2 threads",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 4 multipv 1 score cp 24 nodes 140 nps 140000 hashfull 0 tbhits 0 time 1 pv d2d4 c7c6",
+          "info depth 4 seldepth 6 multipv 1 score cp 16 nodes 2614 nps 237636 hashfull 0 tbhits 0 time 11 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 5 seldepth 7 multipv 1 score cp 14 nodes 2974 nps 270363 hashfull 0 tbhits 0 time 11 pv c2c4",
+          "info depth 6 seldepth 7 multipv 1 score cp 14 nodes 3244 nps 270333 hashfull 0 tbhits 0 time 12 pv d2d4 d7d5 c1f4 c8f5 c2c3 b8d7",
+          "info depth 7 seldepth 9 multipv 1 score cp 14 nodes 3685 nps 283461 hashfull 0 tbhits 0 time 13 pv c2c4 g8f6 d2d4 c7c6 g1f3 d7d5",
+          "info depth 8 seldepth 12 multipv 1 score cp 32 nodes 6924 nps 113508 hashfull 1 tbhits 0 time 61 pv d2d4 g8f6 c2c4 c7c6",
+          "info depth 9 seldepth 14 multipv 1 score cp 27 nodes 9500 nps 141791 hashfull 2 tbhits 0 time 67 pv d2d4 g8f6 c2c4 e7e6 b1c3 d7d5 g1f3 f8e7 c1f4 e8g8",
+          "info depth 10 seldepth 11 multipv 1 score cp 26 nodes 10175 nps 147463 hashfull 2 tbhits 0 time 69 pv d2d4 g8f6 g1f3 e7e6 c2c4 f8b4 c1d2 b4d2 b1d2",
+          "info depth 11 seldepth 17 multipv 1 score cp 25 nodes 32111 nps 176434 hashfull 10 tbhits 0 time 182 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6 b1c3 f8b4",
+          "info depth 12 seldepth 18 multipv 1 score cp 25 nodes 45998 nps 176237 hashfull 16 tbhits 0 time 261 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6 b1c3 f8b4 d4c6 d7c6 d1d8 e8d8",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      },
+      {
+        "options": [
+          "Threads value 1",
+          "Skill Level value 5"
+        ],
+        "pos": "startpos",
+        "go": "depth 8",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 53000 hashfull 0 tbhits 0 time 2 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 363 nps 121000 hashfull 0 tbhits 0 time 3 pv b1c3",
+          "info depth 3 seldepth 6 multipv 1 score cp 21 nodes 953 nps 317666 hashfull 0 tbhits 0 time 3 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 4 seldepth 7 multipv 1 score cp 15 nodes 2104 nps 420800 hashfull 0 tbhits 0 time 5 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 5 seldepth 8 multipv 1 score cp 16 nodes 3146 nps 286000 hashfull 0 tbhits 0 time 11 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 6 seldepth 8 multipv 1 score cp 29 nodes 4424 nps 80436 hashfull 0 tbhits 0 time 55 pv e2e4 c7c5",
+          "info depth 7 seldepth 12 multipv 1 score cp 21 nodes 10056 nps 128923 hashfull 2 tbhits 0 time 78 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 8 seldepth 13 multipv 1 score cp 25 nodes 13841 nps 155516 hashfull 3 tbhits 0 time 89 pv d2d4 d7d5 g1f3 c7c6 c2c4 g8f6 b1c3 c8f5 c4d5 c6d5",
+          "bestmove d2d4 ponder d7d5"
+        ]
+      },
+      {
+        "options": [
+          "Skill Level value 20",
+          "UCI_Chess960 value true"
+        ],
+        "pos": "fen nqbnrkrb/pppppppp/8/8/8/8/PPPPPPPP/NQBNRKRB w KQkq - 0 1",
+        "go": "depth 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 47 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv f1g1",
+          "info depth 2 seldepth 3 multipv 1 score cp 68 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv f1g1",
+          "info depth 3 seldepth 6 multipv 1 score cp 18 nodes 1029 nps 128625 hashfull 0 tbhits 0 time 8 pv e2e4 f8g8",
+          "info depth 4 seldepth 6 multipv 1 score cp 17 nodes 1556 nps 172888 hashfull 0 tbhits 0 time 9 pv c2c3",
+          "info depth 5 seldepth 9 multipv 1 score cp 8 nodes 3358 nps 197529 hashfull 0 tbhits 0 time 17 pv f1g1 e7e5 e2e4",
+          "info depth 6 seldepth 9 multipv 1 score cp 13 nodes 4296 nps 238666 hashfull 0 tbhits 0 time 18 pv f1g1 f8g8",
+          "info depth 7 seldepth 11 multipv 1 score cp 11 nodes 5605 nps 215576 hashfull 1 tbhits 0 time 26 pv f1g1 f8g8 e2e4 e7e5 g2g3 b7b5 h1g2 c7c5",
+          "info depth 8 seldepth 11 multipv 1 score cp 10 nodes 5769 nps 221884 hashfull 1 tbhits 0 time 26 pv f1g1 f8g8 e2e4 g7g6",
+          "info depth 9 seldepth 13 multipv 1 score cp 28 nodes 9592 nps 252421 hashfull 1 tbhits 0 time 38 pv f1g1 f8g8 g2g3 d7d6 h1g2 b7b5 e2e4 c7c5",
+          "info depth 10 seldepth 15 multipv 1 score cp 13 nodes 12105 nps 247040 hashfull 2 tbhits 0 time 49 pv f1g1 g7g6 e2e4 h8g7 b2b4 e7e5 g2g3 f8g8 h1g2 d7d6 d2d3 b7b5 a1b3 c8d7",
+          "bestmove f1g1 ponder g7g6"
+        ]
+      },
+      {
+        "options": [
+          "UCI_Chess960 value false"
+        ],
+        "pos": "fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+        "go": "mate 2",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score mate 1 nodes 28 nps 28000 hashfull 0 tbhits 0 time 1 pv g6g7",
+          "bestmove g6g7"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "wtime 1000 btime 1000 winc 10 binc 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 4 multipv 1 score cp 24 nodes 140 nps 140000 hashfull 0 tbhits 0 time 1 pv d2d4 c7c6",
+          "info depth 4 seldepth 6 multipv 1 score cp 16 nodes 680 nps 340000 hashfull 0 tbhits 0 time 2 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 5 seldepth 6 multipv 1 score cp 21 nodes 811 nps 135166 hashfull 0 tbhits 0 time 6 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 6 seldepth 8 multipv 1 score cp 25 nodes 1007 nps 167833 hashfull 0 tbhits 0 time 6 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 7 seldepth 8 multipv 1 score cp 32 nodes 1416 nps 236000 hashfull 0 tbhits 0 time 6 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 8 seldepth 11 multipv 1 score cp 26 upperbound nodes 3787 nps 82326 hashfull 1 tbhits 0 time 46 pv e2e4 c7c5",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "movetime 50",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 47 nps 47000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 4 multipv 1 score cp 24 nodes 140 nps 140000 hashfull 0 tbhits 0 time 1 pv d2d4 c7c6",
+          "info depth 4 seldepth 6 multipv 1 score cp 16 nodes 680 nps 680000 hashfull 0 tbhits 0 time 1 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 5 seldepth 6 multipv 1 score cp 21 nodes 811 nps 405500 hashfull 0 tbhits 0 time 2 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 6 seldepth 8 multipv 1 score cp 25 nodes 1007 nps 503500 hashfull 0 tbhits 0 time 2 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 7 seldepth 8 multipv 1 score cp 32 nodes 1416 nps 472000 hashfull 0 tbhits 0 time 3 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 8 seldepth 11 multipv 1 score cp 28 nodes 4491 nps 249500 hashfull 1 tbhits 0 time 18 pv e2e4 c7c5 b1c3 b8c6 g1f3 d7d6",
+          "info depth 9 seldepth 11 multipv 1 score cp 30 nodes 5107 nps 204280 hashfull 1 tbhits 0 time 25 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4",
+          "info depth 10 seldepth 15 multipv 1 score cp 30 nodes 6965 nps 240172 hashfull 2 tbhits 0 time 29 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6",
+          "info depth 11 seldepth 14 multipv 1 score cp 30 lowerbound nodes 7429 nps 112560 hashfull 2 tbhits 0 time 66 pv e2e4 e7e5",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      }
+    ]
+  },
+  {
+    "variant": "C",
+    "perft": 3,
+    "reproducibility": 5,
+    "scenarios": [
+      {
+        "options": [
+          "MultiPV value 4"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 1 seldepth 2 multipv 2 score cp 8 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv g1f3",
+          "info depth 1 seldepth 2 multipv 3 score cp 5 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv c2c3",
+          "info depth 1 seldepth 2 multipv 4 score cp 4 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv d2d4",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 363 nps 181500 hashfull 0 tbhits 0 time 2 pv b1c3",
+          "info depth 2 seldepth 3 multipv 2 score cp 21 nodes 363 nps 181500 hashfull 0 tbhits 0 time 2 pv e2e4",
+          "info depth 2 seldepth 3 multipv 3 score cp 18 nodes 363 nps 181500 hashfull 0 tbhits 0 time 2 pv d2d4",
+          "info depth 2 seldepth 3 multipv 4 score cp 14 nodes 363 nps 181500 hashfull 0 tbhits 0 time 2 pv c2c4",
+          "info depth 3 seldepth 6 multipv 1 score cp 21 nodes 953 nps 238250 hashfull 0 tbhits 0 time 4 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 3 seldepth 5 multipv 2 score cp 18 nodes 953 nps 119125 hashfull 0 tbhits 0 time 8 pv c2c4 g8f6 b1c3",
+          "info depth 3 seldepth 7 multipv 3 score cp 14 nodes 953 nps 119125 hashfull 0 tbhits 0 time 8 pv d2d4 d7d5",
+          "info depth 3 seldepth 5 multipv 4 score cp 14 nodes 953 nps 119125 hashfull 0 tbhits 0 time 8 pv c2c3 b8c6",
+          "info depth 4 seldepth 7 multipv 1 score cp 15 nodes 2104 nps 233777 hashfull 0 tbhits 0 time 9 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 4 seldepth 7 multipv 2 score cp 15 nodes 2104 nps 210400 hashfull 0 tbhits 0 time 10 pv d2d4 d7d5",
+          "info depth 4 seldepth 5 multipv 3 score cp 8 nodes 2104 nps 210400 hashfull 0 tbhits 0 time 10 pv c2c4 c7c5 b1c3 b8c6",
+          "info depth 4 seldepth 6 multipv 4 score cp 8 nodes 2104 nps 210400 hashfull 0 tbhits 0 time 10 pv g1f3",
+          "info depth 5 seldepth 8 multipv 1 score cp 16 nodes 3146 nps 286000 hashfull 0 tbhits 0 time 11 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 5 seldepth 8 multipv 2 score cp 14 nodes 3146 nps 286000 hashfull 0 tbhits 0 time 11 pv d2d4 d7d5 c2c3",
+          "info depth 5 seldepth 9 multipv 3 score cp 8 nodes 3146 nps 286000 hashfull 0 tbhits 0 time 11 pv c2c3",
+          "info depth 5 seldepth 6 multipv 4 score cp 8 nodes 3146 nps 286000 hashfull 0 tbhits 0 time 11 pv c2c4 c7c5 b1c3 g8f6 g1f3",
+          "info depth 6 seldepth 8 multipv 1 score cp 29 nodes 4424 nps 316000 hashfull 0 tbhits 0 time 14 pv e2e4 c7c5",
+          "info depth 6 seldepth 7 multipv 2 score cp 13 nodes 4424 nps 260235 hashfull 0 tbhits 0 time 17 pv d2d4 d7d5 c2c3 g8f6 c1f4 b8d7",
+          "info depth 6 seldepth 9 multipv 3 score cp 10 nodes 4424 nps 260235 hashfull 0 tbhits 0 time 17 pv c2c3 d7d5 d2d4 e7e6 b1d2",
+          "info depth 6 seldepth 10 multipv 4 score cp 9 nodes 4424 nps 260235 hashfull 0 tbhits 0 time 17 pv c2c4 c7c5 b1c3 g8f6 e2e3",
+          "info depth 7 seldepth 12 multipv 1 score cp 21 nodes 10056 nps 143657 hashfull 2 tbhits 0 time 70 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 7 seldepth 13 multipv 2 score cp 16 nodes 10056 nps 139666 hashfull 2 tbhits 0 time 72 pv g1f3 d7d5 d2d4 g8f6 c2c4",
+          "info depth 7 seldepth 14 multipv 3 score cp 13 nodes 10056 nps 139666 hashfull 2 tbhits 0 time 72 pv c2c4 c7c5",
+          "info depth 7 seldepth 13 multipv 4 score cp 12 nodes 10056 nps 139666 hashfull 2 tbhits 0 time 72 pv d2d4 g8f6",
+          "info depth 8 seldepth 13 multipv 1 score cp 25 nodes 13841 nps 162835 hashfull 3 tbhits 0 time 85 pv d2d4 d7d5 g1f3 c7c6 c2c4 g8f6 b1c3 c8f5 c4d5 c6d5",
+          "info depth 8 seldepth 10 multipv 2 score cp 22 nodes 13841 nps 162835 hashfull 3 tbhits 0 time 85 pv e2e4 g8f6 b1c3 e7e5 d2d4 e5d4 d1d4 b8c6",
+          "info depth 8 seldepth 11 multipv 3 score cp 21 nodes 13841 nps 162835 hashfull 3 tbhits 0 time 85 pv g1f3 g8f6",
+          "info depth 8 seldepth 11 multipv 4 score cp 18 nodes 13841 nps 162835 hashfull 3 tbhits 0 time 85 pv e2e3 g8f6 d2d4",
+          "info depth 9 seldepth 11 multipv 1 score cp 40 nodes 17767 nps 175910 hashfull 5 tbhits 0 time 101 pv e2e4 c7c5 g1f3 b8c6",
+          "info depth 9 seldepth 13 multipv 2 score cp 30 nodes 17767 nps 175910 hashfull 5 tbhits 0 time 101 pv e2e3 e7e5 c2c4",
+          "info depth 9 seldepth 14 multipv 3 score cp 25 nodes 17767 nps 175910 hashfull 5 tbhits 0 time 101 pv g1f3 d7d5 c2c4 d5c4 b1c3",
+          "info depth 9 seldepth 11 multipv 4 score cp 23 nodes 17767 nps 175910 hashfull 5 tbhits 0 time 101 pv d2d4 d7d5 g1f3 c7c6 c1f4",
+          "info depth 10 seldepth 13 multipv 1 score cp 32 nodes 31334 nps 159867 hashfull 9 tbhits 0 time 196 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 e7e6 d4c6",
+          "info depth 10 seldepth 15 multipv 2 score cp 21 nodes 31334 nps 159055 hashfull 9 tbhits 0 time 197 pv d2d4 g8f6 c2c4 e7e6 b1c3 d7d5 g1f3 f8e7 c1f4 e8g8",
+          "info depth 10 seldepth 13 multipv 3 score cp 14 nodes 31334 nps 159055 hashfull 9 tbhits 0 time 197 pv g1f3 g8f6 d2d4 d7d5 c2c4 c7c6 b1c3 c8f5 c4d5 c6d5",
+          "info depth 10 seldepth 13 multipv 4 score cp 13 nodes 31334 nps 159055 hashfull 9 tbhits 0 time 197 pv e2e3 c7c5 c2c4 b8c6 b1c3 e7e6 d2d4 c5d4 e3d4",
+          "info depth 11 seldepth 21 multipv 1 score cp 39 nodes 60463 nps 151536 hashfull 18 tbhits 0 time 399 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 h7h6 a2a4 e7e6",
+          "info depth 11 seldepth 18 multipv 2 score cp 11 nodes 60463 nps 149660 hashfull 18 tbhits 0 time 404 pv d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 c1g5 f8e7 b1c3 h7h6 g5f6 e7f6 e2e3 c7c6 a2a3",
+          "info depth 11 seldepth 16 multipv 3 score cp 10 nodes 60463 nps 149660 hashfull 18 tbhits 0 time 404 pv g1f3 g8f6 d2d4 e7e6 c1f4 c7c5 e2e3 f8e7 d4c5 e7c5 f1d3",
+          "info depth 11 seldepth 19 multipv 4 score cp 5 nodes 60463 nps 149660 hashfull 18 tbhits 0 time 404 pv e2e3 g8f6 g1f3 e7e6 d2d4 d7d5 c2c4 c7c5 d4c5 f8c5",
+          "info depth 12 seldepth 20 multipv 1 score cp 33 nodes 89847 nps 136545 hashfull 26 tbhits 0 time 658 pv e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 e7e6",
+          "info depth 12 seldepth 24 multipv 2 score cp 17 nodes 89847 nps 136131 hashfull 26 tbhits 0 time 660 pv g1f3 g8f6 d2d4 e7e6 c2c4 f8e7 b1c3 d7d5 c1g5 h7h6 g5f6 e7f6 e2e3 e8g8 a1c1 c7c5 d4c5",
+          "info depth 12 seldepth 24 multipv 3 score cp 14 nodes 89847 nps 136131 hashfull 26 tbhits 0 time 660 pv d2d4 g8f6 c2c4 c7c6 b1c3 d7d5 c4d5 c6d5 c1f4 e7e6 g1f3 f8e7 e2e3",
+          "info depth 12 seldepth 16 multipv 4 score cp 4 nodes 89847 nps 136131 hashfull 26 tbhits 0 time 660 pv e2e3 g8f6 g1f3 e7e6 d2d4 f8e7 c2c4 d7d5 a2a3 e8g8 b2b4",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      },
+      {
+        "options": [
+          "MultiPV value 1",
+          "Threads value 2"
+        ],
+        "pos": "startpos",
+        "go": "depth 12",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 2 threads",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 4 multipv 1 score cp 14 nodes 942 nps 235500 hashfull 0 tbhits 0 time 4 pv d2d4",
+          "info depth 3 seldepth 4 multipv 1 score cp 15 nodes 1078 nps 269500 hashfull 0 tbhits 0 time 4 pv c2c4 g8f6",
+          "info depth 4 seldepth 6 multipv 1 score cp 12 nodes 1202 nps 300500 hashfull 0 tbhits 0 time 4 pv c2c4 c7c5 b1c3 b8c6 g1f3",
+          "info depth 5 seldepth 6 multipv 1 score cp 13 nodes 1545 nps 309000 hashfull 0 tbhits 0 time 5 pv d2d4 d7d5 c1f4",
+          "info depth 6 seldepth 9 multipv 1 score cp 14 nodes 1856 nps 371200 hashfull 0 tbhits 0 time 5 pv d2d4 d7d5 b1d2 g8f6",
+          "info depth 7 seldepth 9 multipv 1 score cp 12 nodes 2233 nps 279125 hashfull 0 tbhits 0 time 8 pv d2d4 d7d5 c1f4 c8f5 c2c3 b8d7 b1d2 g8f6",
+          "info depth 8 seldepth 10 multipv 1 score cp 20 nodes 4575 nps 415909 hashfull 0 tbhits 0 time 11 pv e2e4 e7e5 b1c3 b8c6 f1c4 f8c5 g1f3 d7d6",
+          "info depth 9 seldepth 12 multipv 1 score cp 26 nodes 10319 nps 187618 hashfull 1 tbhits 0 time 55 pv e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 e1g1 f8c5",
+          "info depth 10 seldepth 9 multipv 1 score cp 34 nodes 12533 nps 205459 hashfull 1 tbhits 0 time 61 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6",
+          "info depth 11 seldepth 15 multipv 1 score cp 44 nodes 14805 nps 227769 hashfull 2 tbhits 0 time 65 pv e2e4 e7e5",
+          "info depth 12 seldepth 19 multipv 1 score cp 45 nodes 20356 nps 257670 hashfull 3 tbhits 0 time 79 pv e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 d2d4 e5d4 f3d4 f8c5 d4c6 b7c6",
+          "bestmove e2e4 ponder e7e5"
+        ]
+      },
+      {
+        "options": [
+          "Threads value 1",
+          "Skill Level value 5"
+        ],
+        "pos": "startpos",
+        "go": "depth 8",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 106 nps 106000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 2 seldepth 3 multipv 1 score cp 25 nodes 363 nps 363000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 3 seldepth 6 multipv 1 score cp 21 nodes 953 nps 476500 hashfull 0 tbhits 0 time 2 pv e2e4 d7d5 e4d5 d8d5",
+          "info depth 4 seldepth 7 multipv 1 score cp 15 nodes 2104 nps 701333 hashfull 0 tbhits 0 time 3 pv e2e4 c7c5 c2c3 b8c6",
+          "info depth 5 seldepth 8 multipv 1 score cp 16 nodes 3146 nps 629200 hashfull 0 tbhits 0 time 5 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 6 seldepth 8 multipv 1 score cp 29 nodes 4424 nps 737333 hashfull 0 tbhits 0 time 6 pv e2e4 c7c5",
+          "info depth 7 seldepth 12 multipv 1 score cp 21 nodes 10056 nps 457090 hashfull 2 tbhits 0 time 22 pv e2e4 e7e5 b1c3 b8c6 g1f3 g8f6 d2d4 c6d4 f3d4",
+          "info depth 8 seldepth 13 multipv 1 score cp 25 nodes 13841 nps 532346 hashfull 3 tbhits 0 time 26 pv d2d4 d7d5 g1f3 c7c6 c2c4 g8f6 b1c3 c8f5 c4d5 c6d5",
+          "bestmove d2d4 ponder d7d5"
+        ]
+      },
+      {
+        "options": [
+          "Skill Level value 20",
+          "UCI_Chess960 value true"
+        ],
+        "pos": "fen nqbnrkrb/pppppppp/8/8/8/8/PPPPPPPP/NQBNRKRB w KQkq - 0 1",
+        "go": "depth 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 47 nodes 20 nps 4000 hashfull 0 tbhits 0 time 5 pv f1g1",
+          "info depth 2 seldepth 3 multipv 1 score cp 68 nodes 47 nps 9400 hashfull 0 tbhits 0 time 5 pv f1g1",
+          "info depth 3 seldepth 6 multipv 1 score cp 18 nodes 1029 nps 171500 hashfull 0 tbhits 0 time 6 pv e2e4 f8g8",
+          "info depth 4 seldepth 6 multipv 1 score cp 17 nodes 1556 nps 222285 hashfull 0 tbhits 0 time 7 pv c2c3",
+          "info depth 5 seldepth 9 multipv 1 score cp 8 nodes 3358 nps 258307 hashfull 0 tbhits 0 time 13 pv f1g1 e7e5 e2e4",
+          "info depth 6 seldepth 9 multipv 1 score cp 13 nodes 4296 nps 306857 hashfull 0 tbhits 0 time 14 pv f1g1 f8g8",
+          "info depth 7 seldepth 11 multipv 1 score cp 11 nodes 5605 nps 280250 hashfull 1 tbhits 0 time 20 pv f1g1 f8g8 e2e4 e7e5 g2g3 b7b5 h1g2 c7c5",
+          "info depth 8 seldepth 11 multipv 1 score cp 10 nodes 5769 nps 288450 hashfull 1 tbhits 0 time 20 pv f1g1 f8g8 e2e4 g7g6",
+          "info depth 9 seldepth 13 multipv 1 score cp 28 nodes 9592 nps 330758 hashfull 1 tbhits 0 time 29 pv f1g1 f8g8 g2g3 d7d6 h1g2 b7b5 e2e4 c7c5",
+          "info depth 10 seldepth 15 multipv 1 score cp 13 nodes 12105 nps 168125 hashfull 2 tbhits 0 time 72 pv f1g1 g7g6 e2e4 h8g7 b2b4 e7e5 g2g3 f8g8 h1g2 d7d6 d2d3 b7b5 a1b3 c8d7",
+          "bestmove f1g1 ponder g7g6"
+        ]
+      },
+      {
+        "options": [
+          "UCI_Chess960 value false"
+        ],
+        "pos": "fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+        "go": "mate 2",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score mate 1 nodes 28 nps 28000 hashfull 0 tbhits 0 time 1 pv g6g7",
+          "bestmove g6g7"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "wtime 1000 btime 1000 winc 10 binc 10",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 20000 hashfull 0 tbhits 0 time 1 pv b1c3",
+          "info depth 1 seldepth 3 multipv 1 score cp 19 lowerbound nodes 26 nps 8666 hashfull 0 tbhits 0 time 3 pv b1c3",
+          "info depth 2 seldepth 5 multipv 1 score cp 17 lowerbound nodes 152 nps 50666 hashfull 0 tbhits 0 time 3 pv e2e4",
+          "info depth 3 seldepth 5 multipv 1 score cp 17 lowerbound nodes 256 nps 85333 hashfull 0 tbhits 0 time 3 pv c2c4",
+          "info depth 5 seldepth 7 multipv 1 score cp 17 nodes 501 nps 167000 hashfull 0 tbhits 0 time 3 pv e2e4 d7d5 e4d5 d8d5 b1c3",
+          "info depth 6 seldepth 8 multipv 1 score cp 13 nodes 820 nps 205000 hashfull 0 tbhits 0 time 4 pv c2c4 e7e5 e2e3",
+          "info depth 7 seldepth 9 multipv 1 score cp 14 nodes 1181 nps 236200 hashfull 0 tbhits 0 time 5 pv c2c4 e7e5 b1c3 g8f6 g1f3",
+          "info depth 8 seldepth 14 multipv 1 score cp 16 nodes 2613 nps 261300 hashfull 0 tbhits 0 time 10 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 8 seldepth 12 multipv 1 score cp 16 lowerbound nodes 3479 nps 217437 hashfull 1 tbhits 0 time 16 pv e2e4",
+          "info depth 9 seldepth 3 multipv 1 score cp 18 lowerbound nodes 3879 nps 242437 hashfull 1 tbhits 0 time 16 pv e2e4",
+          "info depth 10 seldepth 11 multipv 1 score cp 19 lowerbound nodes 4326 nps 254470 hashfull 1 tbhits 0 time 17 pv e2e4",
+          "info depth 10 seldepth 9 multipv 1 score cp 21 lowerbound nodes 4837 nps 268722 hashfull 1 tbhits 0 time 18 pv e2e4",
+          "info depth 10 seldepth 10 multipv 1 score cp 22 lowerbound nodes 5441 nps 302277 hashfull 1 tbhits 0 time 18 pv e2e4",
+          "info depth 10 seldepth 9 multipv 1 score cp 24 lowerbound nodes 6184 nps 257666 hashfull 1 tbhits 0 time 24 pv e2e4",
+          "info depth 10 seldepth 9 multipv 1 score cp 24 lowerbound nodes 6184 nps 257666 hashfull 1 tbhits 0 time 24 pv e2e4 c7c5",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      },
+      {
+        "options": [],
+        "pos": "startpos",
+        "go": "movetime 50",
+        "lines": [
+          "info string Available processors: 0-2",
+          "info string Using 1 thread",
+          "info string NNUE evaluation using nn-bddd9d57eb87.nnue (131MiB, (131952, 1024, 32, 32, 1))",
+          "info string Network replica 1: Local memory. Shared memory not supported by the OS. Local allocation fallback.",
+          "info depth 1 seldepth 2 multipv 1 score cp 9 nodes 20 nps 5000 hashfull 0 tbhits 0 time 4 pv b1c3",
+          "info depth 1 seldepth 3 multipv 1 score cp 19 lowerbound nodes 26 nps 6500 hashfull 0 tbhits 0 time 4 pv b1c3",
+          "info depth 2 seldepth 5 multipv 1 score cp 17 lowerbound nodes 152 nps 38000 hashfull 0 tbhits 0 time 4 pv e2e4",
+          "info depth 3 seldepth 5 multipv 1 score cp 17 lowerbound nodes 256 nps 64000 hashfull 0 tbhits 0 time 4 pv c2c4",
+          "info depth 5 seldepth 7 multipv 1 score cp 17 nodes 501 nps 125250 hashfull 0 tbhits 0 time 4 pv e2e4 d7d5 e4d5 d8d5 b1c3",
+          "info depth 6 seldepth 8 multipv 1 score cp 13 nodes 820 nps 164000 hashfull 0 tbhits 0 time 5 pv c2c4 e7e5 e2e3",
+          "info depth 7 seldepth 9 multipv 1 score cp 14 nodes 1181 nps 236200 hashfull 0 tbhits 0 time 5 pv c2c4 e7e5 b1c3 g8f6 g1f3",
+          "info depth 8 seldepth 14 multipv 1 score cp 16 nodes 2613 nps 237545 hashfull 0 tbhits 0 time 11 pv e2e4 c7c5 c2c3 e7e5",
+          "info depth 8 seldepth 12 multipv 1 score cp 16 lowerbound nodes 3479 nps 267615 hashfull 1 tbhits 0 time 13 pv e2e4",
+          "info depth 9 seldepth 3 multipv 1 score cp 18 lowerbound nodes 3879 nps 298384 hashfull 1 tbhits 0 time 13 pv e2e4",
+          "info depth 10 seldepth 11 multipv 1 score cp 19 lowerbound nodes 4326 nps 332769 hashfull 1 tbhits 0 time 13 pv e2e4",
+          "info depth 11 seldepth 9 multipv 1 score cp 21 lowerbound nodes 5092 nps 363714 hashfull 1 tbhits 0 time 14 pv e2e4",
+          "info depth 12 seldepth 9 multipv 1 score cp 22 lowerbound nodes 6166 nps 308300 hashfull 1 tbhits 0 time 20 pv e2e4",
+          "info depth 13 seldepth 15 multipv 1 score cp 24 lowerbound nodes 9118 nps 303933 hashfull 2 tbhits 0 time 30 pv e2e4",
+          "info depth 13 seldepth 15 multipv 1 score cp 24 lowerbound nodes 13215 nps 264300 hashfull 3 tbhits 0 time 50 pv e2e4 c7c5",
+          "bestmove e2e4 ponder c7c5"
+        ]
+      }
+    ]
+  }
+]

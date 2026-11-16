@@ -1,0 +1,29 @@
+{
+  "base": "5d03b6e578a5eedc822e4563bdbb89e762fc2a59",
+  "engine_commit": "d8b7027952c15ca02c15b40110f44ffdafd4e0cb",
+  "network": "nn-bddd9d57eb87.nnue",
+  "network_sha256": "bddd9d57eb87bf09a6c4e1a3b3f1cc18855c83ee45fdbe18018ac3763b56b38e",
+  "fastchess_commit": "d6e3a7a71f8437a39836856ae78a3dcdc9bf934c",
+  "compiler": "GCC 14.2.0",
+  "architecture": "x86-64-avx2",
+  "pgo": false,
+  "threads": 1,
+  "multipv": 1,
+  "hash_mib": 32,
+  "build_checks": {
+    "A": 1442480,
+    "B": 2281092,
+    "C": 1189342
+  },
+  "searches": 822,
+  "accepted_bound_invariants_checked": 3055,
+  "binary_sha256": {
+    "A-release": "5afb1def96aac8e7576408cbada7feee23673047891d3383cc0e762612410326",
+    "B-release": "503f4a05896eeafe7e684a0e609b775d419e733b6abaa3fba34cf302f86ac196",
+    "C-release": "950e6ee7b42f065ecac13be2010447f7dec60ef7469543a63802094053d6e4ee",
+    "A-trace": "a5ab16c2987f98bf4959b1a6497d67cd80ff53b319b844733b29c98cb3ce8a9f",
+    "B-trace": "9427573b6f2291db34b60e089ee976c81a223851eee4a5c396fc0da3892007de",
+    "C-trace": "cc639d79dc2293893e2b5f3ab09e44d8fe89ac6aab8fe74a86032eeba53825f6",
+    "C-debug": "cbeebb7753ef3ce698f350fd4e5198c6f8b014127a123ef50173e3365b8523f4"
+  }
+}

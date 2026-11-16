@@ -1,0 +1,26 @@
+{
+  "STC-B-A": {
+    "games": 12,
+    "wins": 1,
+    "losses": 0,
+    "draws": 11
+  },
+  "STC-C-A": {
+    "games": 12,
+    "wins": 0,
+    "losses": 0,
+    "draws": 12
+  },
+  "STC-C-B": {
+    "games": 12,
+    "wins": 1,
+    "losses": 1,
+    "draws": 10
+  },
+  "LTC-C-B": {
+    "games": 4,
+    "wins": 0,
+    "losses": 0,
+    "draws": 4
+  }
+}

@@ -1,0 +1,47 @@
+Started game 1 of 12 (C vs A)
+Started game 2 of 12 (A vs C)
+Finished game 2 (A vs C): 1/2-1/2 {Draw by insufficient mating material}
+Started game 3 of 12 (C vs A)
+Finished game 1 (C vs A): 1/2-1/2 {Draw by fifty moves rule}
+Started game 4 of 12 (A vs C)
+Finished game 3 (C vs A): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 5 of 12 (C vs A)
+Finished game 4 (A vs C): 1/2-1/2 {Draw by 3-fold repetition}
+--------------------------------------------------
+Results of C vs A (10+0.1, 1t, 32MB, openings.epd):
+Elo: -0.00 +/- 0.00, nElo: -nan +/- -nan
+LOS: -nan %, DrawRatio: 100.00 %, PairsRatio: -nan
+Games: 4, Wins: 0, Losses: 0, Draws: 4, Points: 2.0 (50.00 %)
+Ptnml(0-2): [0, 0, 2, 0, 0], WL/DD Ratio: 0.00
+--------------------------------------------------
+Started game 6 of 12 (A vs C)
+Finished game 5 (C vs A): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 7 of 12 (C vs A)
+Finished game 6 (A vs C): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 8 of 12 (A vs C)
+Finished game 7 (C vs A): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 9 of 12 (C vs A)
+Finished game 8 (A vs C): 1/2-1/2 {Draw by 3-fold repetition}
+--------------------------------------------------
+Results of C vs A (10+0.1, 1t, 32MB, openings.epd):
+Elo: -0.00 +/- 0.00, nElo: -nan +/- -nan
+LOS: -nan %, DrawRatio: 100.00 %, PairsRatio: -nan
+Games: 8, Wins: 0, Losses: 0, Draws: 8, Points: 4.0 (50.00 %)
+Ptnml(0-2): [0, 0, 4, 0, 0], WL/DD Ratio: 0.00
+--------------------------------------------------
+Started game 10 of 12 (A vs C)
+Finished game 9 (C vs A): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 11 of 12 (C vs A)
+Finished game 10 (A vs C): 1/2-1/2 {Draw by 3-fold repetition}
+Started game 12 of 12 (A vs C)
+Finished game 11 (C vs A): 1/2-1/2 {Draw by 3-fold repetition}
+Finished game 12 (A vs C): 1/2-1/2 {Draw by 3-fold repetition}
+--------------------------------------------------
+Results of C vs A (10+0.1, 1t, 32MB, openings.epd):
+Elo: -0.00 +/- 0.00, nElo: -nan +/- -nan
+LOS: -nan %, DrawRatio: 100.00 %, PairsRatio: -nan
+Games: 12, Wins: 0, Losses: 0, Draws: 12, Points: 6.0 (50.00 %)
+Ptnml(0-2): [0, 0, 6, 0, 0], WL/DD Ratio: 0.00
+--------------------------------------------------
+Finished match
+Total Time: 00:03:15 (hours:minutes:seconds)

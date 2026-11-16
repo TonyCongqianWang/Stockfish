@@ -1,0 +1,12 @@
+{'variant': 'A', 'wall_seconds': 3.819775393999862, 'bench_ms': 1865, 'nodes': 1442480}
+{'variant': 'B', 'wall_seconds': 3.6622661660001086, 'bench_ms': 2843, 'nodes': 2281092}
+{'variant': 'C', 'wall_seconds': 2.9702735830001075, 'bench_ms': 1556, 'nodes': 1189342}
+{'variant': 'B', 'wall_seconds': 3.3375356750000265, 'bench_ms': 2818, 'nodes': 2281092}
+{'variant': 'C', 'wall_seconds': 2.743581403999997, 'bench_ms': 1602, 'nodes': 1189342}
+{'variant': 'A', 'wall_seconds': 2.191349964999972, 'bench_ms': 1711, 'nodes': 1442480}
+{'variant': 'C', 'wall_seconds': 2.1138787649999813, 'bench_ms': 1565, 'nodes': 1189342}
+{'variant': 'A', 'wall_seconds': 2.2960027689998697, 'bench_ms': 1797, 'nodes': 1442480}
+{'variant': 'B', 'wall_seconds': 3.275935213000139, 'bench_ms': 2779, 'nodes': 2281092}
+A median bench ms 1797
+B median bench ms 2818
+C median bench ms 1565
