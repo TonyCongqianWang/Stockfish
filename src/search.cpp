@@ -1022,14 +1022,17 @@ Value Search::Worker::search(
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
         && !is_loss(beta) && !is_win(eval))
     {
-        Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        // The cutoff score and threshold are scaled by 256.
+        const int hinge = std::max(depth - 10, 0);
+        const int ttMiss = !ss->ttHit;
+        const int correction = std::abs(correctionValue) / 198435;
+        const int futilityScore =
+          256 * (eval - beta) - depth * (11384 + 143 * depth - 487 * hinge + 2760 * ttMiss)
+          + improving * (192 * depth + 5616 * hinge)
+          + opponentWorsening * (-976 * depth + 4512 * hinge + 28160 * ttMiss)
+          - 160 * correction + cutNode * (51328 - 5128 * (depth - 5));
 
-        Value futilityMargin = futilityMult * depth
-                             - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
-                             + std::abs(correctionValue) / 198435;
-
-        if (eval - futilityMargin >= beta)
+        if (futilityScore >= 35206)
             return (661 * beta + 363 * eval) / 1024;
     }
 
