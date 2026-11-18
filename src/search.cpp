@@ -331,9 +331,11 @@ bool Search::Worker::iterative_deepening() {
 
     multiPV = std::min(multiPV, rootMoves.size());
 
-    int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
-    bool uciPvSent          = false;
+    int       searchAgainCounter = 0;
+    bool      uciPvSent          = false;
+    bool      verifyTail         = false;
+    RootMoves checkpoint;
+    Depth     checkpointDepth = 0;
 
     lowPlyHistory.fill(102);
 
@@ -400,15 +402,14 @@ bool Search::Worker::iterative_deepening() {
             // Start with a small aspiration window and, in the case of a fail
             // high/low, enlarge the window progressively.
             int failedHighCnt = 0;
-            if (!pvIdx)
-                failHighRecovery = std::max(0, failHighRecovery - 2);
             while (true)
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
-                bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+                Depth adjustedDepth =
+                  std::max(1, rootDepth - (verifyTail ? std::min(failedHighCnt, 2) : failedHighCnt)
+                                - 3 * (searchAgainCounter + 1) / 4);
+                bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -445,7 +446,9 @@ bool Search::Worker::iterative_deepening() {
                 else if (bestValue >= beta)
                 {
                     alpha = std::max(beta - delta, alpha);
-                    beta  = std::min(bestValue + delta, VALUE_INFINITE);
+                    beta  = verifyTail && failedHighCnt >= 2
+                            ? VALUE_INFINITE
+                            : std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
                 else
@@ -455,10 +458,6 @@ bool Search::Worker::iterative_deepening() {
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
-
-            // Gradually increase depth after reduced depth search
-            if (failedHighCnt > 0 && !pvIdx)
-                failHighRecovery = (failedHighCnt + 1) / 2 + 2;
 
             if (threads.stop && pvIdx)
             {
@@ -520,6 +519,15 @@ bool Search::Worker::iterative_deepening() {
 
             if (threads.stop)
                 break;
+        }
+
+        // An interrupted tail pass must not replace a completed root decision.
+        if (verifyTail && threads.stop && !checkpoint.empty())
+        {
+            rootMoves = std::move(checkpoint);
+            rootDepth = checkpointDepth;
+            uciPvSent = false;
+            break;
         }
 
         const bool forgottenMate = lastBestMoveScore != -VALUE_INFINITE
@@ -612,16 +620,26 @@ bool Search::Worker::iterative_deepening() {
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * highBestMoveEffort;
 
-            if (rootMoves.size() == 1)
+            if (limits.use_node_budget_management())
+                totalTime = double(mainThread->tm.optimum());
+
+            if (rootMoves.size() == 1 && !limits.use_node_budget_management())
                 // Cap used time to 0.5s for a better viewer experience
                 totalTime = std::min(500.0 * std::max(limits.npmsec, TimePoint(1)), totalTime);
 
             auto elapsedTime = elapsed();
 
+            if (threads.size() == 1 && multiPV == 1 && !skill.enabled() && !limits.depth
+                && !limits.movetime && !limits.mate && !limits.infinite && !mainThread->ponder
+                && elapsedTime >= totalTime * 0.25)
+                verifyTail = true;
+
             // Stop the search if we have exceeded totalTime or maximum time,
             // or if we know that there are no better moves in the analysed line(s).
-            if (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
-                || rootMoves[multiPV - 1].score >= mate_in(3) || rootMoves[0].score == mated_in(2))
+            if (!limits.use_node_budget_management()
+                && (elapsedTime > std::min(totalTime, double(mainThread->tm.maximum()))
+                    || rootMoves[multiPV - 1].score >= mate_in(3)
+                    || rootMoves[0].score == mated_in(2)))
             {
                 // If we are allowed to ponder do not stop the search now but
                 // keep pondering until the GUI sends "ponderhit" or "stop".
@@ -632,6 +650,12 @@ bool Search::Worker::iterative_deepening() {
             }
             else
                 threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
+        }
+
+        if (verifyTail && !threads.stop)
+        {
+            checkpoint      = rootMoves;
+            checkpointDepth = rootDepth;
         }
 
         mainThread->iterValue[iterIdx] = bestValue;
@@ -2174,7 +2198,8 @@ void syzygy_extend_pv(const OptionsMap&         options,
     // Under 'nodestime' the pos.do_move() calls come for free.
     auto time_abort = [&t_start, &moveOverhead, &limits, &multiPV]() -> bool {
         auto t_end = std::chrono::steady_clock::now();
-        return !limits.npmsec && limits.use_time_management()
+        return !limits.npmsec && !limits.use_node_budget_management()
+            && limits.use_time_management()
             && 2 * multiPV * std::chrono::duration<double, std::milli>(t_end - t_start).count()
                  >= moveOverhead;
     };

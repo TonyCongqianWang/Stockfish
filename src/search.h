@@ -180,7 +180,12 @@ struct LimitsType {
         ponderMode                                  = false;
     }
 
-    bool use_time_management() const { return time[WHITE] || time[BLACK]; }
+    bool use_node_budget_management() const {
+        return nodes && !time[WHITE] && !time[BLACK] && !movetime && !depth && !mate && !infinite;
+    }
+    bool use_time_management() const {
+        return time[WHITE] || time[BLACK] || use_node_budget_management();
+    }
 
     std::vector<std::string> searchmoves;
     TimePoint                time[COLOR_NB], inc[COLOR_NB], npmsec, movetime, startTime;
