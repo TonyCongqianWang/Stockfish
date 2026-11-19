@@ -227,19 +227,15 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target, Color
 }  // namespace
 
 
-// Test non-king mobility without generating a move list. The position must not be in check.
-bool has_non_king_move(const Position& pos) {
+// Classify mobility without generating a move list. The position must not be in check.
+MoveMobility move_mobility(const Position& pos) {
 
     assert(!pos.checkers());
-
-    // The position only records an en passant square if a legal capture exists.
-    if (pos.ep_square() != SQ_NONE)
-        return true;
 
     const Color    us     = pos.side_to_move();
     const Square   ksq    = pos.square<KING>(us);
     const Bitboard pinned = pos.blockers_for_king(us);
-    Bitboard       pieces = pos.pieces(us) & ~pos.pieces(us, KING);
+    Bitboard       pieces = pos.pieces(us) & ~pos.pieces(us, PAWN, KING);
 
     while (pieces)
     {
@@ -247,21 +243,30 @@ bool has_non_king_move(const Position& pos) {
         const PieceType pt   = type_of(pos.piece_on(from));
         const Bitboard  ray  = pinned & from ? Attacks::line_bb(ksq, from) : ~Bitboard(0);
 
-        if (pt == PAWN)
-        {
-            // A double push requires a legal single push; promotions also count.
-            const Square to = from + pawn_push(us);
-            if (pos.empty(to) && (ray & to))
-                return true;
-
-            if (Attacks::attacks_bb(PAWN, from, us) & pos.pieces(~us) & ray)
-                return true;
-        }
-        else if (Attacks::attacks_bb(pt, from, pos.pieces()) & ~pos.pieces(us) & ray)
-            return true;
+        if (Attacks::attacks_bb(pt, from, pos.pieces()) & ~pos.pieces(us) & ray)
+            return MoveMobility::NON_PAWN_MOVE;
     }
 
-    return false;
+    // The position only records an en passant square if a legal capture exists.
+    if (pos.ep_square() != SQ_NONE)
+        return MoveMobility::PAWN_MOVE;
+
+    Bitboard pawns = pos.pieces(us, PAWN);
+    while (pawns)
+    {
+        const Square   from = pop_lsb(pawns);
+        const Bitboard ray  = pinned & from ? Attacks::line_bb(ksq, from) : ~Bitboard(0);
+
+        // A double push requires a legal single push; promotions also count.
+        const Square to = from + pawn_push(us);
+        if (pos.empty(to) && (ray & to))
+            return MoveMobility::PAWN_MOVE;
+
+        if (Attacks::attacks_bb(PAWN, from, us) & pos.pieces(~us) & ray)
+            return MoveMobility::PAWN_MOVE;
+    }
+
+    return MoveMobility::KING_ONLY;
 }
 
 

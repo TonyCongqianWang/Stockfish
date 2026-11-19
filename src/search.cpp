@@ -773,7 +773,8 @@ Value Search::Worker::search(
     Depth extension, newDepth;
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
-    bool  capture, ttCapture, hasNonKingMove = true;
+    bool  capture, ttCapture;
+    bool  hasOnlyKingMove = false, hasOnlyKingOrPawnMove = false;
     int   priorReduction;
     Piece movedPiece;
 
@@ -1018,11 +1019,13 @@ Value Search::Worker::search(
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // At high depths, detect stalemate before pruning and avoid null moves when
-    // only king moves are legal. Stop testing as soon as a non-king move exists.
+    // only king or pawn moves are legal. Stop as soon as another piece can move.
     if (depth >= 10 && !excludedMove)
     {
-        hasNonKingMove = has_non_king_move(pos);
-        if (!hasNonKingMove && !MoveList<ALL>(pos).size())
+        const MoveMobility mobility = move_mobility(pos);
+        hasOnlyKingMove             = mobility == MoveMobility::KING_ONLY;
+        hasOnlyKingOrPawnMove       = mobility == MoveMobility::PAWN_MOVE;
+        if (hasOnlyKingMove && !MoveList<ALL>(pos).size())
             return VALUE_DRAW;
     }
 
@@ -1032,7 +1035,7 @@ Value Search::Worker::search(
         && !is_loss(beta) && !is_win(eval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        futilityMult -= 20 * !ss->ttHit - 5 * hasOnlyKingMove - 10 * hasOnlyKingOrPawnMove;
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
@@ -1046,7 +1049,7 @@ Value Search::Worker::search(
     if (cutNode
         && ss->staticEval + 50 * ss->priorNMPFailHigh >= beta - 13 * depth - 47 * improving + 365
         && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000
-        && hasNonKingMove)
+        && !hasOnlyKingMove && !hasOnlyKingOrPawnMove)
     {
         assert((ss - 1)->currentMove != Move::null());
 

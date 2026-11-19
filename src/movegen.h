@@ -50,7 +50,13 @@ inline bool operator<(const ExtMove& f, const ExtMove& s) { return f.value < s.v
 template<GenType>
 Move* generate(const Position& pos, Move* moveList);
 
-bool has_non_king_move(const Position& pos);
+enum class MoveMobility {
+    NON_PAWN_MOVE,  // A legal knight, bishop, rook, or queen move exists.
+    PAWN_MOVE,      // Only king or pawn moves exist, including at least one pawn move.
+    KING_ONLY       // No legal non-king move exists; the position may be stalemate.
+};
+
+MoveMobility move_mobility(const Position& pos);
 
 // The MoveList struct wraps the generate() function and returns a convenient
 // list of moves. Using MoveList is sometimes preferable to directly calling
