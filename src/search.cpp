@@ -773,7 +773,7 @@ Value Search::Worker::search(
     Depth extension, newDepth;
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
-    bool  capture, ttCapture;
+    bool  capture, ttCapture, hasNonKingMove = true;
     int   priorReduction;
     Piece movedPiece;
 
@@ -1017,6 +1017,15 @@ Value Search::Worker::search(
     if (allNode && eval < alpha - 342 * depth && !seekMate)
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
+    // At high depths, detect stalemate before pruning and avoid null moves when
+    // only king moves are legal. Stop testing as soon as a non-king move exists.
+    if (depth >= 10 && !excludedMove)
+    {
+        hasNonKingMove = has_non_king_move(pos);
+        if (!hasNonKingMove && !MoveList<ALL>(pos).size())
+            return VALUE_DRAW;
+    }
+
     // Step 9. Futility pruning: child node
     // The depth condition is important for mate finding. It should NOT be tuned.
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
@@ -1036,7 +1045,8 @@ Value Search::Worker::search(
     // Step 10. Null move search with verification search
     if (cutNode
         && ss->staticEval + 50 * ss->priorNMPFailHigh >= beta - 13 * depth - 47 * improving + 365
-        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
+        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000
+        && hasNonKingMove)
     {
         assert((ss - 1)->currentMove != Move::null());
 
