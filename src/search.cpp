@@ -1025,7 +1025,7 @@ Value Search::Worker::search(
         const MoveMobility mobility = move_mobility(pos);
         hasOnlyKingMove             = mobility == MoveMobility::KING_ONLY;
         hasOnlyKingOrPawnMove       = mobility == MoveMobility::PAWN_MOVE;
-        if (hasOnlyKingMove && !MoveList<ALL>(pos).size())
+        if (mobility == MoveMobility::STALEMATE)
             return VALUE_DRAW;
     }
 

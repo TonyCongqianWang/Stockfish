@@ -266,7 +266,26 @@ MoveMobility move_mobility(const Position& pos) {
             return MoveMobility::PAWN_MOVE;
     }
 
-    return MoveMobility::KING_ONLY;
+    const Bitboard kingMoves = Attacks::attacks_bb(KING, ksq) & ~pos.pieces(us);
+    if (kingMoves && (kingMoves & ~pos.threats_by(ALL_PIECES)))
+        return MoveMobility::KING_ONLY;
+
+    // Castling is also a king move, including when the king stays put in Chess960.
+    if (pos.can_castle(us & ANY_CASTLING))
+        for (CastlingRights cr : {us & KING_SIDE, us & QUEEN_SIDE})
+        {
+            if (!pos.can_castle(cr) || pos.castling_impeded(cr))
+                continue;
+
+            const Square rookSquare = pos.castling_rook_square(cr);
+            const Square to         = relative_square(us, rookSquare > ksq ? SQ_G1 : SQ_C1);
+
+            if (!(Attacks::between_bb(ksq, to) & pos.threats_by(ALL_PIECES))
+                && !(pinned & rookSquare))
+                return MoveMobility::KING_ONLY;
+        }
+
+    return MoveMobility::STALEMATE;
 }
 
 

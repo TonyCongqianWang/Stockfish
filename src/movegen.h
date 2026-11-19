@@ -53,7 +53,8 @@ Move* generate(const Position& pos, Move* moveList);
 enum class MoveMobility {
     NON_PAWN_MOVE,  // A legal knight, bishop, rook, or queen move exists.
     PAWN_MOVE,      // Only king or pawn moves exist, including at least one pawn move.
-    KING_ONLY       // No legal non-king move exists; the position may be stalemate.
+    KING_ONLY,      // Only legal king moves exist.
+    STALEMATE       // No legal move exists.
 };
 
 MoveMobility move_mobility(const Position& pos);
