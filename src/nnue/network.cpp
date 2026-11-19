@@ -335,8 +335,7 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     const int expert = router[router_context(pos)];
     NnueEvalTrace t{};
-    t.fc0Expert  = expert;
-    t.tailExpert = expert;
+    t.stackExpert = expert;
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
     t.positional = static_cast<Value>(

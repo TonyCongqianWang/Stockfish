@@ -49,8 +49,7 @@ struct EvalFile {
 
 struct NnueEvalTrace {
     Value positional;
-    int   fc0Expert;
-    int   tailExpert;
+    int   stackExpert;
 };
 
 class Network;

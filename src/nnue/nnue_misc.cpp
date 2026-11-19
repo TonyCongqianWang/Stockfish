@@ -65,7 +65,7 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
 
     auto t = network.trace_evaluate(pos, *accumulators, caches);
 
-    ss << "NNUE routes: FC0 = " << t.fc0Expert << "; tail = " << t.tailExpert << '\n';
+    ss << "NNUE stack expert: " << t.stackExpert << '\n';
     ss << "NNUE evaluation: ";
     format_cp_aligned_dot(t.positional, ss, pos);
     ss << '\n';
