@@ -1035,7 +1035,7 @@ Value Search::Worker::search(
         && !is_loss(beta) && !is_win(eval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit - 5 * hasOnlyKingMove - 10 * hasOnlyKingOrPawnMove;
+        futilityMult -= 20 * !ss->ttHit - 10 * hasOnlyKingMove - 5 * hasOnlyKingOrPawnMove;
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
