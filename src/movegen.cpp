@@ -227,6 +227,68 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target, Color
 }  // namespace
 
 
+// Classify mobility without generating a move list. The position must not be in check.
+MoveMobility move_mobility(const Position& pos) {
+
+    assert(!pos.checkers());
+
+    const Color    us     = pos.side_to_move();
+    const Square   ksq    = pos.square<KING>(us);
+    const Bitboard pinned = pos.blockers_for_king(us);
+    Bitboard       pieces = pos.pieces(us) & ~pos.pieces(us, PAWN, KING);
+
+    while (pieces)
+    {
+        const Square    from = pop_lsb(pieces);
+        const PieceType pt   = type_of(pos.piece_on(from));
+        const Bitboard  ray  = pinned & from ? Attacks::line_bb(ksq, from) : ~Bitboard(0);
+
+        if (Attacks::attacks_bb(pt, from, pos.pieces()) & ~pos.pieces(us) & ray)
+            return MoveMobility::NON_PAWN_MOVE;
+    }
+
+    // The position only records an en passant square if a legal capture exists.
+    if (pos.ep_square() != SQ_NONE)
+        return MoveMobility::PAWN_MOVE;
+
+    Bitboard pawns = pos.pieces(us, PAWN);
+    while (pawns)
+    {
+        const Square   from = pop_lsb(pawns);
+        const Bitboard ray  = pinned & from ? Attacks::line_bb(ksq, from) : ~Bitboard(0);
+
+        // A double push requires a legal single push; promotions also count.
+        const Square to = from + pawn_push(us);
+        if (pos.empty(to) && (ray & to))
+            return MoveMobility::PAWN_MOVE;
+
+        if (Attacks::attacks_bb(PAWN, from, us) & pos.pieces(~us) & ray)
+            return MoveMobility::PAWN_MOVE;
+    }
+
+    const Bitboard kingMoves = Attacks::attacks_bb(KING, ksq) & ~pos.pieces(us);
+    if (kingMoves && (kingMoves & ~pos.threats_by(ALL_PIECES)))
+        return MoveMobility::KING_ONLY;
+
+    // Castling is also a king move, including when the king stays put in Chess960.
+    if (pos.can_castle(us & ANY_CASTLING))
+        for (CastlingRights cr : {us & KING_SIDE, us & QUEEN_SIDE})
+        {
+            if (!pos.can_castle(cr) || pos.castling_impeded(cr))
+                continue;
+
+            const Square rookSquare = pos.castling_rook_square(cr);
+            const Square to         = relative_square(us, rookSquare > ksq ? SQ_G1 : SQ_C1);
+
+            if (!(Attacks::between_bb(ksq, to) & pos.threats_by(ALL_PIECES))
+                && !(pinned & rookSquare))
+                return MoveMobility::KING_ONLY;
+        }
+
+    return MoveMobility::STALEMATE;
+}
+
+
 // <CAPTURES>     Generates all legal captures plus queen promotions
 // <QUIETS>       Generates all legal non-captures and underpromotions
 // <EVASIONS>     Generates all legal check evasions

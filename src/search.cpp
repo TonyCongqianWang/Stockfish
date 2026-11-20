@@ -780,6 +780,7 @@ Value Search::Worker::search(
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
     bool  capture, ttCapture;
+    bool  hasOnlyKingMove = false, hasOnlyKingOrPawnMove = false;
     int   priorReduction;
     Piece movedPiece;
 
@@ -1023,13 +1024,24 @@ Value Search::Worker::search(
     if (allNode && eval < alpha - 342 * depth && !seekMate)
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
+    // At high depths, detect stalemate before pruning and avoid null moves when
+    // only king or pawn moves are legal. Stop as soon as another piece can move.
+    if (depth >= 14 && !excludedMove)
+    {
+        const MoveMobility mobility = move_mobility(pos);
+        hasOnlyKingMove             = mobility == MoveMobility::KING_ONLY;
+        hasOnlyKingOrPawnMove       = mobility == MoveMobility::PAWN_MOVE;
+        if (mobility == MoveMobility::STALEMATE)
+            return VALUE_DRAW;
+    }
+
     // Step 9. Futility pruning: child node
     // The depth condition is important for mate finding. It should NOT be tuned.
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
         && !is_loss(beta) && !is_win(eval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
-        futilityMult -= 20 * !ss->ttHit;
+        futilityMult -= 20 * !ss->ttHit - 5 * hasOnlyKingMove - 3 * hasOnlyKingOrPawnMove;
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
@@ -1041,8 +1053,9 @@ Value Search::Worker::search(
 
     // Step 10. Null move search with verification search
     if (cutNode
-        && ss->staticEval + 50 * ss->priorNMPFailHigh >= beta - 13 * depth - 47 * improving + 365
-        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000)
+        && ss->staticEval + 50 * ss->priorNMPFailHigh >= beta - (13 + 20 * hasOnlyKingOrPawnMove) * depth - 47 * improving + 365
+        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && beta >= -2000
+        && !hasOnlyKingMove)
     {
         assert((ss - 1)->currentMove != Move::null());
 
