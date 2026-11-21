@@ -1024,6 +1024,7 @@ Value Search::Worker::search(
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
         futilityMult -= 20 * !ss->ttHit;
+        futilityMult += 5 * std::max(nmpMinPly - ss->ply, 0);
 
         Value futilityMargin = futilityMult * depth
                              - (2789 * improving + 335 * opponentWorsening) * futilityMult / 1024
@@ -1046,12 +1047,13 @@ Value Search::Worker::search(
         R -= seekMate * R / 2;
         do_null_move(pos, ss);
 
-        Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
+        Value nmpThresh = beta + std::min(depth - 12, 0) * 25;
+        Value nullValue = -search<NonPV>(pos, ss + 1, -nmpThresh, -nmpThresh + 1, depth - R, false);
 
         undo_null_move(pos);
 
         // Do not return unproven mate or TB scores
-        if (nullValue >= beta && !is_win(nullValue))
+        if (nullValue >= nmpThresh && !is_win(nullValue))
         {
             if (nmpMinPly || depth < 16)
             {
@@ -1066,11 +1068,11 @@ Value Search::Worker::search(
             // disabled until ply exceeds nmpMinPly.
             nmpMinPly = ss->ply + 3 * (depth - R) / 4;
 
-            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+            Value v = search<NonPV>(pos, ss, nmpThresh - 1, nmpThresh, depth - R, false);
 
             nmpMinPly = 0;
 
-            if (v >= beta)
+            if (v >= nmpThresh)
             {
                 ++ss->priorNMPFailHigh;
                 return nullValue;
