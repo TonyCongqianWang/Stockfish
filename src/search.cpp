@@ -1019,8 +1019,11 @@ Value Search::Worker::search(
 
     // Step 9. Futility pruning: child node
     // The depth condition is important for mate finding. It should NOT be tuned.
+    // Skipped at the root of an NMP verification search: it would just repeat the
+    // static eval judgement the verification is supposed to check.
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
-        && !is_loss(beta) && !is_win(eval))
+        && !is_loss(beta) && !is_win(eval)
+        && ss->ply != nmpVerifyPly)
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
         futilityMult -= 20 * !ss->ttHit;
@@ -1042,7 +1045,8 @@ Value Search::Worker::search(
 
         // Null move dynamic reduction based on depth
         // Odd threads reduce one ply less
-        Depth R = 7 + depth / 3 + std::max((ss->staticEval - beta) / 256, 0) - int(threadIdx & 1);
+        Depth evalR = std::max((ss->staticEval - beta) / 256, 0);
+        Depth R     = 7 + depth / 3 + evalR - int(threadIdx & 1);
         R -= seekMate * R / 2;
         do_null_move(pos, ss);
 
@@ -1053,7 +1057,9 @@ Value Search::Worker::search(
         // Do not return unproven mate or TB scores
         if (nullValue >= beta && !is_win(nullValue))
         {
-            if (nmpMinPly || depth < 16)
+            // Verify at high depths, and also when the eval surplus reduction made the
+            // null search shallow enough that it says little beyond static eval.
+            if (nmpMinPly || (depth < 16 && (depth < 11 || evalR < 4)))
             {
                 ++ss->priorNMPFailHigh;
                 return nullValue;
@@ -1062,13 +1068,18 @@ Value Search::Worker::search(
             // Recursive verification is not allowed
             assert(!nmpMinPly);
 
-            // Do verification search at high depths, with null move pruning
-            // disabled until ply exceeds nmpMinPly.
-            nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+            // Do verification search with null move pruning disabled until ply exceeds
+            // nmpMinPly. Its depth ignores the eval surplus reduction, so that it keeps
+            // growing with depth even when static eval is far above beta: otherwise a
+            // wrong static eval (e.g. zugzwang) is never resolved by searching deeper.
+            Depth verifyDepth = depth - std::min(R, 7 + depth / 3);
+            nmpMinPly    = ss->ply + 3 * verifyDepth / 4;
+            nmpVerifyPly = ss->ply;
 
-            Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
+            Value v = search<NonPV>(pos, ss, beta - 1, beta, verifyDepth, false);
 
-            nmpMinPly = 0;
+            nmpMinPly    = 0;
+            nmpVerifyPly = -1;
 
             if (v >= beta)
             {
