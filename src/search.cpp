@@ -1072,7 +1072,8 @@ Value Search::Worker::search(
             // nmpMinPly. Its depth ignores the eval surplus reduction, so that it keeps
             // growing with depth even when static eval is far above beta: otherwise a
             // wrong static eval (e.g. zugzwang) is never resolved by searching deeper.
-            Depth verifyDepth = depth - std::min(R, 7 + depth / 3);
+            // A minimum depth keeps it from being just another static eval check.
+            Depth verifyDepth = std::max(depth - std::min(R, 7 + depth / 3), 4);
             nmpMinPly    = ss->ply + 3 * verifyDepth / 4;
             nmpVerifyPly = ss->ply;
 
