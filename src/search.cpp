@@ -768,7 +768,7 @@ Value Search::Worker::search(
     Depth extension, newDepth;
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
-    bool  capture, ttCapture;
+    bool  capture, ttCapture, razor;
     int   priorReduction;
     Piece movedPiece;
 
@@ -782,6 +782,7 @@ Value Search::Worker::search(
     ss->moveCount = 0;
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
+    razor         = false;
 
     ss->followPV = rootNode
                 || ((ss - 1)->followPV
@@ -1008,9 +1009,16 @@ Value Search::Worker::search(
 
 
     // Step 8. Razoring
-    // If eval is really low, skip search entirely and return the qsearch value
-    if (allNode && eval < alpha - 342 * depth && !seekMate)
-        return qsearch<NonPV>(pos, ss, alpha, beta);
+    // If eval is really low, the moves loop behaves like qsearch: static eval
+    // is the stand pat, quiets are skipped and captures drop into qsearch.
+    razor = allNode && eval < alpha - 342 * depth && !seekMate;
+
+    // Like qsearch, accept TT cutoffs from entries of any searched depth
+    if (razor && !excludedMove && ttData.depth >= DEPTH_QS && is_valid(ttData.value)
+        && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER)))
+        return ttData.value;
+    if (razor)
+        bestValue = eval;
 
     // Step 9. Futility pruning: child node
     // The depth condition is important for mate finding. It should NOT be tuned.
@@ -1086,7 +1094,8 @@ Value Search::Worker::search(
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
     probCutBeta = beta + 241 - 64 * improving;
-    if (depth >= 3 && !is_decisive(beta) && !(is_valid(ttData.value) && ttData.value < probCutBeta))
+    if (depth >= 3 && !razor && !is_decisive(beta)
+        && !(is_valid(ttData.value) && ttData.value < probCutBeta))
     {
         assert(probCutBeta < VALUE_INFINITE && probCutBeta > beta);
 
@@ -1139,8 +1148,8 @@ moves_loop:  // When in check, search starts here
       (ss - 4)->continuationHistory, (ss - 5)->continuationHistory, (ss - 6)->continuationHistory};
 
 
-    MovePicker mp(pos, ttData.move, depth, &mainHistory, &lowPlyHistory, &captureHistory, contHist,
-                  &sharedHistory, ss->ply);
+    MovePicker mp(pos, ttData.move, razor ? DEPTH_QS : depth, &mainHistory, &lowPlyHistory,
+                  &captureHistory, contHist, &sharedHistory, ss->ply);
 
     value = bestValue;
 
@@ -1188,9 +1197,42 @@ moves_loop:  // When in check, search starts here
         if (ss->ttPv)
             r += 929;
 
+        // Razoring: prune like qsearch and drop straight into qsearch
+        if (razor)
+        {
+            if (!is_loss(bestValue))
+            {
+                if (!givesCheck && move.to_sq() != prevSq && move.type_of() != PROMOTION)
+                {
+                    if (moveCount > 2)
+                        continue;
+
+                    Value futilityBase  = ss->staticEval + 306;
+                    Value futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
+
+                    if (futilityValue <= alpha)
+                    {
+                        bestValue = std::max(bestValue, futilityValue);
+                        continue;
+                    }
+
+                    if (!pos.see_ge(move, alpha - futilityBase))
+                    {
+                        bestValue = std::max(bestValue, std::min(alpha, futilityBase));
+                        continue;
+                    }
+                }
+
+                if (!capture || !pos.see_ge(move, -74))
+                    continue;
+            }
+
+            newDepth = 0;
+        }
+
         // Step 15. Pruning at shallow depths.
         // Depth conditions are important for mate finding.
-        if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
+        else if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
             // Skip quiet moves if movecount exceeds our threshold
             if (moveCount >= (3 + depth * depth) / (2 - improving))
@@ -1270,7 +1312,7 @@ moves_loop:  // When in check, search starts here
         // and lower extension margins scale well.
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
-            && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos) && !seekMate)
+            && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos) && !seekMate && !razor)
         {
             Value singularBeta  = ttData.value - (59 + 66 * (ss->ttPv && !PvNode)) * depth / 63;
             Depth singularDepth = newDepth / 2;
@@ -1388,7 +1430,7 @@ moves_loop:  // When in check, search starts here
             r += (givesCheck ? -r : r) / 4;
 
         // Apply the computed LMR
-        if (depth >= 2 && moveCount > 1)
+        if (depth >= 2 && moveCount > 1 && !razor)
         {
             // In general we want to cap the LMR depth search at newDepth, but when
             // reduction is negative, we allow this move a limited search extension
@@ -1573,6 +1615,19 @@ moves_loop:  // When in check, search starts here
         // remember it, to update its stats later.
         if (move != bestMove && moveCount <= SEARCHEDLIST_CAPACITY)
             (capture ? capturesSearched : quietsSearched).push_back(move);
+    }
+
+    // Razoring: finish the node as qsearch would
+    if (razor)
+    {
+        if (!is_decisive(bestValue) && bestValue > beta)
+            bestValue = (462 * bestValue + 562 * beta) / 1024;
+
+        if (!excludedMove)
+            ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
+                           bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
+                           unadjustedStaticEval, tt.generation());
+        return bestValue;
     }
 
     // Step 23. Check for mate and stalemate, otherwise update bestmove/countermove stats
