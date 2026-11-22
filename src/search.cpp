@@ -1014,8 +1014,10 @@ Value Search::Worker::search(
 
     // Step 9. Futility pruning: child node
     // The depth condition is important for mate finding. It should NOT be tuned.
+    // Not at the root of a null move verification search, where it would only
+    // repeat the static eval judgement the verification is meant to check.
     if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
-        && !is_loss(beta) && !is_win(eval))
+        && !is_loss(beta) && !is_win(eval) && ss->ply != nmpVerifyPly)
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
         futilityMult -= 20 * !ss->ttHit;
@@ -1060,11 +1062,13 @@ Value Search::Worker::search(
 
             // Do verification search at high depths, with null move pruning
             // disabled until ply exceeds nmpMinPly.
-            nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+            nmpMinPly    = ss->ply + 3 * (depth - R) / 4;
+            nmpVerifyPly = ss->ply;
 
             Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
 
-            nmpMinPly = 0;
+            nmpMinPly    = 0;
+            nmpVerifyPly = -1;
 
             if (v >= beta)
             {
