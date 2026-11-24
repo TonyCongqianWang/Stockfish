@@ -159,9 +159,11 @@ struct RootMove {
     Value       uciScore         = -VALUE_INFINITE;
     bool        inexactLower     = false;  // By default root scores are exact, unless flagged as a
     bool        inexactUpper     = false;  // one-sided bound here. See also `enum Bound` in types.h
-    bool        previousScoreExact = false;
-    int         selDepth           = 0;
-    int         tbRank             = 0;
+    bool        previousScoreExact      = false;
+    bool        previousScoreLowerBound = false;
+    int         selDepth                = 0;
+    Depth       effectiveDepth          = 0;
+    int         tbRank                  = 0;
     Value       tbScore;
     RootPVMoves pv, previousPV;
 };
