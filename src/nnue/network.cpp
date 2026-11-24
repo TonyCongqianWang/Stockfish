@@ -139,26 +139,7 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
 }
 
 int Network::layer_stack(const Position& pos) const {
-#ifndef TREE128_CONTROL
     return layerStackIndex[tree128(pos)];
-#else
-    const Color stm    = pos.side_to_move();
-    const int   band   = (pos.count<ALL_PIECES>() - 1) / 4;
-    const int   queens = 2 * bool(pos.pieces(stm, QUEEN)) + bool(pos.pieces(~stm, QUEEN));
-
-    // Pawn layout: 0 if pawns stand on both board halves, 1 if on one half only, 2 if there are no pawns
-    constexpr Bitboard QueenSide = FileABB | FileBBB | FileCBB | FileDBB;
-    const Bitboard     pawns     = pos.pieces(PAWN);
-    const int          layout    = !pawns ? 2 : (pawns & QueenSide) && (pawns & ~QueenSide) ? 0 : 1;
-
-    // Officers are the pieces other than pawns and kings
-    const auto officers = [&](Color c) {
-        return popcount(pos.pieces(c) & ~pos.pieces(PAWN, KING));
-    };
-    const bool many = std::max(officers(WHITE), officers(BLACK)) >= 2;
-
-    return layerStackIndex[((band * 4 + queens) * 3 + layout) * 2 + many];
-#endif
 }
 
 Value Network::evaluate(const Position&    pos,
@@ -369,11 +350,9 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
         return false;
     if (read_little_endian<u32>(stream) != LayerStackTableHash)
         return false;
-#ifndef TREE128_CONTROL
     for (auto byte : frozen_tree128::Digest)
         if (read_little_endian<u8>(stream) != byte)
             return false;
-#endif
     if (read_little_endian<u32>(stream) != RawLayerStacks)
         return false;
     storedLayerStacks = read_little_endian<u32>(stream);
@@ -410,10 +389,8 @@ bool Network::write_parameters(std::ostream& stream, const std::string& netDescr
     if (!write_header(stream, Network::hash, netDescription))
         return false;
     write_little_endian<u32>(stream, LayerStackTableHash);
-#ifndef TREE128_CONTROL
     for (auto byte : frozen_tree128::Digest)
         write_little_endian<u8>(stream, byte);
-#endif
     write_little_endian<u32>(stream, RawLayerStacks);
     write_little_endian<u32>(stream, storedLayerStacks);
     for (const u16 f : layerStackFallback)

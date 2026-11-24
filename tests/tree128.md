@@ -1,9 +1,9 @@
 # Frozen tree128 engine validation
 
 Base: official Stockfish master `3e8fde75412e7c47fc140cd82022a395bc681d92`.
-`TREE128_CONTROL` restores master's 192-stack selector and network format.
-Without it the engine uses 128 frozen canonical leaf stacks. `TREE128_LAYOUT`
-selects binary (0, default), conservative mixed (1), or full mixed (2).
+The engine uses one simplified binary evaluator and 128 frozen canonical
+leaf stacks. The master control uses an unmodified upstream engine checkout.
+There are no alternative layout or control-build switches.
 
 The generated rules and shared lazy extractor come from the trainer:
 
@@ -20,7 +20,7 @@ make -C src -j4 -o net build ARCH=x86-64-avx2 CPPFLAGS=-DNNUE_EMBEDDING_OFF
 Use UCI `setoption name EvalFile value /path/to/matching-tree128.nnue` before
 evaluation/search. `tree128` prints fields and leaf for extraction parity
 without loading a network. The full semantic SHA256 is checked when loading
-and carried through export. Changing dispatch layout does not change it.
+and carried through export. The semantic identity is independent of generated code formatting.
 
 `tree128_incremental.cpp` links against matching engine objects except
 `main.o`, using the **same** architecture/SIMD preprocessor flags. Run it with
@@ -28,20 +28,18 @@ a matching net and optionally an engine-roundtrip output path. It checks fresh
 accumulator evaluation, incremental evaluation and undo on deterministic legal
 sequences covering promotions, castling, en passant and promoted material.
 
-For isolated ordinary PGO builds and alternating measurements:
+For PGO, use Stockfish's ordinary `profile-build` target. Set its existing
+`PGOBENCH` variable to a shell script that selects the matching 128-stack
+EvalFile and runs normal `bench`:
 
 ```sh
-python tests/profile_tree128.py --tree-net /path/to/tree128.nnue --control-net /path/to/master-control.nnue --build-root /path/to/new-builds
-python tests/bench_tree128.py --tree-net /path/to/tree128.nnue --control-net /path/to/master-control.nnue --build-root /path/to/new-builds --output /path/to/nps.json --depth 13 --repeats 7
+# /path/to/profile-tree128.sh (invoked with src as its working directory)
+printf 'setoption name EvalFile value /path/to/tree128.nnue\nbench\nquit\n' | ./stockfish
+
+make -C src -j4 profile-build ARCH=native PGOBENCH='sh /path/to/profile-tree128.sh'
 ```
 
-Use CPPFLAGS for selector macros: recursive PGO targets replace
-EXTRACXXFLAGS. The PGO run sets the matching external EvalFile before normal
-`bench`. The three tree layouts must have identical search signatures.
-
-The local seven-repeat validation used fresh randomized networks: median NPS
-binary 1,009,172; conservative mixed 1,017,512; full mixed 1,018,159; master
-control 820,629. Candidate ranges overlap, so binary remains the conservative
-default. The control network/search signature differs: these numbers do not
-establish a trained-network speedup or chess strength. Repeat after matched
-training; do not read logical dispatch-depth reductions as speedup estimates.
+The earlier layout comparison found no clear gain beyond run variation.
+Only the simplified binary evaluator is retained. Historical measurements
+remain in the trainer validation report; alternative implementations and
+their build/benchmark machinery have been removed.

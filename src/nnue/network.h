@@ -105,11 +105,7 @@ class Network {
 
     bool initialized = false;
 
-#ifdef TREE128_CONTROL
-    static constexpr u32 LayerStackTableHash = 0x5A7AB1E5u;
-#else
     static constexpr u32 LayerStackTableHash = frozen_tree128::TableHash;
-#endif
 
     // Hash value of evaluation function structure
     static constexpr u32 hash = FeatureTransformer::get_hash_value()
