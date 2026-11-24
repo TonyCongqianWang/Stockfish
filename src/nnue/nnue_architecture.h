@@ -46,7 +46,11 @@ constexpr IndexType L1 = 1024;
 constexpr int       L2 = 32;
 constexpr int       L3 = 32;
 
+#ifdef TREE128_CONTROL
 constexpr IndexType RawLayerStacks = 192;
+#else
+constexpr IndexType RawLayerStacks = 128;
+#endif
 constexpr IndexType LayerStacks    = RawLayerStacks;
 
 struct NetworkArchitecture {

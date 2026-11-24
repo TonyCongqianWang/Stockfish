@@ -17,6 +17,7 @@
 */
 
 #include "engine.h"
+#include "nnue/tree128.h"
 
 #include <algorithm>
 #include <cassert>
@@ -299,6 +300,13 @@ void Engine::save_network(const std::optional<std::filesystem::path>& file) {
 }
 
 // utility functions
+
+void Engine::trace_tree128() const {
+    frozen_tree128::Context<Eval::NNUE::Tree128Board> context(Eval::NNUE::Tree128Board{pos});
+    sync_cout << "info string tree128 " << frozen_tree128::Identity << " fields";
+    for (int i=0; i<8; ++i) std::cout << ' ' << context.get(i);
+    std::cout << " leaf " << Eval::NNUE::tree128(pos) << sync_endl;
+}
 
 void Engine::trace_eval() const {
     std::unique_ptr<Position> p = std::make_unique<Position>();

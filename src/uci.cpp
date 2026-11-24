@@ -155,6 +155,8 @@ void UCIEngine::loop() {
             sync_cout << engine.visualize() << sync_endl;
         else if (token == "eval")
             engine.trace_eval();
+        else if (token == "tree128")
+            engine.trace_tree128();
         else if (token == "compiler")
             sync_cout << compiler_info() << sync_endl;
         else if (token == "export_net")
