@@ -29,6 +29,7 @@
 
 #include "../misc.h"
 #include "../types.h"
+#include "moe11_context.h"
 #include "nnue_architecture.h"
 #include "nnue_common.h"
 #include "nnue_feature_transformer.h"
@@ -97,18 +98,22 @@ class Network {
     FeatureTransformer featureTransformer;
 
     // Evaluation function
-    NetworkArchitecture network[LayerStacks];
-    u16                 layerStackFallback[RawLayerStacks];
-    u16                 layerStackIndex[RawLayerStacks];
-    IndexType           storedLayerStacks = 0;
+    NetworkArchitecture                 network[LayerStacks];
+    u16                                 layerStackFallback[RawLayerStacks];
+    u16                                 layerStackIndex[RawLayerStacks];
+    IndexType                           storedLayerStacks = 0;
+    IndexType                           rawLayerStacks    = RawLayerStacks;
+    std::array<u8, Moe11::ContextCount> routeLut;
+    bool                                learnedRouting = false;
 
     bool initialized = false;
 
     static constexpr u32 LayerStackTableHash = 0x5A7AB1E5u;
+    static constexpr u32 MatchedControlHash  = 0x4D4F433Bu;
 
     // Hash value of evaluation function structure
-    static constexpr u32 hash = FeatureTransformer::get_hash_value()
-                              ^ NetworkArchitecture::get_hash_value() ^ LayerStackTableHash;
+    static constexpr u32 architectureHash =
+      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
 
     friend struct AccumulatorCaches;
 };

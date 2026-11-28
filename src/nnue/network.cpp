@@ -137,21 +137,43 @@ bool Network::save(const EvalFile& evalFile, const std::optional<fs::path>& file
     return saved;
 }
 
+namespace {
+
+constexpr IndexType MatchedControlStacks = 64;
+
+int moe11_context(const Position& pos) {
+    const auto side = [&](Color c) {
+        return Moe11::side(pos.count<ALL_PIECES>(c), pos.count<PAWN>(c), pos.count<ROOK>(c),
+                           pos.count<QUEEN>(c), pos.pieces(c, BISHOP), pos.pieces(c, PAWN));
+    };
+    const Color stm = pos.side_to_move();
+    return Moe11::context(side(stm), side(~stm), int(pos.square<KING>(stm)),
+                          int(pos.square<KING>(~stm)), stm == BLACK);
+}
+
+}  // namespace
+
 int Network::layer_stack(const Position& pos) const {
+    if (learnedRouting)
+        return routeLut[moe11_context(pos)];
+
     const Color stm    = pos.side_to_move();
     const int   band   = (pos.count<ALL_PIECES>() - 1) / 4;
     const int   queens = 2 * bool(pos.pieces(stm, QUEEN)) + bool(pos.pieces(~stm, QUEEN));
-
-    // Pawn layout: 0 if pawns stand on both board halves, 1 if on one half only, 2 if there are no pawns
-    constexpr Bitboard QueenSide = FileABB | FileBBB | FileCBB | FileDBB;
-    const Bitboard     pawns     = pos.pieces(PAWN);
-    const int          layout    = !pawns ? 2 : (pawns & QueenSide) && (pawns & ~QueenSide) ? 0 : 1;
 
     // Officers are the pieces other than pawns and kings
     const auto officers = [&](Color c) {
         return popcount(pos.pieces(c) & ~pos.pieces(PAWN, KING));
     };
     const bool many = std::max(officers(WHITE), officers(BLACK)) >= 2;
+
+    if (rawLayerStacks == MatchedControlStacks)
+        return layerStackIndex[(band * 4 + queens) * 2 + many];
+
+    // Pawn layout: 0 if pawns stand on both board halves, 1 if on one half only, 2 if there are no pawns
+    constexpr Bitboard QueenSide = FileABB | FileBBB | FileCBB | FileDBB;
+    const Bitboard     pawns     = pos.pieces(PAWN);
+    const int          layout    = !pawns ? 2 : (pawns & QueenSide) && (pawns & ~QueenSide) ? 0 : 1;
 
     return layerStackIndex[((band * 4 + queens) * 3 + layout) * 2 + many];
 }
@@ -208,7 +230,8 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
     if (f)
     {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * storedLayerStacks;
+        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * storedLayerStacks
+                   + (learnedRouting ? routeLut.size() : 0);
         f("NNUE evaluation using " + evalfilePath.string() + " ("
           + std::to_string(size / (1024 * 1024)) + "MiB, ("
           + std::to_string(featureTransformer.InputDimensions) + ", "
@@ -229,16 +252,20 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int bucket = layer_stack(pos);
+    const int context = learnedRouting ? moe11_context(pos) : -1;
+    const int bucket  = learnedRouting ? routeLut[context] : layer_stack(pos);
 
     NnueEvalTrace t{};
     t.correctBucket = bucket;
     t.layerStacks   = storedLayerStacks;
+    t.contextId     = context;
 
     NNZInfo<L1> nnzInfo;
     featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, nnzInfo);
 
-    for (IndexType b = 0; b < storedLayerStacks; ++b)
+    const IndexType first = learnedRouting ? bucket : 0;
+    const IndexType end   = learnedRouting ? bucket + 1 : storedLayerStacks;
+    for (IndexType b = first; b < end; ++b)
     {
         const auto positional = network[b].propagate(transformedFeatures, nnzInfo);
         t.positional[b]       = static_cast<Value>(positional / OutputScale);
@@ -311,8 +338,14 @@ usize Network::get_content_hash() const {
 
     usize h = 0;
     hash_combine(h, featureTransformer);
-    for (const u16 f : layerStackFallback)
-        hash_combine(h, f);
+    if (learnedRouting)
+    {
+        hash_combine(h, Moe11::SchemaHash);
+        hash_combine(h, get_raw_data_hash(routeLut));
+    }
+    else
+        for (IndexType s = 0; s < rawLayerStacks; ++s)
+            hash_combine(h, layerStackFallback[s]);
     for (usize i = 0; i < storedLayerStacks; ++i)
         hash_combine(h, network[i]);
     return h;
@@ -360,30 +393,53 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
     u32 hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
         return false;
-    if (hashValue != Network::hash)
+    const u32 tableHash = read_little_endian<u32>(stream);
+    if (hashValue != (architectureHash ^ tableHash))
         return false;
-    if (read_little_endian<u32>(stream) != LayerStackTableHash
-        || read_little_endian<u32>(stream) != RawLayerStacks)
-        return false;
-    storedLayerStacks = read_little_endian<u32>(stream);
-    if (storedLayerStacks == 0 || storedLayerStacks > LayerStacks)
-        return false;
-    for (u16& f : layerStackFallback)
-        if ((f = read_little_endian<u16>(stream)) >= RawLayerStacks)
-            return false;
-    IndexType stored = 0;
-    for (IndexType s = 0; s < RawLayerStacks; ++s)
-        if (layerStackFallback[s] == s)
-            layerStackIndex[s] = u16(stored++);
-    if (stored != storedLayerStacks)
-        return false;
-    for (IndexType s = 0; s < RawLayerStacks; ++s)
+    const auto raw    = read_little_endian<u32>(stream);
+    const auto stored = read_little_endian<u32>(stream);
+    if (tableHash == Moe11::SchemaHash)
     {
-        const u16 f = layerStackFallback[s];
-        if (layerStackFallback[f] != f)
+        if (raw != Moe11::ContextCount || stored != Moe11::ExpertCount)
             return false;
-        layerStackIndex[s] = layerStackIndex[f];
+        stream.read(reinterpret_cast<char*>(routeLut.data()), routeLut.size());
+        if (!stream || std::any_of(routeLut.begin(), routeLut.end(), [](u8 id) {
+                return id >= Moe11::ExpertCount;
+            }))
+            return false;
+        learnedRouting = true;
     }
+    else if (tableHash == LayerStackTableHash || tableHash == MatchedControlHash)
+    {
+        const IndexType expected =
+          tableHash == MatchedControlHash ? MatchedControlStacks : RawLayerStacks;
+        if (raw != expected || !stored || stored > raw)
+            return false;
+        IndexType count = 0;
+        for (IndexType s = 0; s < raw; ++s)
+        {
+            const u16 f = read_little_endian<u16>(stream);
+            if (f >= raw)
+                return false;
+            layerStackFallback[s] = f;
+            if (f == s)
+                layerStackIndex[s] = u16(count++);
+        }
+        if (count != stored)
+            return false;
+        for (IndexType s = 0; s < raw; ++s)
+        {
+            const u16 f = layerStackFallback[s];
+            if (layerStackFallback[f] != f)
+                return false;
+            layerStackIndex[s] = layerStackIndex[f];
+        }
+        learnedRouting = false;
+        rawLayerStacks = raw;
+    }
+    else
+        return false;
+    storedLayerStacks = stored;
     if (!Detail::read_parameters(stream, featureTransformer))
         return false;
     for (usize i = 0; i < storedLayerStacks; ++i)
@@ -396,13 +452,19 @@ bool Network::read_parameters(std::istream& stream, std::string& netDescription)
 
 
 bool Network::write_parameters(std::ostream& stream, const std::string& netDescription) const {
-    if (!write_header(stream, Network::hash, netDescription))
+    const u32 tableHash = learnedRouting                         ? Moe11::SchemaHash
+                        : rawLayerStacks == MatchedControlStacks ? MatchedControlHash
+                                                                 : LayerStackTableHash;
+    if (!write_header(stream, architectureHash ^ tableHash, netDescription))
         return false;
-    write_little_endian<u32>(stream, LayerStackTableHash);
-    write_little_endian<u32>(stream, RawLayerStacks);
+    write_little_endian<u32>(stream, tableHash);
+    write_little_endian<u32>(stream, learnedRouting ? Moe11::ContextCount : rawLayerStacks);
     write_little_endian<u32>(stream, storedLayerStacks);
-    for (const u16 f : layerStackFallback)
-        write_little_endian<u16>(stream, f);
+    if (learnedRouting)
+        stream.write(reinterpret_cast<const char*>(routeLut.data()), routeLut.size());
+    else
+        for (IndexType s = 0; s < rawLayerStacks; ++s)
+            write_little_endian<u16>(stream, layerStackFallback[s]);
     if (!Detail::write_parameters(stream, featureTransformer))
         return false;
     for (usize i = 0; i < storedLayerStacks; ++i)

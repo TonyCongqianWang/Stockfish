@@ -71,7 +71,9 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
        << "|   Bucket   | Evaluation |\n"
        << "+------------+------------+\n";
 
-    for (usize bucket = 0; bucket < t.layerStacks; ++bucket)
+    const usize first = t.contextId >= 0 ? t.correctBucket : 0;
+    const usize end   = t.contextId >= 0 ? t.correctBucket + 1 : t.layerStacks;
+    for (usize bucket = first; bucket < end; ++bucket)
     {
         ss << "|  " << std::left << std::setw(10) << bucket << std::right << "|  ";
         format_cp_aligned_dot(t.positional[bucket], ss, pos);
@@ -82,6 +84,8 @@ trace(Position& pos, const Eval::NNUE::Network& network, Eval::NNUE::Accumulator
     }
 
     ss << "+------------+------------+\n";
+    if (t.contextId >= 0)
+        ss << "MOE11 context " << t.contextId << ", expert " << t.correctBucket << '\n';
 
     return ss.str();
 }
